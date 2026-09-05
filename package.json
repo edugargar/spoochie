@@ -14,7 +14,7 @@
     "spoochie": "bun run src/cli.ts"
   },
   "devDependencies": {
-    "@types/node": "^22"
+    "@types/node": "^26"
   },
   "dependencies": {
     "nostr-tools": "^2.25.2"
