@@ -221,6 +221,9 @@ export class NostrBridge {
     if (a.sobre.kind === "file") { await this.trozo(a); return; }
     const t = T.load(a.sobre.id);
     if (!t || t.transporte !== "nostr" || t.nostr?.otro !== a.de) return;
+    // Un sobre que llega despues de cerrar (los reles no ordenan) no resucita el hilo:
+    // ya esta purgado, y volver a meterle un mensaje rompe el "borrado al cerrar".
+    if (t.state === "closed") { this.cb.log("nostr", t.id, "sobre tras cerrar; descartado"); return; }
     if (a.sobre.kind === "accept") { await this.cb.onRemoteAccept(t, "en la otra maquina"); return; }
     if (a.sobre.kind === "close") { await this.cb.onCierre(t, a.texto || "cerrado por el otro lado"); return; }
     if (a.sobre.kind === "notice") return;
@@ -258,7 +261,7 @@ export class NostrBridge {
     if (!f || !FID_VALIDO.test(String(f.fid)) || !Number.isInteger(f.n) || !Number.isInteger(f.total) || f.n < 0 || f.n >= f.total) return;
     if (f.total > Math.ceil(MAX_BYTES / TROZO) || !(f.size >= 0 && f.size <= MAX_BYTES)) { this.cb.log("nostr", "fichero demasiado grande; ignorado", f.name); return; }
     const t = T.load(a.sobre.id);
-    if (t && (t.transporte !== "nostr" || t.nostr?.otro !== a.de)) return;
+    if (t && (t.transporte !== "nostr" || t.nostr?.otro !== a.de || t.state === "closed")) return;
     if (!t && T.yaVisto(a.sobre.id)) return;
     const dir = join(SPOOL, a.sobre.id, PARTES, f.fid);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
