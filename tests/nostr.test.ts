@@ -193,3 +193,27 @@ test("un fichero va a trozos cifrados y el otro lado lo recompone en su spool, l
   expect(existsSync(join(SPOOL, "nf2", ".partes", "f9"))).toBe(false);
   B.cerrar();
 });
+
+test("un sobre que llega despues de cerrar no resucita el hilo ni deja ficheros en el spool", async () => {
+  const { SPOOL } = await import("../src/files.ts");
+  const { existsSync } = await import("node:fs");
+  const a = claves(), b = claves();
+  const c = Cfg.load();
+  Cfg.addContact(c, { id: "U_A3", name: "Ana", npub: a.pk, relays: ["wss://a"] });
+  Cfg.save(c);
+  const enB: T.Msg[] = [];
+  const registro: string[] = [];
+  const entrada = poolMemoria();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { enB.push(m); }, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: (...x) => { registro.push(x.join(" ")); } }, entrada.pool);
+  B.escuchar();
+  const t: T.Thread = { id: "nc1", subject: "tarde", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)", human: "Ana" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, state: "closed", closeReason: "resuelto", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] }, messages: [] };
+  T.save(t);
+  entrada.inyectar(envolver(a.sk, b.pk, { v: 1, id: "nc1", kind: "msg" }, "esto llega tarde").wrap);
+  entrada.inyectar(envolver(a.sk, b.pk, { v: 1, id: "nc1", kind: "file", file: { fid: "f1", n: 0, total: 1, name: "tarde.png", size: 3 } }, Buffer.from("abc").toString("base64")).wrap);
+  await sleep(100);
+  expect(enB).toEqual([]);
+  expect(T.load("nc1")!.messages).toEqual([]);
+  expect(existsSync(join(SPOOL, "nc1"))).toBe(false);
+  expect(registro.some(l => l.includes("sobre tras cerrar"))).toBe(true);
+  B.cerrar();
+});

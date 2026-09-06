@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.5 (2026-09-06)
+
+- An envelope or a Slack message that arrives after a spoochie is closed is dropped instead of refilling the purged thread; file chunks for a closed spoochie do not touch the spool (seen as a race in CI).
+
 ## 0.9.4 (2026-09-06)
 
 - The release workflow refuses a tag whose version is not the one in `plugin.json`. There is no 0.9.3: its tag was cut on the wrong commit, tags are immutable, and the release run was cancelled before it produced anything.

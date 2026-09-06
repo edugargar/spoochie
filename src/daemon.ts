@@ -632,6 +632,9 @@ async function onRemoteAccept(t: T.Thread, quien: string) {
 
 /** Un turno que llega por Slack desde otra maquina, o de un humano escribiendo en el hilo. */
 async function onSlackMessage(t: T.Thread, m: T.Msg) {
+  // Cerrado es cerrado: lo que llegue tarde (un rele lento, alguien escribiendo en el
+  // hilo de Slack ya cerrado) no vuelve a llenar un spoochie que ya se purgo.
+  if (t.state === "closed") { log("entrada", t.id, "mensaje tras cerrar; descartado"); return; }
   t.messages.push(m);
   t.lastActivityAt = m.at;
   if (t.state === "pending" && m.author === "human") { t.state = "open"; t.acceptedAt = m.at; t.acceptedBy = "humano en Slack"; }
