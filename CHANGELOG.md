@@ -1,7 +1,8 @@
 # Changelog
 
-## 0.9.3 (2026-09-06)
+## 0.9.4 (2026-09-06)
 
+- The release workflow refuses a tag whose version is not the one in `plugin.json`. There is no 0.9.3: its tag was cut on the wrong commit, tags are immutable, and the release run was cancelled before it produced anything.
 - Upgrading no longer leaves the old daemon running: a daemon started by a hook is not known to launchd, so the new one died with "already running" every 10 s while the old version kept serving. The hook now shuts the stale daemon down and starts the new one, also when the plist was already current.
 
 ## 0.9.2 (2026-09-05)

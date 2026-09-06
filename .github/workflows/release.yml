@@ -16,6 +16,13 @@ jobs:
       # Hasta 0.8 no habia dependencias y bun test corria sin node_modules; nostr-tools
       # llego con 0.9 y el demonio moria al importar, asi que todos los tests con demonio
       # caian en CI. El lock fijo: lo que se prueba es lo que se compila.
+      # El tag y plugin.json tienen que decir la misma version: el 06-09 se corto un tag
+      # sobre el commit equivocado y, con los tags inmutables, no hubo forma de moverlo.
+      - name: the tag matches plugin.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          v=$(bun -e 'console.log(JSON.parse(require("fs").readFileSync(".claude-plugin/plugin.json","utf8")).version)')
+          [ "$tag" = "$v" ] || { echo "tag v$tag but plugin.json says $v"; exit 1; }
       - run: bun install --frozen-lockfile
       - run: bun test
       - name: compile
