@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.6 (2026-09-06)
+
+- The Nostr key DM over Slack goes at most once a day per contact and is remembered across restarts; it went out on every daemon start (two DMs to the same person in 35 s).
+
 ## 0.9.5 (2026-09-06)
 
 - An envelope or a Slack message that arrives after a spoochie is closed is dropped instead of refilling the purged thread; file chunks for a closed spoochie do not touch the spool (seen as a race in CI).
