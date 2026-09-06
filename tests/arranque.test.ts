@@ -39,3 +39,30 @@ test("el latido lleva la version del demonio, y doctor la compara con la del plu
   writeFileSync(LATIDO, "");
   expect(versionLatido()).toBeNull();
 });
+
+test("un demonio suelto y mas viejo que el plugin se detecta y se apaga esperando a que suelte el candado", async () => {
+  const { apagarDemonio, demonioAtrasado, pidVivo, latir, LATIDO } = await import("../src/arranque.ts");
+  const { DAEMON_LOCK } = await import("../src/paths.ts");
+  const { execFileSync } = await import("node:child_process");
+  const { writeFileSync, existsSync } = await import("node:fs");
+  // Un proceso que hace de demonio viejo: suelto (su padre ya no es este test, como el
+  // de un hook), con el candado, y late sin version (anterior a 0.9.1).
+  const pid = Number(execFileSync("sh", ["-c", "sleep 30 >/dev/null 2>&1 & echo $!"], { encoding: "utf8" }).trim());
+  writeFileSync(DAEMON_LOCK, String(pid));
+  writeFileSync(LATIDO, "");
+  expect(pidVivo()).toBe(pid);
+  expect(demonioAtrasado()).toBe(true);
+  // Con la version de este plugin en el latido, no esta atrasado.
+  latir();
+  expect(demonioAtrasado()).toBe(false);
+  latir("0.7.1");
+  expect(demonioAtrasado()).toBe(true);
+  const t0 = Date.now();
+  expect(apagarDemonio()).toBe(true);
+  expect(Date.now() - t0).toBeLessThan(3000);
+  await new Promise(r => setTimeout(r, 100));
+  expect(pidVivo()).toBeNull();
+  // Sin nadie con el candado, no hay nada que apagar.
+  expect(apagarDemonio()).toBe(false);
+  expect(existsSync(DAEMON_LOCK)).toBe(true);
+});
