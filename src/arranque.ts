@@ -111,6 +111,36 @@ export function retirarLaunchdViejo(): boolean {
   return true;
 }
 
+/** El pid del candado, si ese proceso sigue vivo. */
+export function pidVivo(): number | null {
+  try { const pid = Number(readFileSync(DAEMON_LOCK, "utf8").trim()); if (pid) { process.kill(pid, 0); return pid; } } catch {}
+  return null;
+}
+
+/**
+ * Apaga el demonio que tiene el candado y espera a que lo suelte (hasta 3 s; luego
+ * SIGKILL). Hace falta porque un demonio que arranco un hook va suelto: launchd no lo
+ * conoce, `bootout` no lo toca, y el que launchd arranca muere al instante con "ya esta
+ * corriendo" y se reintenta cada 10 s para siempre. Visto en directo: tras actualizar
+ * a 0.9.2, el 0.7.1 de la vispera siguio latiendo un dia entero con el plist ya nuevo.
+ */
+export function apagarDemonio(): boolean {
+  const pid = pidVivo();
+  if (!pid) return false;
+  try { process.kill(pid, "SIGTERM"); } catch { return false; }
+  const hasta = Date.now() + 3000;
+  while (Date.now() < hasta) { try { process.kill(pid, 0); execFileSync("sleep", ["0.1"]); } catch { return true; } }
+  try { process.kill(pid, "SIGKILL"); } catch {}
+  return true;
+}
+
+/** El demonio que late es mas viejo que este plugin (o tan viejo que no dice version). */
+export function demonioAtrasado(): boolean {
+  if (!pidVivo()) return false;
+  const late = versionLatido();
+  return late === null || masNueva(VERSION, late);
+}
+
 export function instalarLaunchd(): "instalado" | "actualizado" | "igual" | "no" {
   if (process.platform !== "darwin" || process.env.SPOOCHIE_HOME) return "no";
   ensureDirs();
@@ -118,7 +148,13 @@ export function instalarLaunchd(): "instalado" | "actualizado" | "igual" | "no" 
   const deseado = plistDeseado();
   const p = plistPath();
   const habia = existsSync(p) ? readFileSync(p, "utf8") : null;
-  if (habia === deseado) return "igual";
+  if (habia === deseado) {
+    // El plist ya es este, pero el proceso que late puede ser el de antes de actualizar.
+    if (!demonioAtrasado()) return "igual";
+    apagarDemonio();
+    launchctl(["kickstart", `gui/${uid()}/${LABEL}`]);
+    return "actualizado";
+  }
   // Una sesion con el plugin viejo no degrada el demonio: visto en directo, un hook
   // de 0.5.1 devolvio launchd a 0.5.1 a los 80 s de haberlo subido, en mitad de una
   // prueba. Solo se sustituye por una version igual o mas nueva.
@@ -126,22 +162,10 @@ export function instalarLaunchd(): "instalado" | "actualizado" | "igual" | "no" 
   if (vieja && mia && masNueva(vieja, mia)) return "no";
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, deseado, { mode: 0o644 });
-  // Un demonio que arranco un hook sigue con el candado puesto; launchd arrancaria
-  // otro que moriria al instante, y lo reintentaria cada 10 s. Se apaga el viejo.
-  if (habia === null) {
-    try {
-      const pid = Number(readFileSync(DAEMON_LOCK, "utf8").trim());
-      if (pid) {
-        process.kill(pid, "SIGTERM");
-        // Si launchd arranca el nuevo antes de que el viejo suelte el candado, el
-        // nuevo muere y launchd no reintenta hasta pasados 10 s. Se espera a que muera.
-        const hasta = Date.now() + 3000;
-        while (Date.now() < hasta) { try { process.kill(pid, 0); execFileSync("sleep", ["0.1"]); } catch { break; } }
-      }
-    } catch {}
-  } else {
-    launchctl(["bootout", `gui/${uid()}/${LABEL}`]);
-  }
+  // Se apaga el de antes, venga de launchd (bootout) o de un hook (suelto, con el
+  // candado puesto): si no, el nuevo muere al instante y launchd lo reintenta sin fin.
+  if (habia !== null) launchctl(["bootout", `gui/${uid()}/${LABEL}`]);
+  apagarDemonio();
   launchctl(["bootstrap", `gui/${uid()}`, p]) || launchctl(["load", "-w", p]);
   return habia === null ? "instalado" : "actualizado";
 }
