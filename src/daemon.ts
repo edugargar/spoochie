@@ -23,6 +23,7 @@ import { deliver } from "./inbox.ts";
 import { judge } from "./guardian.ts";
 import { publishTranscript, rutaTranscript } from "./transcript.ts";
 import { SPOOL } from "./files.ts";
+import { tocaHola } from "./holas.ts";
 import { join } from "node:path";
 import { SlackBridge } from "./slack.ts";
 import { NostrBridge, poolDeFichero, pkDe, RELAYS_POR_DEFECTO } from "./nostr.ts";
@@ -709,14 +710,12 @@ async function soltar(t: T.Thread, orden: "suelta" | "descarta", como: string): 
 
 /** A quien esta en la agenda por Slack pero sin clave Nostr, se le manda la mia por su
  *  DM. Su demonio la guarda y contesta con la suya; en una vuelta los dos la tienen y
- *  el siguiente spoochie va cifrado. Una vez por contacto y arranque. */
-const holasMandados = new Set<string>();
+ *  el siguiente spoochie va cifrado. Como mucho una vez al dia por contacto (holas.ts). */
 async function repartirClaveNostr() {
   if (!slack || !nostr) return;
   const c = Cfg.load();
   for (const k of Object.values(c.contacts ?? {})) {
-    if (k.npub || !/^[UW][A-Z0-9]{6,}$/.test(k.id) || holasMandados.has(k.id)) continue;
-    holasMandados.add(k.id);
+    if (k.npub || !/^[UW][A-Z0-9]{6,}$/.test(k.id) || !tocaHola(k.id)) continue;
     const ok = await slack.hola(k.id, nostr.pk, nostr.relays, c.human ?? "alguien");
     log("nostr", "clave mandada por Slack a", k.name, ok ? "ok" : "FALLO");
   }
