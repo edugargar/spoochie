@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.7 (2026-09-07)
+
+- Invitations no longer carry the Slack bot token (anyone can decode the base64; a teammate did on day one). `--con-slack` puts it back for reaching pre-0.9 contacts. A closed Nostr bridge no longer resubscribes itself five seconds later next to the new one, which delivered every envelope twice after a config reload.
+
 ## 0.9.6 (2026-09-06)
 
 - The Nostr key DM over Slack goes at most once a day per contact and is remembered across restarts; it went out on every daemon start (two DMs to the same person in 35 s).

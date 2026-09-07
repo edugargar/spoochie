@@ -65,3 +65,20 @@ test("la agenda resuelve @nombre sin distinguir mayusculas ni espacios", () => {
   expect(Cfg.contact(c, "EduGarcia")?.id).toBe("U0EDU001");
   expect(Cfg.contact(c, "sam")).toBeNull();
 });
+
+test("la invitacion por Slack no lleva el token del bot salvo que se pida, y el texto lo dice", async () => {
+  const { datosInvitacion, crearInvitacion, leerInvitacion, textoInvitacion } = await import("../src/alta.ts");
+  const yo = { id: "U0EDU001", name: "Edu", np: "a".repeat(64), r: ["wss://x"] };
+  const sin = datosInvitacion({ bot: "xoxb-" + "z".repeat(40), team: "Equipo", dest: { id: "U0SAM001", name: "Sam" }, yo });
+  expect(sin.b).toBeUndefined();
+  expect(sin.u).toBe("U0SAM001");
+  expect(sin.i?.np).toBe("a".repeat(64));
+  // Cualquiera abre la cadena con un decodificador de base64: dentro no hay token.
+  const blob = crearInvitacion(sin);
+  expect(Buffer.from(blob, "base64url").toString()).not.toContain("xoxb-");
+  expect(leerInvitacion(blob)?.u).toBe("U0SAM001");
+  expect(textoInvitacion(blob, "Edu")).toContain("No hay ninguna contrasena dentro");
+  const con = datosInvitacion({ bot: "xoxb-" + "z".repeat(40), team: "Equipo", dest: { id: "U0SAM001", name: "Sam" }, yo, conSlack: true });
+  expect(con.b).toStartWith("xoxb-");
+  expect(textoInvitacion(crearInvitacion(con), "Edu", undefined, true)).toContain("lleva el token del bot");
+});

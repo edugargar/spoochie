@@ -96,9 +96,15 @@ restarts Claude Code, and pastes the last line of the DM:
 Pasting the whole DM works too; the invitation cleans itself out of whatever surrounds
 it. At the end it runs `spoochie selftest` and prints `Todo bien` or which step failed.
 
-`spoochie invite` with no `--to` prints the line for you to send by hand. The invitation
-carries the bot token, which belongs to the app and to nobody in particular; on the
-newcomer's machine it is stored in `~/.claude/spoochie/config.json` with mode 0600.
+`spoochie invite` with no `--to` prints the line for you to send by hand.
+
+What the invitation carries: the inviter's public keys and relays, the newcomer's Slack
+id and name, and the team name. It is base64 JSON, not encrypted, and anyone can open
+it, so there is no secret inside. Since 0.9.7 the Slack bot token is not in it: the
+newcomer's daemon talks over Nostr, and the DM that tells them someone opened a
+spoochie comes from the opener's bot. `spoochie invite --con-slack` puts the token back
+for a newcomer who must reach contacts still on the Slack transport (pre-0.9); the DM
+then says so in its first lines.
 
 ## How it works
 

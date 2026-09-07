@@ -232,7 +232,7 @@ async function main() {
   if (cmd === "invite") {
     const c = Cfg.load();
     const bot = Cfg.slackBotToken(c);
-    const { crearInvitacion, textoInvitacion } = await import("./alta.ts");
+    const { crearInvitacion, textoInvitacion, datosInvitacion } = await import("./alta.ts");
     const { misClaves } = await import("./firma.ts");
     const N = await import("./nostr.ts");
     const nk = N.misClaves(c);
@@ -275,10 +275,11 @@ async function main() {
         console.error(`no se a quien mandarsela: pasa su id de Slack, --to U01234567 (esta en su perfil, "Copiar id de miembro").`);
         process.exit(1); return;
       }
-      const blob = crearInvitacion({ b: bot, t: quien.team, u: dest.id, n: dest.name, i: yo });
+      const conSlack = has(rest, "con-slack");
+      const blob = crearInvitacion(datosInvitacion({ bot, team: quien.team, dest, yo, conSlack }));
       const im = await api("conversations.open", { users: dest.id });
       if (!im.ok) { console.error(`no puedo abrir el DM con ${dest.name}: ${im.error}`); process.exit(1); return; }
-      const post = await api("chat.postMessage", { channel: im.channel.id, text: textoInvitacion(blob, yo.name) });
+      const post = await api("chat.postMessage", { channel: im.channel.id, text: textoInvitacion(blob, yo.name, undefined, conSlack) });
       if (!post.ok) { console.error(`no he podido mandar el DM: ${post.error}`); process.exit(1); return; }
       Cfg.addContact(c, dest); Cfg.save(c);
       console.log(`Enviada a ${dest.name} por DM del bot, con los pasos dentro. Ya puedes escribirle @${Cfg.claveContacto(dest.name)}.`);
@@ -286,10 +287,12 @@ async function main() {
     }
 
     const r = await api("users.list", { limit: 1 });
-    const blob = crearInvitacion({ b: bot, t: quien.team, i: yo });
+    const conSlack = has(rest, "con-slack");
+    const blob = crearInvitacion(conSlack ? { b: bot, t: quien.team, i: yo } : { t: quien.team, i: yo });
     console.log(`Mandale esto a quien quieras dar de alta. Es una linea:\n`);
     console.log(`  /spoochie:join ${blob}\n`);
-    if (r.ok) console.log(`Su email lo saca de git; si no cuadra con Slack, que anada --email <mail>.`);
+    if (!conSlack) console.log(`Lleva tus claves publicas y nada mas. Para que le avisen por Slack, que anada --user <su id de Slack>. Con --con-slack la cadena lleva ademas el token del bot.`);
+    else if (r.ok) console.log(`Su email lo saca de git; si no cuadra con Slack, que anada --email <mail>.`);
     else {
       console.log(`Ojo: la app no tiene users:read de bot, asi que tendra que anadir --user <su id de Slack>.`);
       console.log(`Mas facil: spoochie invite --to <su id>, y el bot le manda la invitacion ya resuelta por DM.`);
@@ -340,6 +343,9 @@ async function main() {
 
     const c = Cfg.load();
     if (datos.b && userId) c.slack = { botToken: datos.b, userId, pollMs: 20_000 };
+    // Sin token, el id de Slack sirve igual: va en el hola para que quien me escriba me
+    // avise por DM con su bot, y para que Slack siga siendo el sitio donde me entero.
+    else if (userId && !c.slack?.botToken) c.slack = { ...c.slack, userId };
     // El nombre: el que diga --nombre, el que puso quien invita, y si no el usuario del
     // sistema (que en la primera prueba real salio como el usuario de la maquina en todo el hilo).
     if (!c.human || c.human === userInfo().username) c.human = flag(rest, "nombre") ?? datos.n ?? c.human ?? userInfo().username;
