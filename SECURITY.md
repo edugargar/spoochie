@@ -41,9 +41,22 @@ practice. In short:
 - Binaries are built by GitHub Actions from a tag and verified by SHA256 before they
   run. The hook refuses a binary whose checksum does not match.
 
+- The daemon listens on a Unix socket inside `~/.claude/spoochie`, a directory with
+  mode 0700. Any process running as your user can talk to it (open, say, close,
+  reload); that is the same trust as your shell. The log in that directory records ids,
+  names and close reasons, not message bodies.
+- The invitation and the first envelope carry the branch name, the HEAD sha and up to
+  twelve names of files changed in your checkout. Nothing else is attached on its own;
+  `--files` is explicit.
+- The guardian (on by default) sends each incoming remote message to Claude Haiku
+  through your own Anthropic credentials to decide whether it asks your Claude to act.
+  That text leaves your machine once more, to Anthropic. `spoochie config --guardian
+  off` turns it off; `doctor` says which way it is set.
+
 What it does not cover: a compromised relay can drop or delay messages (not read them);
 a compromised machine on either side has everything; the Slack path (for contacts
-without a Nostr key) trusts Slack.
+without a Nostr key) trusts Slack and everyone who holds the bot token, including the
+first envelope from a Slack id nobody has heard from (its key is pinned on sight).
 
 ## Advisories
 
