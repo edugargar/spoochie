@@ -64,6 +64,8 @@ export type Sobre = {
   /** En el hola del alta: mi nombre, mi id de Slack si lo hay, y mis reles. */
   slack?: string;
   relays?: string[];
+  /** En el hola del alta: el nonce de la invitacion que se canjea (claves.ts). */
+  k?: string;
   /** Un trozo de fichero: cual, que trozo de cuantos, y como se llama. */
   file?: { fid: string; n: number; total: number; name: string; size: number };
 };
@@ -358,8 +360,8 @@ export class NostrBridge {
   }
 
   /** El saludo del alta: le digo a quien me invito quien soy. */
-  async hola(paraPk: string, relays: string[], nombre: string, slackId?: string): Promise<boolean> {
-    const { wrap } = envolver(this.sk, paraPk, { v: 1, id: "hola", kind: "hola", fromName: nombre, slack: slackId, relays: this.relays }, `${nombre} ya esta en spoochie`);
+  async hola(paraPk: string, relays: string[], nombre: string, slackId?: string, k?: string): Promise<boolean> {
+    const { wrap } = envolver(this.sk, paraPk, { v: 1, id: "hola", kind: "hola", fromName: nombre, slack: slackId, relays: this.relays, k }, `${nombre} ya esta en spoochie`);
     try { await Promise.any(this.pool.publish([...new Set([...relays, ...this.relays])], wrap)); return true; } catch { return false; }
   }
 }

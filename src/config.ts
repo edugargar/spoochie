@@ -24,6 +24,9 @@ export type Config = {
   /** Quien te invito, y a quien has invitado. "@edu" se resuelve aqui antes de
    *  preguntar a Slack, que para buscar por nombre exige users:read. */
   contacts?: Record<string, { id: string; name: string; pk?: string; npub?: string; relays?: string[] }>;
+  /** Invitaciones sin canjear, por nonce: a quien se invito y cuando. Un hola por Nostr
+   *  solo entra con uno de estos (claves.ts). Caducan a los 30 dias. */
+  invitaciones?: Record<string, { id?: string; name?: string; at: number }>;
   /** Claves Nostr (secp256k1, hex) y reles de esta persona. Nacen en el alta. */
   nostr?: { sk?: string; pk?: string; relays?: string[] };
   /** Por donde van los spoochies con quien tiene clave Nostr: "nostr" (por defecto si

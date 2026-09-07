@@ -293,9 +293,14 @@ test("un hola por Slack trae la clave Nostr del otro y se guarda en la agenda; e
   await b.hola("U_SAM", "a".repeat(64), ["wss://x"], "Edu");
   expect(posts[0].channel).toBe("D_X");
   expect(posts[0].metadata.event_payload).toMatchObject({ kind: "hola", np: "a".repeat(64), r: ["wss://x"], fromName: "Edu" });
+  // Va firmado con mi clave ed25519: sin eso, cualquiera con el token del bot pone una clave a mi nombre.
+  const { comprobar } = await import("../src/firma.ts");
+  const p = posts[0].metadata.event_payload;
+  expect(comprobar(p.pk, "hola", "hola", "U_EDU", p.np, p.sig)).toBe(true);
+  expect(comprobar(p.pk, "hola", "hola", "U_EDU", "b".repeat(64), p.sig)).toBe(false);
 
   const recibidos: any[] = [];
-  b.onHola = async (de: string, nombre: string, np: string, r: string[]) => { recibidos.push({ de, nombre, np, r }); };
+  b.onHola = async (de: string, nombre: string, np: string, r: string[], veredicto: string) => { recibidos.push({ de, nombre, np, r, veredicto }); };
   b.inbox = async () => "D_ME";
   b.get = async () => ({ messages: [
     { ts: "5.0", metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: "U_SAM", fromName: "Sam", np: "b".repeat(64), r: ["wss://sam"] } } },
@@ -303,5 +308,5 @@ test("un hola por Slack trae la clave Nostr del otro y se guarda en la agenda; e
   ] });
   b.inboxCursor = "0";
   await b.discover();
-  expect(recibidos).toEqual([{ de: "U_SAM", nombre: "Sam", np: "b".repeat(64), r: ["wss://sam"] }]);
+  expect(recibidos).toEqual([{ de: "U_SAM", nombre: "Sam", np: "b".repeat(64), r: ["wss://sam"], veredicto: "sin-firma" }]);
 });
