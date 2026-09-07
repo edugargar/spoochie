@@ -113,6 +113,7 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie doctor                        repasa lo que tiene que estar bien para entregar
   spoochie config [--human "Edu"] [--guardian on|off] [--transcript on|off] [--aparte on|off] [--copia on|off] [--borrar on|off] [--transporte nostr|slack] [--hilos grupo|canal|dm] [--canal C0..]
   spoochie nostr [--relays wss://a,wss://b]      tu clave Nostr y tus reles
+  spoochie contacts [--olvidar-clave <nombre>]   tu agenda con sus claves; olvidar una para reinvitar
   spoochie --version
       aparte: los spoochies que llegan los atiende un Claude propio; tu sesion solo ve el aviso
   spoochie take <id> --aqui | accept <id> --aqui   que conteste ESTA sesion, sin Claude aparte
@@ -241,7 +242,10 @@ async function main() {
     // Sin Slack: una invitacion solo por Nostr, para mandar por donde sea. No hay DM
     // que enviar; se imprime y listo.
     if (!bot || !c.slack?.userId) {
-      const blob = crearInvitacion({ n: flag(rest, "name"), i: yo });
+      const { nuevaInvitacion } = await import("./claves.ts");
+      const k = nuevaInvitacion(c, { name: flag(rest, "name") });
+      Cfg.save(c);
+      const blob = crearInvitacion({ n: flag(rest, "name"), i: yo, k });
       console.log(textoInvitacion(blob, yo.name));
       console.log(`\n(Sin Slack: mandale esto por donde quieras. Cuando lo pegue, su clave te llegara por Nostr y podras escribirle @${Cfg.claveContacto(flag(rest, "name") ?? "nombre")}.)`);
       return;
@@ -276,7 +280,10 @@ async function main() {
         process.exit(1); return;
       }
       const conSlack = has(rest, "con-slack");
-      const blob = crearInvitacion(datosInvitacion({ bot, team: quien.team, dest, yo, conSlack }));
+      const { nuevaInvitacion } = await import("./claves.ts");
+      const k = nuevaInvitacion(c, dest);
+      Cfg.save(c);
+      const blob = crearInvitacion(datosInvitacion({ bot, team: quien.team, dest, yo, conSlack, k }));
       const im = await api("conversations.open", { users: dest.id });
       if (!im.ok) { console.error(`no puedo abrir el DM con ${dest.name}: ${im.error}`); process.exit(1); return; }
       const post = await api("chat.postMessage", { channel: im.channel.id, text: textoInvitacion(blob, yo.name, undefined, conSlack) });
@@ -288,7 +295,10 @@ async function main() {
 
     const r = await api("users.list", { limit: 1 });
     const conSlack = has(rest, "con-slack");
-    const blob = crearInvitacion(conSlack ? { b: bot, t: quien.team, i: yo } : { t: quien.team, i: yo });
+    const { nuevaInvitacion } = await import("./claves.ts");
+    const k = nuevaInvitacion(c, { name: flag(rest, "name") });
+    Cfg.save(c);
+    const blob = crearInvitacion(conSlack ? { b: bot, t: quien.team, i: yo, k } : { t: quien.team, i: yo, k });
     console.log(`Mandale esto a quien quieras dar de alta. Es una linea:\n`);
     console.log(`  /spoochie:join ${blob}\n`);
     if (!conSlack) console.log(`Lleva tus claves publicas y nada mas. Para que le avisen por Slack, que anada --user <su id de Slack>. Con --con-slack la cadena lleva ademas el token del bot.`);
@@ -362,7 +372,7 @@ async function main() {
     if (datos.i?.np) {
       const b = new N.NostrBridge(nk.sk, nk.pk, N.misReles(c), { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} },
         process.env.SPOOCHIE_NOSTR_DIR ? N.poolDeFichero(process.env.SPOOCHIE_NOSTR_DIR) : undefined);
-      const ok = await b.hola(datos.i.np, datos.i.r ?? [], c.human ?? userInfo().username, userId);
+      const ok = await b.hola(datos.i.np, datos.i.r ?? [], c.human ?? userInfo().username, userId, datos.k);
       b.cerrar();
       console.log(ok ? `Le he mandado tu clave a ${datos.i.name} por Nostr.` : `No he podido mandar tu clave por Nostr (sin red a los reles); ${datos.i.name} tendra que anadirte con --npub.`);
     }
@@ -391,6 +401,26 @@ async function main() {
     if (reles) { c.nostr = { ...c.nostr, relays: reles.split(",").map(s => s.trim()).filter(s => /^wss?:\/\//.test(s)) }; }
     Cfg.save(c);
     console.log(JSON.stringify({ npub: N.npub(k.pk), pk: k.pk, relays: N.misReles(c), transporte: c.transporte ?? "nostr (si el otro tiene clave)" }, null, 2));
+    return;
+  }
+
+  if (cmd === "contacts") {
+    const c = Cfg.load();
+    const olvidar = flag(rest, "olvidar-clave");
+    if (olvidar) {
+      const k = Cfg.claveContacto(olvidar);
+      const x = c.contacts?.[k];
+      if (!x) { console.error(`no tengo a nadie como @${k}`); process.exit(1); return; }
+      delete x.npub; delete x.relays;
+      Cfg.save(c);
+      console.log(`Clave Nostr de ${x.name} olvidada. Con ${x.name} va por Slack hasta que le invites de nuevo (spoochie invite --to ${x.id}).`);
+      return;
+    }
+    for (const [k, x] of Object.entries(c.contacts ?? {})) {
+      console.log(`@${k.padEnd(14)} ${x.name.padEnd(16)} ${x.id.padEnd(12)} firma:${x.pk ? "fijada" : "no    "}  nostr:${x.npub ? `${x.npub.slice(0, 12)}... (${(x.relays ?? []).length} reles)` : "sin clave"}`);
+    }
+    const pendientes = Object.entries(c.invitaciones ?? {});
+    if (pendientes.length) console.log(`\n${pendientes.length} invitacion${pendientes.length === 1 ? "" : "es"} sin canjear: ${pendientes.map(([, v]) => v.name ?? v.id ?? "?").join(", ")}`);
     return;
   }
 

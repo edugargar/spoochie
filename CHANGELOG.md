@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.8 (2026-09-07)
+
+- Security: a Nostr key enters your contacts only with the one-time nonce of your own invitation, bound to what you wrote when inviting; a hola over Slack must be signed with the pinned ed25519 key; an existing key is never replaced by a hola. Before, anyone with your npub and a teammate's Slack id could put their own key under that teammate's name. `spoochie contacts` lists keys and `--olvidar-clave` drops one.
+
 ## 0.9.7 (2026-09-07)
 
 - Invitations no longer carry the Slack bot token (anyone can decode the base64; a teammate did on day one). `--con-slack` puts it back for reaching pre-0.9 contacts. A closed Nostr bridge no longer resubscribes itself five seconds later next to the new one, which delivered every envelope twice after a config reload.

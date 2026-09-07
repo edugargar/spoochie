@@ -8,6 +8,9 @@ export type Invitacion = {
   /** Token del bot de Slack. Puede faltar: una invitacion solo por Nostr. */
   b?: string;
   t?: string; u?: string; n?: string;
+  /** Nonce de un solo uso: el hola de quien se da de alta lo devuelve, y sin el no
+   *  entra ninguna clave en la agenda de quien invito (claves.ts). */
+  k?: string;
   /** Quien invita: id de Slack (o "nostr:<pk>"), nombre, clave ed25519, clave Nostr y reles. */
   i?: { id: string; name: string; pk?: string; np?: string; r?: string[] };
 };
@@ -19,8 +22,8 @@ export type Invitacion = {
  * necesita: su demonio habla cifrado por los reles, y los avisos por DM se los manda el
  * bot de quien le escribe. Sin el token, la cadena solo lleva claves publicas y su id.
  */
-export function datosInvitacion(x: { bot: string; team?: string; dest: { id: string; name: string }; yo: Invitacion["i"]; conSlack?: boolean }): Invitacion {
-  return { ...(x.conSlack ? { b: x.bot } : {}), t: x.team, u: x.dest.id, n: x.dest.name, i: x.yo };
+export function datosInvitacion(x: { bot: string; team?: string; dest: { id: string; name: string }; yo: Invitacion["i"]; conSlack?: boolean; k?: string }): Invitacion {
+  return { ...(x.conSlack ? { b: x.bot } : {}), t: x.team, u: x.dest.id, n: x.dest.name, i: x.yo, k: x.k };
 }
 
 export function crearInvitacion(inv: Invitacion): string {

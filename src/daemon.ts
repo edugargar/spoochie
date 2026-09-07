@@ -24,6 +24,7 @@ import { judge } from "./guardian.ts";
 import { publishTranscript, rutaTranscript } from "./transcript.ts";
 import { SPOOL } from "./files.ts";
 import { tocaHola } from "./holas.ts";
+import { holaPorNostr, holaPorSlack } from "./claves.ts";
 import { join } from "node:path";
 import { SlackBridge } from "./slack.ts";
 import { NostrBridge, poolDeFichero, pkDe, RELAYS_POR_DEFECTO } from "./nostr.ts";
@@ -726,25 +727,25 @@ function arrancarNostr() {
   nostr = NostrBridge.fromConfig({
     onMessage: onSlackMessage, onRemoteAccept, onCierre: onRemoteClose, log,
     onHola: async (de, sobre, nombre) => {
-      // Alguien a quien invite ya esta dentro: su clave entra en la agenda, pegada a su
-      // id de Slack si lo dijo (asi el aviso por DM sigue funcionando).
+      // Alguien a quien invite ya esta dentro. Solo con el nonce de mi invitacion, y se
+      // vincula a lo que yo apunte al invitar, no a lo que diga el hola (claves.ts).
       const c = Cfg.load();
-      const previo = (sobre.slack && Cfg.contactById(c, sobre.slack)) || Cfg.contactoPorNpub(c, de);
-      Cfg.addContact(c, { id: previo?.id ?? sobre.slack ?? `nostr:${de}`, name: previo?.name ?? nombre, npub: de, relays: sobre.relays });
+      const d = holaPorNostr(c, { de, nombre, k: sobre.k, relays: sobre.relays });
+      if (!d.ok) { log("nostr", "hola RECHAZADO de", nombre, de.slice(0, 12), d.motivo); return; }
       Cfg.save(c);
-      log("nostr", "hola de", nombre, de.slice(0, 12));
+      log("nostr", "hola de", d.name, de.slice(0, 12), d.vinculo);
     },
   }, process.env.SPOOCHIE_NOSTR_DIR ? poolDeFichero(process.env.SPOOCHIE_NOSTR_DIR) : undefined);
   nostr?.escuchar();
   if (slack) {
-    slack.onHola = async (de, nombre, np, r) => {
+    slack.onHola = async (de, nombre, np, r, veredicto) => {
       const c = Cfg.load();
-      const previo = Cfg.contactById(c, de);
-      Cfg.addContact(c, { id: de, name: previo?.name ?? nombre, npub: np, relays: r });
+      const d = holaPorSlack(c, { de, nombre, np, relays: r, veredicto });
+      if (!d.ok) { log("nostr", "clave por Slack RECHAZADA:", d.motivo); return; }
       Cfg.save(c);
-      log("nostr", "clave recibida por Slack de", previo?.name ?? nombre);
-      // Si el no tiene la mia, se la mando (una vez): asi converge en una vuelta.
-      if (nostr && !holasMandados.has(de)) { holasMandados.add(de); await slack!.hola(de, nostr.pk, nostr.relays, c.human ?? "alguien"); }
+      log("nostr", "clave recibida por Slack de", d.name, d.vinculo);
+      // Si el no tiene la mia, se la mando (como mucho una vez al dia): converge en una vuelta.
+      if (nostr && tocaHola(de)) await slack!.hola(de, nostr.pk, nostr.relays, c.human ?? "alguien");
     };
   }
   setTimeout(() => { void repartirClaveNostr(); }, 3000).unref();

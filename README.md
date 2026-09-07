@@ -326,22 +326,29 @@ otherwise; both timeouts; no secrets in this repo.
 
 What you should know:
 
-- **One bot token for the whole team**, distributed in the invitation. Whoever holds it
-  can read the bot's DM with anyone and post as the bot. When someone leaves, rotate it
-  and send a fresh invitation. That is the price of "one paste" onboarding; per-person
-  OAuth (`xoxp`) is still supported via `spoochie slack setup` for teams that want it.
-- **Keys are pinned on first sight.** Whoever holds the bot token can still post the
-  *first* envelope for a Slack id nobody has heard from, with a key of their own. After
-  that, that id is theirs. Invitations carry the inviter's key, so the person who
-  invited you is pinned before anything arrives.
+- **One bot token for the whole team.** Whoever holds it can read the bot's DM with
+  anyone and post as the bot. Since 0.9.7 it is not in invitations: a newcomer talks
+  over Nostr and never holds it unless you pass `--con-slack`. Everyone who joined
+  before 0.9.7 has it in their config; rotate it when someone leaves. Per-person OAuth
+  (`xoxp`) is still supported via `spoochie slack setup` for teams that want it.
+- **A Nostr key enters your contact list only through your own invitation.** The
+  invitation carries a one-time nonce; the newcomer's "hola" returns it and the key is
+  bound to the id and name you wrote down when inviting, not to what the hola says. A
+  "hola" over Slack must be signed with the ed25519 key pinned for that Slack id. A
+  contact that has a key never gets it replaced by a hola; the attempt is logged.
+  `spoochie contacts` shows every key; `--olvidar-clave` drops one so you can re-invite.
+- **Slack envelopes are pinned on first sight.** Whoever holds the bot token can still
+  post the *first* envelope for a Slack id nobody has heard from, with a key of their
+  own. After that, that id is theirs. Invitations carry the inviter's key, so the
+  person who invited you is pinned before anything arrives.
 - **Remote text enters your session as a turn.** The fence stops it from posing as a
   header or as spoochie's rules, and the guardian holds what asks you to act, but a
   persuasive message is still a persuasive message. Run Claude Code with normal
   permissions, not bypass, on machines that use spoochie.
-- **The bot token goes through the model once.** `/spoochie:join <blob>` passes the
-  invitation as a prompt argument, so the token is in that session's context and in its
-  local transcript under `~/.claude/projects/`. It is the same token that is already in
-  the Slack DM the invitation came from. Rotate it when someone leaves.
+- **With `--con-slack`, the bot token goes through the model once.** `/spoochie:join
+  <blob>` passes the invitation as a prompt argument, so the token is in that session's
+  context and in its local transcript under `~/.claude/projects/`. Without the flag
+  (the default since 0.9.7) the invitation holds public keys and ids only.
 - **The side Claude is read-only in practice, not by proof.** Its allowlist is Read,
   Grep, Glob, read-only git and the spoochie subcommands; Edit, Write and the git
   commands that change history are denied. `allowedTools` cannot filter arguments, so

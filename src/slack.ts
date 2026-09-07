@@ -455,13 +455,15 @@ export class SlackBridge {
       await this.call("chat.postMessage", {
         channel: im.channel.id, text: `${nombre} ya puede hablar contigo por Nostr (cifrado, sin pasar por Slack).`,
         blocks: [ctx(`:key: ${nombre} ya puede hablar contigo por Nostr: los spoochies entre vosotros iran cifrados y no pasaran por Slack. Slack seguira avisandote.`)],
-        metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: this.me, fromName: nombre, np, r, app: VERSION } },
+        // Firmado con mi clave ed25519 (la que ya tienen fijada de mis sobres): sin
+        // firma, cualquiera con el token del bot podia poner una clave a mi nombre.
+        metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: this.me, fromName: nombre, np, r, app: VERSION, pk: misClaves(Cfg.load()).pub, sig: firmar(misClaves(Cfg.load()).priv, "hola", "hola", this.me, np) } },
       });
       return true;
     } catch { return false; }
   }
   /** Al recibir un hola por Slack. */
-  onHola: ((de: string, nombre: string, np: string, r: string[]) => Promise<void>) | null = null;
+  onHola: ((de: string, nombre: string, np: string, r: string[], veredicto: Veredicto) => Promise<void>) | null = null;
 
   /** Un aviso a una persona por su DM con el bot, sin sobre: el hilo vive en otro sitio. */
   async avisarDm(userId: string, texto: string): Promise<boolean> {
@@ -768,7 +770,7 @@ export class SlackBridge {
       const env = envelopeOf(msg);
       if (env?.kind === "hola" && env.from !== this.me && env.np && /^[0-9a-f]{64}$/.test(env.np) && !this.holasVistos.has(msg.ts)) {
         this.holasVistos.add(msg.ts);
-        if (this.onHola) await this.onHola(env.from, env.fromName ?? env.from, env.np, Array.isArray(env.r) ? env.r : []);
+        if (this.onHola) await this.onHola(env.from, env.fromName ?? env.from, env.np, Array.isArray(env.r) ? env.r : [], verificarSobre({ id: "hola", kind: "hola", from: env.from, fromName: env.fromName, pk: env.pk, sig: env.sig }, env.np));
         continue;
       }
       if (!env || env.kind !== "invite" || known.has(env.id) || env.from === this.me) continue;
