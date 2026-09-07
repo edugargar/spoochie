@@ -178,6 +178,7 @@ export type Callbacks = {
 export class NostrBridge {
   private vistos = new Set<string>();
   private sub: { close(): void } | null = null;
+  private cerrado = false;
   constructor(readonly sk: string, readonly pk: string, readonly relays: string[], private cb: Callbacks, private pool: Pool = poolReal()) {
     try { if (existsSync(VISTOS)) for (const id of JSON.parse(readFileSync(VISTOS, "utf8"))) this.vistos.add(id); } catch {}
   }
@@ -195,14 +196,18 @@ export class NostrBridge {
 
   /** Escucha lo que llega para mi. Se vuelve a suscribir sola si el rele corta. */
   escuchar() {
+    // Un puente cerrado no vuelve a escuchar. Sin esto, `cerrar()` disparaba el onclose
+    // del rele, y a los 5 s el puente viejo se resuscribia al lado del nuevo: dos
+    // puentes con dos listas de vistos, y cada sobre entregado dos veces a la sesion.
+    if (this.cerrado) return;
     const filtro = { kinds: [ENVOLTURA], "#p": [this.pk], since: ahora() - DOS_DIAS_S - 3600 };
     this.sub = this.pool.subscribe(this.relays, filtro, {
       onevent: ev => { void this.recibir(ev); },
-      onclose: () => { setTimeout(() => this.escuchar(), 5000).unref?.(); },
+      onclose: () => { if (!this.cerrado) setTimeout(() => this.escuchar(), 5000).unref?.(); },
     });
   }
 
-  cerrar() { this.sub?.close(); this.pool.cerrar?.(); }
+  cerrar() { this.cerrado = true; this.sub?.close(); this.pool.cerrar?.(); }
 
   private async recibir(ev: Event) {
     if (this.vistos.has(ev.id)) return;

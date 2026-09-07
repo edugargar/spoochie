@@ -9,7 +9,7 @@
       "name": "spoochie",
       "source": "./",
       "description": "A tunnel between two people's Claude Code sessions, with Slack for notifications and the thread.",
-      "version": "0.9.6",
+      "version": "0.9.7",
       "keywords": [
         "slack",
         "colaboracion",

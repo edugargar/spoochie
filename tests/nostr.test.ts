@@ -217,3 +217,31 @@ test("un sobre que llega despues de cerrar no resucita el hilo ni deja ficheros 
   expect(registro.some(l => l.includes("sobre tras cerrar"))).toBe(true);
   B.cerrar();
 });
+
+test("un puente cerrado no vuelve a suscribirse ni entrega nada, aunque el rele avise de cierre", async () => {
+  const a = claves(), b = claves();
+  const c = Cfg.load();
+  Cfg.addContact(c, { id: "U_A4", name: "Ana", npub: a.pk, relays: ["wss://a"] });
+  Cfg.save(c);
+  let suscripciones = 0;
+  let entrega: ((ev: any) => void) | null = null, cierre: (() => void) | null = null;
+  const pool: Pool = {
+    publish() { return [Promise.resolve()]; },
+    subscribe(_r, _f, cb) { suscripciones++; entrega = cb.onevent; cierre = () => cb.onclose?.(["bye"]); return { close() { entrega = null; } }; },
+  };
+  const enB: T.Msg[] = [];
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { enB.push(m); }, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, pool);
+  B.escuchar();
+  expect(suscripciones).toBe(1);
+  const t: T.Thread = { id: "nx1", subject: "x", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, state: "open", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] }, messages: [] };
+  T.save(t);
+  entrega!(envolver(a.sk, b.pk, { v: 1, id: "nx1", kind: "msg" }, "uno").wrap);
+  await sleep(50);
+  expect(enB.length).toBe(1);
+  // Se cierra (como hace el demonio al recargar la config) y el rele avisa del cierre.
+  B.cerrar();
+  cierre!();
+  B.escuchar();
+  expect(suscripciones).toBe(1);
+  expect(entrega).toBeNull();
+});

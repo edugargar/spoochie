@@ -12,6 +12,17 @@ export type Invitacion = {
   i?: { id: string; name: string; pk?: string; np?: string; r?: string[] };
 };
 
+/**
+ * Lo que va dentro de una invitacion por Slack. El token del bot solo con `conSlack`:
+ * la cadena es JSON en base64, cualquiera la abre con un decodificador, y un companero
+ * lo hizo el primer dia y vio el token de la app. Con Nostr el recien llegado no lo
+ * necesita: su demonio habla cifrado por los reles, y los avisos por DM se los manda el
+ * bot de quien le escribe. Sin el token, la cadena solo lleva claves publicas y su id.
+ */
+export function datosInvitacion(x: { bot: string; team?: string; dest: { id: string; name: string }; yo: Invitacion["i"]; conSlack?: boolean }): Invitacion {
+  return { ...(x.conSlack ? { b: x.bot } : {}), t: x.team, u: x.dest.id, n: x.dest.name, i: x.yo };
+}
+
 export function crearInvitacion(inv: Invitacion): string {
   return Buffer.from(JSON.stringify(inv)).toString("base64url");
 }
@@ -54,11 +65,14 @@ export function leerInvitacion(blob: string): Invitacion | null {
 
 /** El DM que recibe quien se da de alta. Lleva todo lo que tiene que hacer, en
  *  orden, con la cadena ya dentro: no hay nada que pedir aparte. */
-export function textoInvitacion(blob: string, quien: string, repo = ORIGEN): string {
+export function textoInvitacion(blob: string, quien: string, repo = ORIGEN, conToken = false): string {
   const arroba = quien.toLowerCase().replace(/\s+/g, "");
   return [
     `${quien} te invita a spoochie: un tunel entre tu sesion de Claude Code y la suya.`,
     `Nadie escribe en tu maquina y ningun tunel se abre sin que tu aceptes.`,
+    conToken
+      ? `La cadena de abajo lleva el token del bot de Slack de la app: no la pegues en ningun sitio publico.`
+      : `La cadena de abajo solo lleva claves publicas de ${quien} y tu id de Slack. No hay ninguna contrasena dentro.`,
     ``,
     `Para entrar no hace falta instalar nada antes:`,
     `1. En Claude Code:  /plugin marketplace add ${repo}`,

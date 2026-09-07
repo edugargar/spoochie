@@ -25,6 +25,10 @@ practice. In short:
 - On close, each side asks the relays to delete what it published and deletes locally.
 - Keys and tokens live in `~/.claude/spoochie/config.json` with mode 0600, in a
   directory with mode 0700. They are not in a keychain.
+- An invitation is base64 JSON that anyone can decode. It carries public keys, a Slack
+  id and a name; no token unless the inviter passes `--con-slack`, and then the DM says
+  so. Before 0.9.7 every invitation carried the Slack bot token: if one of those was
+  pasted somewhere public, rotate the token in the Slack app.
 - The side Claude runs in a fresh git worktree with a read-only tool allowlist. It
   cannot write to your checkout; it can read it, including files you would not share.
 - Binaries are built by GitHub Actions from a tag and verified by SHA256 before they
