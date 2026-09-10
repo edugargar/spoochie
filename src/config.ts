@@ -32,6 +32,9 @@ export type Config = {
     /** Consentimiento permanente y acotado: nombres de repo cuyos spoochies de esta
      *  persona entran sin sacar el dialogo. Por persona Y por repo, nunca global. */
     auto?: string[];
+    /** Cuando llego el ultimo sobre suyo. Es lo mas cerca de "esta ahi" que se puede
+     *  decir sin inventarse un sondeo: no dice si esta ahora, dice cuando estuvo. */
+    visto?: number;
   }>;
   /** Invitaciones sin canjear, por nonce: a quien se invito y cuando. Un hola por Nostr
    *  solo entra con uno de estos (claves.ts). Caducan a los 30 dias. */
@@ -136,4 +139,20 @@ export function contact(c: Config, needle: string): { id: string; name: string; 
 export function save(c: Config) {
   ensureDirs();
   writeFileSync(FILE, JSON.stringify(c, null, 2), { mode: 0o600 });
+}
+
+/**
+ * Apunta que se ha oido a alguien. Se llama al recibir un sobre suyo, sea por donde sea.
+ *
+ * No es presencia en vivo: no hay ningun "estas ahi?" que mandar, y meterlo obligaria a
+ * tocar el protocolo para responder a algo que la propia conversacion ya contesta. Lo
+ * que se guarda es un hecho que ya tenemos: cuando llego lo ultimo suyo. `spoochie
+ * contacts` lo pinta, y con eso se decide si abrir un tunel ahora o escribir por Slack.
+ */
+export function tocarContacto(remitente: { id?: string; npub?: string }, ahora = Date.now()) {
+  const c = load();
+  const x = (remitente.id ? contactById(c, remitente.id) : null) ?? (remitente.npub ? contactoPorNpub(c, remitente.npub) : null);
+  if (!x) return;
+  (x as { visto?: number }).visto = ahora;
+  save(c);
 }

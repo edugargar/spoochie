@@ -703,6 +703,7 @@ export class SlackBridge {
           continue;
         }
         const firma = verificarSobre(env, texto);
+        if (firma === "ok" || firma === "nueva" || firma === "vieja") Cfg.tocarContacto({ id: env.from });
         // Lo que no se entrega, y por que. Antes solo se paraba "mala"; una firma buena
         // de un sobre viejo reenviado, o de uno dirigido a otra persona, entraba igual.
         const NO_ENTRA: Record<string, string> = {

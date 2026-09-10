@@ -60,3 +60,23 @@ test("el nombre del repo es el ultimo trozo de la ruta, con o sin barra final", 
   expect(nombreRepo("/Users/x/repos/anthias")).toBe("anthias");
   expect(nombreRepo("/Users/x/repos/anthias/")).toBe("anthias");
 });
+
+test("de un contacto se guarda cuando se le oyo, no si esta ahi ahora", async () => {
+  const Cfg = await import("../src/config.ts");
+  const { hace } = await import("../src/confianza.ts");
+  Cfg.save({ guardian: false, transcript: false, contacts: { sam: { id: "U_SAM", name: "Sam", npub: "c".repeat(64) } } });
+  Cfg.tocarContacto({ id: "U_SAM" }, 1_000_000);
+  expect((Cfg.contactById(Cfg.load(), "U_SAM") as any).visto).toBe(1_000_000);
+  // Tambien por clave Nostr, que es como llega sin Slack.
+  Cfg.tocarContacto({ npub: "c".repeat(64) }, 2_000_000);
+  expect((Cfg.contactById(Cfg.load(), "U_SAM") as any).visto).toBe(2_000_000);
+  // Y un desconocido no entra en la agenda por escribir.
+  Cfg.tocarContacto({ id: "U_NADIE" }, 3_000_000);
+  expect(Cfg.contactById(Cfg.load(), "U_NADIE")).toBeNull();
+
+  const t0 = 1_700_000_000_000;
+  expect(hace(t0, t0 + 30_000)).toBe("ahora mismo");
+  expect(hace(t0, t0 + 4 * 60_000)).toBe("hace 4 min");
+  expect(hace(t0, t0 + 3 * 3600_000)).toBe("hace 3 h");
+  expect(hace(t0, t0 + 5 * 24 * 3600_000)).toBe("hace 5 dias");
+});

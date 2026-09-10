@@ -77,3 +77,13 @@ export function ponerNivel(c: Cfg.Config, nombre: string, nivel: Nivel): { ok: f
   if (nivel === "normal") delete contacto.nivel; else contacto.nivel = nivel;
   return { ok: true };
 }
+
+/** "hace 4 min", "hace 3 h", "hace 2 dias". Sin decimales: es una orientacion, no un dato. */
+export function hace(cuando: number, ahora = Date.now()): string {
+  const min = Math.floor((ahora - cuando) / 60000);
+  if (min < 1) return "ahora mismo";
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 48) return `hace ${h} h`;
+  return `hace ${Math.round(h / 24)} dias`;
+}
