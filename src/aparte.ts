@@ -20,7 +20,7 @@ import { spawn, spawnSync, execFileSync, type ChildProcess } from "node:child_pr
 import { chmodSync, mkdirSync, openSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ROOT, ensureDirs } from "./paths.ts";
+import { ROOT, ensureDirs, entornoLimpio } from "./paths.ts";
 import * as T from "./threads.ts";
 import { register, type SessionRecord } from "./registry.ts";
 
@@ -215,7 +215,7 @@ export function lanzar(t: T.Thread, cwd: string, como: Modo = modo()): Aparte | 
   ensureDirs();
   mkdirSync(APARTE_DIR, { recursive: true, mode: 0o700 });
   const base = { sessionId: sesionAparte(t.id), name: nombreAparte(t.id), cwd, startedAt: Date.now(), aparte: t.id };
-  const env = { ...process.env, SPOOCHIE_APARTE: t.id, SPOOCHIE_APARTE_SESION: base.sessionId };
+  const env = entornoLimpio({ SPOOCHIE_APARTE: t.id, SPOOCHIE_APARTE_SESION: base.sessionId });
 
   if (como === "ventana") {
     const script = join(APARTE_DIR, `${t.id}.command`);

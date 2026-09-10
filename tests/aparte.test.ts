@@ -136,3 +136,32 @@ test("el primer turno lleva quien es, como contestar y lo dicho hasta ahora", ()
   expect(p).not.toContain("esto no");
   expect(p).toContain("Ana");
 });
+
+test("el entorno de un hijo no lleva el buzon de la sesion que lo arranco", async () => {
+  const { entornoLimpio } = await import("../src/paths.ts");
+  const base = {
+    // Lo que hay de verdad en una sesion de Claude Code que arranca la CLI.
+    CLAUDE_CODE_MESSAGING_SOCKET: "/tmp/cc-socks/123.sock",
+    CLAUDE_CODE_MESSAGING_TOKEN: "secreto",
+    CLAUDE_CODE_ENTRYPOINT: "cli",
+    AWS_SECRET_ACCESS_KEY: "no",
+    GITHUB_TOKEN: "tampoco",
+    PATH: "/usr/bin", HOME: "/Users/x", TERM: "xterm-256color",
+    SPOOCHIE_HOME: "/tmp/sp", ANTHROPIC_API_KEY: "sk-ant-x", CLAUDE_CONFIG_DIR: "/Users/x/.claude",
+  };
+  const env = entornoLimpio({ SPOOCHIE_APARTE: "v1" }, base as any);
+  // La llave del buzon donde trabaja la persona no viaja al proceso que atiende a otra.
+  expect(env.CLAUDE_CODE_MESSAGING_SOCKET).toBeUndefined();
+  expect(env.CLAUDE_CODE_MESSAGING_TOKEN).toBeUndefined();
+  expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
+  // Ni credenciales de otras cosas que esten sueltas en la terminal.
+  expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+  expect(env.GITHUB_TOKEN).toBeUndefined();
+  // Lo que si hace falta para que el hijo arranque y encuentre lo suyo.
+  expect(env.PATH).toBe("/usr/bin");
+  expect(env.HOME).toBe("/Users/x");
+  expect(env.SPOOCHIE_HOME).toBe("/tmp/sp");
+  expect(env.SPOOCHIE_APARTE).toBe("v1");
+  expect(env.ANTHROPIC_API_KEY).toBe("sk-ant-x");
+  expect(env.CLAUDE_CONFIG_DIR).toBe("/Users/x/.claude");
+});

@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSyn
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ROOT, DAEMON_LOG, DAEMON_LOCK, ensureDirs } from "./paths.ts";
+import { ROOT, DAEMON_LOG, DAEMON_LOCK, ensureDirs, entornoLimpio } from "./paths.ts";
 import { VERSION } from "./version.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -178,5 +178,7 @@ export function arrancarDemonio() {
   }
   const out = openSync(DAEMON_LOG, "a");
   const [cmd, ...args] = comandoDemonio();
-  spawn(cmd, args, { detached: true, stdio: ["ignore", out, out] }).unref();
+  // Sin el entorno de quien lo arranca: la CLI corre dentro de una sesion de Claude
+  // Code, y su buzon (CLAUDE_CODE_MESSAGING_*) no tiene por que llegar al demonio.
+  spawn(cmd, args, { detached: true, stdio: ["ignore", out, out], env: entornoLimpio() }).unref();
 }
