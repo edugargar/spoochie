@@ -294,9 +294,15 @@ test("un hola por Slack trae la clave Nostr del otro y se guarda en la agenda; e
   expect(posts[0].channel).toBe("D_X");
   expect(posts[0].metadata.event_payload).toMatchObject({ kind: "hola", np: "a".repeat(64), r: ["wss://x"], fromName: "Edu" });
   // Va firmado con mi clave ed25519: sin eso, cualquiera con el token del bot pone una clave a mi nombre.
+  // Desde 0.9.9 la firma ata ademas a quien va, cuando se firmo y con que version.
   const { comprobar } = await import("../src/firma.ts");
   const p = posts[0].metadata.event_payload;
-  expect(comprobar(p.pk, "hola", "hola", "U_EDU", p.np, p.sig)).toBe(true);
+  expect(p.sv).toBe(2);
+  expect(p.to).toBe("U_SAM");
+  expect(p.ts).toBeGreaterThan(0);
+  expect(comprobar(p.pk, p, p.np, p.sig)).toBe(true);
+  // Y cambiar a quien iba dirigido la rompe.
+  expect(comprobar(p.pk, { ...p, to: "U_OTRO" }, p.np, p.sig)).toBe(false);
   expect(comprobar(p.pk, "hola", "hola", "U_EDU", "b".repeat(64), p.sig)).toBe(false);
 
   const recibidos: any[] = [];
