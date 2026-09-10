@@ -31,7 +31,7 @@ export type Msg = {
   retenido?: "si" | "suelto" | "descartado";
   peligro?: string;
   /** Que dijo la firma del sobre al llegar por Slack. Ver firma.ts. */
-  firma?: "ok" | "nueva" | "vieja" | "caducada" | "ajena" | "sin-firma" | "mala";
+  firma?: "ok" | "nueva" | "vieja" | "caducada" | "ajena" | "degradada" | "sin-firma" | "mala";
 };
 
 export type ThreadState = "pending" | "open" | "closed";

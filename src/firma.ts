@@ -15,9 +15,10 @@ export type Claves = { pub: string; priv: string };
  *   vieja      firma valida pero de la v1 (anterior a 0.9.9): no ata destinatario ni hora
  *   caducada   firma buena, pero el sobre es de hace mas de un dia o del futuro
  *   ajena      firma buena, pero el sobre iba dirigido a otra persona
- *   sin-firma  no trae firma
+ *   degradada  no trae firma, pero de ese id ya tenia una clave fijada
+ *   sin-firma  no trae firma, y de ese id no se nada todavia
  *   mala       la firma no cuadra, o la clave no es la que tenia fijada */
-export type Veredicto = "ok" | "nueva" | "vieja" | "caducada" | "ajena" | "sin-firma" | "mala";
+export type Veredicto = "ok" | "nueva" | "vieja" | "caducada" | "ajena" | "degradada" | "sin-firma" | "mala";
 
 export function nuevasClaves(): Claves {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -130,7 +131,13 @@ export type SobreAVerificar = DatosSobre & {
 };
 
 export function verificarSobre(env: SobreAVerificar, text: string, ahora = Date.now()): Veredicto {
-  if (!env.sig || !env.pk) return "sin-firma";
+  if (!env.sig || !env.pk) {
+    // Si ya tengo fijada una clave para ese id, un sobre suyo sin firma no es una
+    // version vieja: es alguien quitando la firma para colarse por la puerta que
+    // dejamos abierta a las versiones viejas. Tolerar eso convierte la firma en un
+    // adorno, porque atacar es no firmar.
+    return Cfg.contactById(Cfg.load(), env.from)?.pk ? "degradada" : "sin-firma";
+  }
 
   if (env.sv === 2) {
     if (!comprobar(env.pk, env, text, env.sig)) return "mala";
