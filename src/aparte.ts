@@ -37,9 +37,11 @@ export function comandoCli(): string {
  *  Si la maquina tiene rtk (un proxy que reescribe cada comando a `rtk <cmd>` con un
  *  hook), los mismos comandos con `rtk` delante tambien: si no, cada git preguntaba. */
 export function herramientasPermitidas(cli = comandoCli(), conRtk = Boolean(Bun.which("rtk"))): string[] {
-  // `git branch` a secas admite -D y -f; solo se permite listar. Lo que queda es de
-  // lectura en la practica: `git diff --output=<fichero>` podria escribir uno, y el patron
-  // de allowedTools no filtra argumentos. Se asume y se dice.
+  // `git branch` a secas admite -D y -f; solo se permite listar. El patron de
+  // allowedTools casa por prefijo y no mira los argumentos, asi que esta lista por si
+  // sola dejaba pasar `git diff --output=<fichero>`, que escribe. Quien mira los
+  // argumentos es el portero (portero.ts), enganchado como hook PreToolUse en
+  // `ajustesAparte`. Esta lista decide QUE programa; el portero decide COMO.
   const git = ["diff", "log", "show", "status", "branch --list", "blame", "grep", "ls-files"].map(g => `git ${g}`);
   const sp = ["say", "patch", "branch", "show", "list", "close", "transcript"].map(c => `${cli} ${c}`);
   const cmds = [...git, ...sp];
@@ -52,6 +54,24 @@ export function herramientasPermitidas(cli = comandoCli(), conRtk = Boolean(Bun.
 /** Lo que el Claude aparte no puede hacer ni aunque el modo de permisos lo dejara:
  *  las reglas de denegacion mandan sobre cualquier modo. */
 export const HERRAMIENTAS_PROHIBIDAS = ["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash(git push:*)", "Bash(git commit:*)", "Bash(git checkout:*)", "Bash(git reset:*)", "Bash(rm:*)"];
+
+/** Los ajustes con los que arranca el Claude aparte.
+ *
+ *  `crossSessionInbound: accept` es lo que hace que el tunel le entregue los turnos.
+ *  El hook `PreToolUse` es el portero: la lista blanca de arriba casa por prefijo y no
+ *  mira los argumentos, asi que `git diff --output=fichero` la pasaba. El portero ve la
+ *  linea entera antes de ejecutarla. Los dos modos (ventana y fondo) usan estos mismos
+ *  ajustes: un aparte que se comporta distinto segun donde corre no es un control. */
+export function ajustesAparte(cli = comandoCli()): Record<string, unknown> {
+  return {
+    crossSessionInbound: "accept",
+    hooks: {
+      PreToolUse: [
+        { matcher: "Bash", hooks: [{ type: "command", command: `${cli} portero` }] },
+      ],
+    },
+  };
+}
 
 /** Con que modo de permisos arranca la ventana. "auto" por defecto: lo que no esta en la
  *  lista blanca lo decide el clasificador de Claude Code en vez de parar a preguntar; la
@@ -143,7 +163,7 @@ export function scriptVentana(t: T.Thread, cwd: string, sessionId: string): stri
     `printf '\\033]0;spoochie ${t.id}\\007'`,
     `echo ${sq(`spoochie ${t.id} · ${t.subject}`)}`,
     `echo ${sq(`Claude aparte: solo lectura + spoochie say. Puedes escribirle aqui. Cerrar la ventana cierra el spoochie.`)}`,
-    `exec ${sq(claude)} --name ${sq(`spoochie-${t.id}`)} --permission-mode ${modoPermisos()} --allowedTools ${sq(herramientasPermitidas().join(","))} --disallowedTools ${sq(HERRAMIENTAS_PROHIBIDAS.join(","))} --settings ${sq(JSON.stringify({ crossSessionInbound: "accept" }))}${dev ? ` --plugin-dir ${sq(dev)}` : ""}`,
+    `exec ${sq(claude)} --name ${sq(`spoochie-${t.id}`)} --permission-mode ${modoPermisos()} --allowedTools ${sq(herramientasPermitidas().join(","))} --disallowedTools ${sq(HERRAMIENTAS_PROHIBIDAS.join(","))} --settings ${sq(JSON.stringify(ajustesAparte()))}${dev ? ` --plugin-dir ${sq(dev)}` : ""}`,
     ``,
   ].join("\n");
 }
@@ -196,7 +216,7 @@ export function lanzar(t: T.Thread, cwd: string, como: Modo = modo()): Aparte | 
   const child = spawn("claude", [
     "-p", "--verbose",
     "--input-format", "stream-json", "--output-format", "stream-json",
-    "--settings", JSON.stringify({ crossSessionInbound: "accept" }),
+    "--settings", JSON.stringify(ajustesAparte()),
     "--name", `spoochie-${t.id}`,
     "--permission-mode", "default",
     "--allowedTools", herramientasPermitidas().join(","),
