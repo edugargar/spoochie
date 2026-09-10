@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { escanear, juzgarBash, portero } from "../src/portero.ts";
-import { ajustesAparte, banderasAparte, modoPermisos, scriptVentana, MODELO_APARTE, presupuestoAparte, PRESUPUESTO_APARTE } from "../src/aparte.ts";
+import { ajustesAparte, banderasAparte, modoPermisos, scriptVentana, MODELO_APARTE, presupuestoAparte, PRESUPUESTO_APARTE, primerTurno } from "../src/aparte.ts";
 
 const CLI = "/usr/local/bin/spoochie";
 const CLI_DEV = "/opt/bun run /repo/src/cli.ts";
@@ -192,4 +192,18 @@ test("crossSessionInbound solo puede ser accept: los ajustes del aparte son solo
   expect(script).toContain("crossSessionInbound");
   // Ni settings.json del proyecto ni del usuario: solo el proceso que se lanza aqui.
   expect(script).not.toContain(".claude/settings.json");
+});
+
+test("el primer turno del aparte lleva la regla de no afirmar lo que no ha leido", () => {
+  // Es la ventaja entera de spoochie frente a preguntarle a un modelo: la respuesta
+  // sale de ficheros leidos en la maquina del otro. En cuanto el aparte empiece a
+  // coordinar en vez de leer, esta regla es lo unico que la sostiene, asi que tiene su
+  // test antes que cualquier funcion de coordinacion, no despues.
+  const t: any = { id: "v1", subject: "el modal", from: { sessionId: "A", name: "a", cwd: "/a", human: "Ana" }, to: { sessionId: "B", name: "b", cwd: "/b", human: "Edu" }, context: {}, state: "open", messages: [] };
+  const turno = primerTurno(t, "B", "/usr/local/bin/spoochie", "/repo");
+  expect(turno).toContain("si no lo has leido, no lo afirmas");
+  expect(turno).toContain("no lo veo desde aqui");
+  expect(turno).toContain("Nunca contestes de memoria");
+  // Y dice desde donde lee, que es lo que hace comprobable la regla.
+  expect(turno).toContain("/repo");
 });
