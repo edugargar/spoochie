@@ -121,8 +121,8 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   Alta de otra persona, en un pegado:
   spoochie invite --to <U0..|email> [--name Sam]   el bot le manda la invitacion por DM, con los pasos
   spoochie invite                        o imprime la linea para mandarsela tu
-  spoochie join <cadena> [--email <mail>] la que ejecuta quien se da de alta
-      (el email sale de git config si no lo pasas; pega la linea entera, se limpia sola)
+  spoochie join <cadena> [--user <U0..>] la que ejecuta quien se da de alta
+      (pega la linea entera, se limpia sola; la cadena no lleva ningun token dentro)
 
   Alta a mano, si prefieres los tokens uno a uno:
   spoochie slack setup --token xoxp-... --bot-token xoxb-...
@@ -292,39 +292,33 @@ async function main() {
         console.error(`no se a quien mandarsela: pasa su id de Slack, --to U01234567 (esta en su perfil, "Copiar id de miembro").`);
         process.exit(1); return;
       }
-      const conSlack = has(rest, "con-slack");
       const { nuevaInvitacion } = await import("./claves.ts");
       const k = nuevaInvitacion(c, dest);
       Cfg.save(c);
-      const blob = crearInvitacion(datosInvitacion({ bot, team: quien.team, dest, yo, conSlack, k }));
+      const blob = crearInvitacion(datosInvitacion({ team: quien.team, dest, yo, k }));
       const im = await api("conversations.open", { users: dest.id });
       if (!im.ok) { console.error(`no puedo abrir el DM con ${dest.name}: ${im.error}`); process.exit(1); return; }
-      const post = await api("chat.postMessage", { channel: im.channel.id, text: textoInvitacion(blob, yo.name, undefined, conSlack) });
+      const post = await api("chat.postMessage", { channel: im.channel.id, text: textoInvitacion(blob, yo.name) });
       if (!post.ok) { console.error(`no he podido mandar el DM: ${post.error}`); process.exit(1); return; }
       Cfg.addContact(c, dest); Cfg.save(c);
       console.log(`Enviada a ${dest.name} por DM del bot, con los pasos dentro. Ya puedes escribirle @${Cfg.claveContacto(dest.name)}.`);
       return;
     }
 
-    const r = await api("users.list", { limit: 1 });
-    const conSlack = has(rest, "con-slack");
     const { nuevaInvitacion } = await import("./claves.ts");
     const k = nuevaInvitacion(c, { name: flag(rest, "name") });
     Cfg.save(c);
-    const blob = crearInvitacion(conSlack ? { b: bot, t: quien.team, i: yo, k } : { t: quien.team, i: yo, k });
+    const blob = crearInvitacion({ t: quien.team, i: yo, k });
     console.log(`Mandale esto a quien quieras dar de alta. Es una linea:\n`);
     console.log(`  /spoochie:join ${blob}\n`);
-    if (!conSlack) console.log(`Lleva tus claves publicas y nada mas. Para que le avisen por Slack, que anada --user <su id de Slack>. Con --con-slack la cadena lleva ademas el token del bot.`);
-    else if (r.ok) console.log(`Su email lo saca de git; si no cuadra con Slack, que anada --email <mail>.`);
-    else {
-      console.log(`Ojo: la app no tiene users:read de bot, asi que tendra que anadir --user <su id de Slack>.`);
-      console.log(`Mas facil: spoochie invite --to <su id>, y el bot le manda la invitacion ya resuelta por DM.`);
-    }
+    console.log(`Lleva tus claves publicas y nada mas: ninguna contrasena, ningun token.`);
+    console.log(`Como la cadena no lleva token, quien entra tiene que decir quien es en Slack: que anada --user <su id de Slack>.`);
+    console.log(`Mas facil: spoochie invite --to <su id>, y el bot le manda la invitacion ya resuelta por DM.`);
     return;
   }
 
   if (cmd === "join") {
-    const { limpiarCadena, leerInvitacion, emailDeGit } = await import("./alta.ts");
+    const { limpiarCadena, leerInvitacion } = await import("./alta.ts");
     // Se limpia todo lo pegado, no solo rest[0]: quien se da de alta pega la linea
     // entera tal cual se la mandaron, con "spoochie join" delante y comillas de Slack.
     const blob = limpiarCadena(rest.join(" "));
@@ -336,39 +330,23 @@ async function main() {
     const datos = leerInvitacion(blob);
     if (!datos) { console.error("esa cadena no es una invitacion de spoochie"); process.exit(2); return; }
 
-    const { whoIs } = await import("./slack.ts");
-    const bot = datos.b ? await whoIs(datos.b) : null;
-    if (datos.b && !bot) { console.error("el token de la invitacion ya no vale. Pide otra."); process.exit(1); }
-
-    // Tu id de Slack: por email si el bot puede buscar, o a mano.
-    let userId = flag(rest, "user") ?? datos.u;
-    const email = userId || !datos.b ? undefined : (flag(rest, "email") ?? emailDeGit());
-    if (!userId && email && datos.b) {
-      const r = await fetch(`https://slack.com/api/users.lookupByEmail?email=${encodeURIComponent(email)}`,
-        { headers: { authorization: `Bearer ${datos.b}` } });
-      const j = await r.json();
-      if (j.ok) userId = j.user.id;
-      else if (j.error === "missing_scope") {
-        // Esto no lo arregla quien se da de alta: es la app de Slack, que no lleva
-        // users:read de bot. Culparle del email le manda a mirar donde no esta el fallo.
-        console.error(`la app de Slack no puede buscar personas (falta users:read de bot). Eso lo arregla quien te invita.`);
-        console.error(`Mientras tanto, pasa tu id de Slack, que esta en tu perfil ("Copiar id de miembro"):`);
-        console.error(`  spoochie join <cadena> --user U01234567`);
-        process.exit(1);
-      } else {
-        console.error(`no te encuentro en Slack como ${email} (${j.error}).`);
-        console.error(`Pasa el email con el que entras en Slack:  spoochie join <cadena> --email <mail>`);
-        console.error(`O tu id, que esta en tu perfil de Slack ("Copiar id de miembro"):  --user U01234567`);
-        process.exit(1);
-      }
+    // Una invitacion de 0.9.7 o anterior hecha con --con-slack traia el token del bot
+    // dentro. Aqui se tira: aceptar una credencial de todo el equipo porque venia en una
+    // cadena pegada es justo lo que dejamos de hacer. Se dice, porque quien la mando
+    // tiene que saber que la ha repartido y rotarla.
+    if (datos.traiaToken) {
+      console.error(`Ojo: esa invitacion lleva dentro el token del bot de Slack del equipo. No lo he guardado.`);
+      console.error(`Diselo a quien te la mando: esa credencial ha viajado por un DM y toca rotarla en la app de Slack.`);
     }
-    if (!userId && datos.b) { console.error("dime quien eres:  --email <tu-email>  o  --user <U0123>"); process.exit(2); }
+
+    // Tu id de Slack: el que puso quien invita, o el que pases tu. Sin token no hay
+    // nada que preguntarle a Slack, asi que ya no se busca por email.
+    const userId = flag(rest, "user") ?? datos.u;
 
     const c = Cfg.load();
-    if (datos.b && userId) c.slack = { botToken: datos.b, userId, pollMs: 20_000 };
-    // Sin token, el id de Slack sirve igual: va en el hola para que quien me escriba me
-    // avise por DM con su bot, y para que Slack siga siendo el sitio donde me entero.
-    else if (userId && !c.slack?.botToken) c.slack = { ...c.slack, userId };
+    // El id de Slack sirve sin token: va en el hola para que quien me escriba me avise
+    // por DM con su bot, y para que Slack siga siendo el sitio donde me entero.
+    if (userId && !c.slack?.botToken) c.slack = { ...c.slack, userId };
     // El nombre: el que diga --nombre, el que puso quien invita, y si no el usuario del
     // sistema (que en la primera prueba real salio como el usuario de la maquina en todo el hilo).
     if (!c.human || c.human === userInfo().username) c.human = flag(rest, "nombre") ?? datos.n ?? c.human ?? userInfo().username;
@@ -379,7 +357,8 @@ async function main() {
     const nk = N.misClaves(c);
     Cfg.save(c);
     if (datos.i) console.log(`Te ha invitado ${datos.i.name}: ya puedes escribirle @${Cfg.claveContacto(datos.i.name)}.`);
-    if (bot) console.log(`Listo. Estas dentro de ${bot.team} como ${userId}${email ? ` (${email})` : ""}, y el bot es ${bot.user}.`);
+    if (userId) console.log(`Listo${datos.t ? ` en ${datos.t}` : ""}, como ${userId}. Los avisos por Slack te los manda el bot de quien te escriba.`);
+    else console.log(`Listo. No me has dicho tu id de Slack, asi que no habra avisos por DM: pasalo con --user U01234567 y vuelve a pegar la invitacion.`);
     console.log(`Tu clave Nostr: ${N.npub(nk.pk)} (reles: ${N.misReles(c).join(", ")}).`);
     // El saludo: quien invito recibe mi clave por Nostr y ya puede abrirme spoochies cifrados.
     if (datos.i?.np) {

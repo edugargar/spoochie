@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.9 (2026-09-10)
+
+- Security: `spoochie invite --con-slack` is gone. It was the one remaining way to put the Slack bot token, a credential for the whole team, inside a base64 string sent over a DM. A newcomer does not need it: their daemon talks over Nostr and the notification DM comes from the opener's bot. The cost is that a newcomer can no longer reach a contact still on the pre-0.9 Slack transport; that contact updates instead. `join` reads a pre-0.9.9 invitation that still carries a token, drops the token, and says it must be rotated.
+- Security: the side Claude's Bash calls now go through a `PreToolUse` hook (the *portero*) that reads the actual command line. `--allowedTools` matches by prefix and cannot filter arguments, so `Bash(git diff:*)` let through `git diff --output=<file>` (writes), `git diff --no-index /etc/passwd` (reads outside the repo), `git -c core.pager=id log` (runs a program) and anything after a `;` or `&&`. Measured before the change: five of six such shapes passed. The scanner respects quotes, so a `;` inside a message body is still just text.
+- The side Claude launches with the same flags in a window and in the background. They had drifted: the window used `auto`, the background had `default` hardcoded, which is the mode that cannot ask anyone.
+
 ## 0.9.8 (2026-09-07)
 
 - Security: a Nostr key enters your contacts only with the one-time nonce of your own invitation, bound to what you wrote when inviting; a hola over Slack must be signed with the pinned ed25519 key; an existing key is never replaced by a hola. Before, anyone with your npub and a teammate's Slack id could put their own key under that teammate's name. `spoochie contacts` lists keys and `--olvidar-clave` drops one.
