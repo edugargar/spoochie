@@ -45,7 +45,15 @@ export type Envelope = {
   fromName?: string;
   kindOfMsg?: T.MsgKind;
   context?: unknown;
-  /** Clave publica de quien firma y firma de (id, kind, from, texto). Ver firma.ts. */
+  /** Para quien va, por su id de Slack. Va dentro de la firma: sin esto, un sobre
+   *  bien firmado se podia reenviar al hilo de otra persona. Vacio en un "hola". */
+  to?: string;
+  /** Cuando se firmo, en segundos. Va dentro de la firma: sin esto, un sobre guardado
+   *  se podia volver a soltar meses despues y seguia siendo valido. */
+  ts?: number;
+  /** Version de la firma. 2 desde 0.9.9; ausente en sobres anteriores. */
+  sv?: number;
+  /** Clave publica de quien firma y firma de todo lo de arriba mas el texto. Ver firma.ts. */
   pk?: string;
   sig?: string;
   /** En el aviso que se deja en el DM del receptor: donde esta el hilo de verdad
@@ -57,6 +65,21 @@ export type Envelope = {
   np?: string;
   r?: string[];
 };
+
+/** El sobre de un "hola" ya firmado. Lo firma la clave ed25519 que el otro lado tiene
+ *  fijada de mis sobres anteriores: sin firma, cualquiera con el token del bot podia
+ *  poner una clave Nostr a mi nombre. Va atado a quien lo recibe y a la hora, como
+ *  cualquier otro sobre desde 0.9.9. */
+export function holaFirmado(me: string, to: string, nombre: string, np: string, r: string[]): Envelope & { np: string; r: string[] } {
+  const env: Envelope & { np: string; r: string[] } = {
+    v: 1, id: "hola", kind: "hola", from: me, to, fromName: nombre, np, r,
+    app: VERSION, ts: Math.floor(Date.now() / 1000), sv: 2,
+  };
+  const k = misClaves(Cfg.load());
+  env.pk = k.pub;
+  env.sig = firmar(k.priv, env, np);
+  return env;
+}
 
 /** Slack corta cada bloque a 3000 caracteres. Trocear por lineas en vez de rebanar,
  *  que es lo que dejaba un mensaje terminado en "p" a mitad de palabra. */
@@ -416,7 +439,7 @@ export class SlackBridge {
       v: 1, id: t.id, kind: "invite", from: t.from.slackUser ?? this.me,
       subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context,
     };
-    this.firma(env, t.messages[0]?.text ?? "");
+    this.firma(env, t.messages[0]?.text ?? "", t.to.slackUser);
     const post = await this.call("chat.postMessage", {
       channel,
       text: `Spoochie de ${t.from.human ?? t.from.name}: ${t.subject}`,
@@ -457,7 +480,7 @@ export class SlackBridge {
         blocks: [ctx(`:key: ${nombre} ya puede hablar contigo por Nostr: los spoochies entre vosotros iran cifrados y no pasaran por Slack. Slack seguira avisandote.`)],
         // Firmado con mi clave ed25519 (la que ya tienen fijada de mis sobres): sin
         // firma, cualquiera con el token del bot podia poner una clave a mi nombre.
-        metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: this.me, fromName: nombre, np, r, app: VERSION, pk: misClaves(Cfg.load()).pub, sig: firmar(misClaves(Cfg.load()).priv, "hola", "hola", this.me, np) } },
+        metadata: { event_type: EVENT, event_payload: holaFirmado(this.me, userId, nombre, np, r) },
       });
       return true;
     } catch { return false; }
@@ -508,7 +531,7 @@ export class SlackBridge {
       from: mine.slackUser ?? this.me,
       ...(m ? { kindOfMsg: m.kind } : {}),
     };
-    if (m) this.firma(env, m.text);
+    if (m) this.firma(env, m.text, T.otherSide(t, mine.sessionId).slackUser);
     const body = m
       ? { text: fallbackText(t, m), blocks: messageBlocks(t, m) }
       : noticeBlocks(t, notice);
@@ -673,9 +696,16 @@ export class SlackBridge {
         if (env.kind === "notice" || env.kind === "invite") continue;
         const texto = bodyFromBlocks((rep as any).blocks) || rep.text || "";
         const firma = verificarSobre(env, texto);
-        if (firma === "mala") {
+        // Lo que no se entrega, y por que. Antes solo se paraba "mala"; una firma buena
+        // de un sobre viejo reenviado, o de uno dirigido a otra persona, entraba igual.
+        const NO_ENTRA: Record<string, string> = {
+          mala: `llevaba una firma que no es suya`,
+          caducada: `venia firmado hace mas de un dia: alguien lo ha guardado y lo ha vuelto a soltar`,
+          ajena: `venia firmado para otra persona, no para ti`,
+        };
+        if (NO_ENTRA[firma]) {
           // No se entrega. Se dice en el hilo, que es donde lo ven las personas.
-          await this.aviso(t, `:no_entry: un mensaje que decia venir de ${env.fromName ?? env.from} llevaba una firma que no es suya. Descartado.`);
+          await this.aviso(t, `:no_entry: un mensaje que decia venir de ${env.fromName ?? env.from} ${NO_ENTRA[firma]}. Descartado.`);
           continue;
         }
         await this.onMessage(t, {
@@ -740,13 +770,18 @@ export class SlackBridge {
 
   /** Firma el sobre con mis claves. Si no hay claves (config de antes del alta con
    *  firma), el sobre sale sin firmar y el otro lado lo vera marcado. */
-  private firma(env: Envelope, text: string) {
+  private firma(env: Envelope, text: string, to?: string) {
     env.app = VERSION;
     const c = Cfg.load();
     if (!c.slack) return;
     const k = misClaves(c);
+    // Todo lo que la firma tiene que atar se pone ANTES de firmar, y viaja en el sobre
+    // para que el otro lado reconstruya los mismos bytes.
+    if (to) env.to = to;
+    env.ts = Math.floor(Date.now() / 1000);
+    env.sv = 2;
     env.pk = k.pub;
-    env.sig = firmar(k.priv, env.id, env.kind, env.from, text);
+    env.sig = firmar(k.priv, env, text);
   }
 
   /** Cual de los dos lados soy yo en este hilo. */
@@ -774,9 +809,13 @@ export class SlackBridge {
         continue;
       }
       if (!env || env.kind !== "invite" || known.has(env.id) || env.from === this.me) continue;
-      if (verificarSobre(env, bodyFromBlocks(msg.blocks)) === "mala") {
+      const vInv = verificarSobre(env, bodyFromBlocks(msg.blocks));
+      if (vInv === "mala" || vInv === "caducada" || vInv === "ajena") {
         known.add(env.id);
-        await this.avisoEn(ch, msg.thread_ts ?? msg.ts, `:no_entry: esta invitacion dice venir de ${env.fromName ?? env.from} pero la firma no es suya. Descartada.`);
+        const por = vInv === "mala" ? "pero la firma no es suya"
+          : vInv === "caducada" ? "pero se firmo hace mas de un dia"
+          : "pero venia firmada para otra persona";
+        await this.avisoEn(ch, msg.thread_ts ?? msg.ts, `:no_entry: esta invitacion dice venir de ${env.fromName ?? env.from} ${por}. Descartada.`);
         continue;
       }
       // Un spoochie que esta maquina ya conocio no vuelve, aunque se borre el estado.
