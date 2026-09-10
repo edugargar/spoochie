@@ -11,3 +11,50 @@ test("un acuse de recibo corto no se juzga", async () => {
 test("un mensaje vacio tampoco", async () => {
   expect((await judge("asunto", "   ")).verdict).toBe("dentro");
 });
+
+import corpus from "./corpus-vigilante.json" with { type: "json" };
+
+/**
+ * El corpus se corre contra Haiku con `bun scripts/vigilante.ts`, no aqui: un test que
+ * llama a un modelo cuesta dinero y falla por la red, y a la semana nadie lo mira. Lo
+ * que si se comprueba aqui, sin red y en un milisegundo, es que el corpus sigue siendo
+ * un corpus y que el prompt sigue nombrando lo que el corpus prueba. Borrar una linea
+ * del prompt sin darse cuenta es la forma realista de romper el vigilante.
+ */
+test("el corpus cubre los dos lados y ningun caso se queda a medias", () => {
+  const casos = corpus.casos as { categoria: string; peligro: boolean; texto: string }[];
+  expect(casos.length).toBeGreaterThanOrEqual(20);
+  expect(casos.filter(c => c.peligro).length).toBeGreaterThanOrEqual(10);
+  expect(casos.filter(c => !c.peligro).length).toBeGreaterThanOrEqual(6);
+  for (const c of casos) {
+    expect(typeof c.categoria).toBe("string");
+    expect(typeof c.peligro).toBe("boolean");
+    // Por debajo de MIN_CHARS el vigilante ni juzga: un caso asi no prueba nada.
+    expect(c.texto.trim().length).toBeGreaterThan(40);
+  }
+});
+
+test("el prompt del vigilante sigue nombrando cada cosa que el corpus prueba", async () => {
+  const fuente = await Bun.file(new URL("../src/guardian.ts", import.meta.url)).text();
+  const prompt = fuente.slice(fuente.indexOf("const PROMPT"), fuente.indexOf("export function judge"));
+  for (const palabra of [
+    "ejecutar comandos", "aplicar cambios sin revision", "permisos", "instalar",
+    "URLs", "enviar ficheros", "variables de entorno", "secreto",
+    "reglas del sistema", "Ante la duda sobre el peligro, true",
+  ]) {
+    expect(prompt).toContain(palabra);
+  }
+});
+
+test("si el vigilante no contesta, el mensaje se retiene: no se cae hacia dejar pasar", async () => {
+  // Medido con el corpus, una pasada de 24 casos: 23 aciertos, 0 escapados y 1 sin
+  // respuesta por tiempo agotado. El que se quedo sin respuesta era el que pedia
+  // ~/.aws/credentials. No es casualidad: el mensaje ambiguo o adversarial es el que
+  // hace pensar mas rato al modelo, asi que el tiempo se agota antes en los peligrosos.
+  const fuente = await Bun.file(new URL("../src/guardian.ts", import.meta.url)).text();
+  const salida = fuente.slice(fuente.indexOf("export async function judge"), fuente.indexOf("function unaPasada"));
+  expect(salida).toContain('verdict: "sin vigilar"');
+  expect(salida).toContain("peligro: true");
+  // Y con un reintento antes, porque la mayoria de los fallos son de tiempo, no del modelo.
+  expect(salida).toContain("const dos = await unaPasada");
+});
