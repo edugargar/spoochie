@@ -24,6 +24,7 @@ import * as T from "./threads.ts";
 import { VERSION, linea, masNuevaQue } from "./version.ts";
 import { PLUGIN } from "./origen.ts";
 import { subir, bajar } from "./files.ts";
+import { PROTOCOLO, leerVersion } from "./protocolo.ts";
 
 const API = "https://slack.com/api/";
 /** Cabecera legible por maquina que va en el primer mensaje del hilo. Es lo que
@@ -35,7 +36,7 @@ const API = "https://slack.com/api/";
 export const EVENT = "spoochie";
 
 export type Envelope = {
-  v: 1;
+  v: number;
   id: string;
   kind: "invite" | "msg" | "notice" | "accept" | "close" | "hola";
   /** Quien habla, por su id de Slack. Sin esto un demonio no distingue lo que postea
@@ -72,7 +73,7 @@ export type Envelope = {
  *  cualquier otro sobre desde 0.9.9. */
 export function holaFirmado(me: string, to: string, nombre: string, np: string, r: string[]): Envelope & { np: string; r: string[] } {
   const env: Envelope & { np: string; r: string[] } = {
-    v: 1, id: "hola", kind: "hola", from: me, to, fromName: nombre, np, r,
+    v: PROTOCOLO, id: "hola", kind: "hola", from: me, to, fromName: nombre, np, r,
     app: VERSION, ts: Math.floor(Date.now() / 1000), sv: 2,
   };
   const k = misClaves(Cfg.load());
@@ -436,7 +437,7 @@ export class SlackBridge {
     const { channel, tipo } = await this.hogar(t, dm);
     let aviso: { channel: string; ts: string } | undefined;
     const env: Envelope = {
-      v: 1, id: t.id, kind: "invite", from: t.from.slackUser ?? this.me,
+      v: PROTOCOLO, id: t.id, kind: "invite", from: t.from.slackUser ?? this.me,
       subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context,
     };
     this.firma(env, t.messages[0]?.text ?? "", t.to.slackUser);
@@ -492,7 +493,7 @@ export class SlackBridge {
   async avisarDm(userId: string, texto: string): Promise<boolean> {
     try {
       const im = await this.call("conversations.open", { users: userId });
-      await this.call("chat.postMessage", { channel: im.channel.id, text: texto, blocks: [ctx(texto)], metadata: { event_type: EVENT, event_payload: { v: 1, id: "aviso", kind: "notice", from: this.me } } });
+      await this.call("chat.postMessage", { channel: im.channel.id, text: texto, blocks: [ctx(texto)], metadata: { event_type: EVENT, event_payload: { v: PROTOCOLO, id: "aviso", kind: "notice", from: this.me } } });
       return true;
     } catch { return false; }
   }
@@ -526,7 +527,7 @@ export class SlackBridge {
     await this.pensandoOff(t);
     const mine = t.from.slackUser === this.me ? t.from : t.to;
     const env: Envelope = {
-      v: 1, id: t.id,
+      v: PROTOCOLO, id: t.id,
       kind: m ? "msg" : notice.includes("ha aceptado el tunel") ? "accept" : notice.includes("cerrado (") ? "close" : "notice",
       from: mine.slackUser ?? this.me,
       ...(m ? { kindOfMsg: m.kind } : {}),
@@ -564,7 +565,7 @@ export class SlackBridge {
         blocks: [ctx(`:hourglass_flowing_sand: _${quien} está mirando su código…_`)],
         // Sin sobre, el demonio del otro lado se lo tragaba como si fuera una persona
         // escribiendo, y su Claude recibia "Sam esta mirando su codigo" como un turno.
-        metadata: { event_type: EVENT, event_payload: { v: 1, id: t.id, kind: "notice", from: this.me } },
+        metadata: { event_type: EVENT, event_payload: { v: PROTOCOLO, id: t.id, kind: "notice", from: this.me } },
       });
       this.pensando.set(t.id, { ts: r.ts, desde: Date.now() });
     } catch {}
@@ -695,6 +696,12 @@ export class SlackBridge {
         if (env.kind === "close") { if (this.onCierre) await this.onCierre(t, /cerrado \(([^)]*)\)/.exec(rep.text ?? "")?.[1] ?? "cerrado por el otro lado"); continue; }
         if (env.kind === "notice" || env.kind === "invite") continue;
         const texto = bodyFromBlocks((rep as any).blocks) || rep.text || "";
+        // Antes que la firma: si no entiendo el sobre, no puedo afirmar nada sobre el.
+        const lectura = leerVersion(env.v, env.app);
+        if (!lectura.entiendo) {
+          await this.aviso(t, `:warning: un mensaje de ${env.fromName ?? env.from} ${lectura.por}`);
+          continue;
+        }
         const firma = verificarSobre(env, texto);
         // Lo que no se entrega, y por que. Antes solo se paraba "mala"; una firma buena
         // de un sobre viejo reenviado, o de uno dirigido a otra persona, entraba igual.
@@ -765,7 +772,7 @@ export class SlackBridge {
     try {
       await this.call("chat.postMessage", {
         channel, thread_ts, text: texto, blocks: [ctx(texto)],
-        metadata: { event_type: EVENT, event_payload: { v: 1, id: "aviso", kind: "notice", from: this.me } },
+        metadata: { event_type: EVENT, event_payload: { v: PROTOCOLO, id: "aviso", kind: "notice", from: this.me } },
       });
     } catch {}
   }
@@ -811,6 +818,12 @@ export class SlackBridge {
         continue;
       }
       if (!env || env.kind !== "invite" || known.has(env.id) || env.from === this.me) continue;
+      const lecturaInv = leerVersion(env.v, env.app);
+      if (!lecturaInv.entiendo) {
+        known.add(env.id);
+        await this.avisoEn(ch, msg.thread_ts ?? msg.ts, `:warning: una invitacion de ${env.fromName ?? env.from} ${lecturaInv.por}`);
+        continue;
+      }
       const vInv = verificarSobre(env, bodyFromBlocks(msg.blocks));
       if (vInv === "mala" || vInv === "caducada" || vInv === "ajena" || vInv === "degradada" || vInv === "desconocida") {
         known.add(env.id);

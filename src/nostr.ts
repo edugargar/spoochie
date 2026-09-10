@@ -25,6 +25,7 @@ import { SimplePool } from "nostr-tools/pool";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import * as Cfg from "./config.ts";
 import * as T from "./threads.ts";
+import { PROTOCOLO, leerVersion } from "./protocolo.ts";
 import { ROOT, ensureDirs } from "./paths.ts";
 import { MAX_BYTES, SPOOL } from "./files.ts";
 import { VERSION } from "./version.ts";
@@ -53,7 +54,7 @@ export const misReles = (c: Cfg.Config) => c.nostr?.relays?.length ? c.nostr.rel
 
 /** Lo que va en la etiqueta `sp` del rumor: el sobre de spoochie. */
 export type Sobre = {
-  v: 1;
+  v: number;
   id: string;
   kind: "invite" | "msg" | "accept" | "close" | "notice" | "hola" | "file";
   app?: string;
@@ -217,6 +218,15 @@ export class NostrBridge {
     this.guardarVistos();
     const a = abrir(ev, this.sk);
     if (!a) return;
+    // Si no entiendo el sobre no puedo tratarlo como si lo entendiera: le faltaria
+    // justo la parte que lo acota o la que lo retiene. Se dice y no se entrega.
+    const lectura = leerVersion(a.sobre.v, a.sobre.app);
+    if (!lectura.entiendo) {
+      this.cb.log("nostr", a.sobre.id, `sobre no entregado: ${lectura.por}`);
+      const t0 = T.load(a.sobre.id);
+      if (t0) await this.cb.onMessage(t0, { at: Date.now(), from: t0.from.sessionId === `nostr:${a.de}` ? t0.from.sessionId : t0.to.sessionId, author: "claude", kind: "text", text: `[spoochie] Un mensaje de la otra maquina no se ha entregado: ${lectura.por}`, firma: "ok" });
+      return;
+    }
     const c = Cfg.load();
     const contacto = Cfg.contactoPorNpub(c, a.de);
     if (a.sobre.kind === "hola") {
@@ -310,7 +320,7 @@ export class NostrBridge {
       const fid = Math.random().toString(36).slice(2, 10);
       const total = Math.max(1, Math.ceil(bytes.length / TROZO));
       for (let n = 0; n < total; n++) {
-        const ok = await this.enviar(t, { v: 1, id: t.id, kind: "file", file: { fid, n, total, name: basename(ruta), size: bytes.length } }, bytes.subarray(n * TROZO, (n + 1) * TROZO).toString("base64"));
+        const ok = await this.enviar(t, { v: PROTOCOLO, id: t.id, kind: "file", file: { fid, n, total, name: basename(ruta), size: bytes.length } }, bytes.subarray(n * TROZO, (n + 1) * TROZO).toString("base64"));
         if (!ok) { this.cb.log("nostr", "fichero a medias, un trozo no se publico", ruta); break; }
       }
     }
@@ -333,7 +343,7 @@ export class NostrBridge {
   async openThread(t: T.Thread, otroPk: string, relays: string[]): Promise<boolean> {
     t.transporte = "nostr";
     t.nostr = { otro: otroPk, relays: relays.length ? relays : RELAYS_POR_DEFECTO, enviados: [] };
-    const ok = await this.enviar(t, { v: 1, id: t.id, kind: "invite", subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context, relays: this.relays }, t.messages[0]?.text ?? "");
+    const ok = await this.enviar(t, { v: PROTOCOLO, id: t.id, kind: "invite", subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context, relays: this.relays }, t.messages[0]?.text ?? "");
     if (ok) await this.enviarFicheros(T.load(t.id) ?? t, t.messages[0]?.files);
     return ok;
   }
@@ -343,10 +353,10 @@ export class NostrBridge {
     const texto = m ? m.text : kind === "close" ? (t.closeReason ?? "cerrado") : notice;
     // Los ficheros van antes que el texto, para que el otro lado los tenga al leerlo.
     if (m?.files?.length) await this.enviarFicheros(t, m.files);
-    return this.enviar(T.load(t.id) ?? t, { v: 1, id: t.id, kind, subject: t.subject, ...(m ? { kindOfMsg: m.kind } : {}) }, texto);
+    return this.enviar(T.load(t.id) ?? t, { v: PROTOCOLO, id: t.id, kind, subject: t.subject, ...(m ? { kindOfMsg: m.kind } : {}) }, texto);
   }
 
-  async aviso(t: T.Thread, texto: string) { await this.enviar(t, { v: 1, id: t.id, kind: "notice", subject: t.subject }, texto); }
+  async aviso(t: T.Thread, texto: string) { await this.enviar(t, { v: PROTOCOLO, id: t.id, kind: "notice", subject: t.subject }, texto); }
   async pensandoOn(_t: T.Thread, _quien: string) {}
   async pensandoOff(_t: T.Thread) {}
 
@@ -361,7 +371,7 @@ export class NostrBridge {
 
   /** El saludo del alta: le digo a quien me invito quien soy. */
   async hola(paraPk: string, relays: string[], nombre: string, slackId?: string, k?: string): Promise<boolean> {
-    const { wrap } = envolver(this.sk, paraPk, { v: 1, id: "hola", kind: "hola", fromName: nombre, slack: slackId, relays: this.relays, k }, `${nombre} ya esta en spoochie`);
+    const { wrap } = envolver(this.sk, paraPk, { v: PROTOCOLO, id: "hola", kind: "hola", fromName: nombre, slack: slackId, relays: this.relays, k }, `${nombre} ya esta en spoochie`);
     try { await Promise.any(this.pool.publish([...new Set([...relays, ...this.relays])], wrap)); return true; } catch { return false; }
   }
 }
