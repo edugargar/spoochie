@@ -131,3 +131,53 @@ test("una suscripcion de SimplePool a pelo no revive sola: por eso el puente la 
   expect(cerradas).toBeGreaterThan(0);
   sub.close(); propio.cerrar();
 }, 30000);
+
+test("el mismo sobre dos veces se entrega una: los reles repiten y no ordenan", async () => {
+  const N = await import("../src/nostr.ts");
+  const ana = N.misClaves({} as any), bea = N.misClaves({} as any);
+  const holas: string[] = [];
+  const puente = new N.NostrBridge(bea.sk, bea.pk, [rele.url], {
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {},
+    onHola: async (_de, _s, nombre) => { holas.push(nombre); },
+    log: () => {},
+  });
+  puente.escuchar();
+  await sleep(400);
+
+  const pool = N.poolReal();
+  const { wrap } = N.envolver(ana.sk, bea.pk, { v: 1, id: "hola", kind: "hola", fromName: "repetido" }, "repetido");
+  // Publicado dos veces, que es lo que hace un rele que reenvia o dos reles con el mismo
+  // evento: la envoltura es la misma, asi que el id del evento es el mismo.
+  await Promise.all(pool.publish([rele.url], wrap));
+  await sleep(300);
+  await Promise.all(pool.publish([rele.url], wrap));
+  await sleep(800);
+
+  expect(rele.eventos()).toBeGreaterThanOrEqual(2);
+  expect(holas.filter(h => h === "repetido")).toHaveLength(1);
+  puente.cerrar();
+}, 20000);
+
+test("dos sobres que llegan al reves siguen entregandose los dos", async () => {
+  const N = await import("../src/nostr.ts");
+  const ana = N.misClaves({} as any), bea = N.misClaves({} as any);
+  const holas: string[] = [];
+  const puente = new N.NostrBridge(bea.sk, bea.pk, [rele.url], {
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {},
+    onHola: async (_de, _s, nombre) => { holas.push(nombre); },
+    log: () => {},
+  });
+  puente.escuchar();
+  await sleep(400);
+
+  const pool = N.poolReal();
+  const primero = N.envolver(ana.sk, bea.pk, { v: 1, id: "hola", kind: "hola", fromName: "primero" }, "primero");
+  const segundo = N.envolver(ana.sk, bea.pk, { v: 1, id: "hola", kind: "hola", fromName: "segundo" }, "segundo");
+  // Al reves de como se escribieron. Los reles no garantizan orden, y la envoltura lleva
+  // ademas una fecha falseada a proposito, asi que ordenar por created_at no vale.
+  await Promise.all(pool.publish([rele.url], segundo.wrap));
+  await Promise.all(pool.publish([rele.url], primero.wrap));
+
+  expect(await hasta(() => holas.includes("primero") && holas.includes("segundo"))).toBe(true);
+  puente.cerrar();
+}, 20000);

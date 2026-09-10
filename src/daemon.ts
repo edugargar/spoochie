@@ -871,7 +871,14 @@ function main() {
   };
   setTimeout(late, TICK_VIVO_MS);
 
-  const bye = () => { try { unlinkSync(DAEMON_SOCK); } catch {} try { unlinkSync(DAEMON_LOCK); } catch {} process.exit(0); };
+  // Al morir se limpia, pero SOLO si lo que hay en disco sigue siendo mio. Un demonio
+  // viejo que tarda en irse (le mataron al padre y el sigue un rato) borraba el socket
+  // y el lock que acababa de crear el nuevo: quedaba un demonio vivo al que nadie podia
+  // llamar, y la CLI daba ENOENT contra un fichero que existia un instante antes.
+  const bye = () => {
+    try { if (readFileSync(DAEMON_LOCK, "utf8").trim() === String(process.pid)) { unlinkSync(DAEMON_SOCK); unlinkSync(DAEMON_LOCK); } } catch {}
+    process.exit(0);
+  };
   process.on("SIGINT", bye); process.on("SIGTERM", bye);
 }
 
