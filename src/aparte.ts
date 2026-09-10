@@ -87,6 +87,15 @@ export function ajustesAparte(cli = comandoCli()): Record<string, unknown> {
 
 /** Las banderas con las que arranca el Claude aparte, iguales en ventana y en fondo.
  *
+ *  Se penso declarar el aparte como un agente del plugin (un fichero con su lista de
+ *  herramientas, revisable en un diff) en vez de como banderas. DESCARTADO al mirar que
+ *  es `--agents`: define SUBagentes a los que la sesion puede despachar, no la persona
+ *  de la sesion principal. El aparte es la sesion principal de su propio proceso
+ *  `claude`, asi que mover ahi la lista dejaria sin restringir justo al que lee el repo
+ *  y contesta. La frontera son estas banderas y los hooks, y por eso siguen aqui. Lo
+ *  que si valia de esa idea (que no se pueda desarmar tocando una cadena) esta resuelto
+ *  con esta funcion y su test de paridad.
+ *
  *  Van en la linea de comando y por tanto se ven en `ps`. Se penso moverlas a un
  *  fichero de ajustes a 0700 y se DESCARTA: dentro no hay ningun secreto. La lista de
  *  herramientas es una politica, no una credencial, y esta ademas publicada en este

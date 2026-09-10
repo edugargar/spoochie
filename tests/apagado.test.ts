@@ -62,3 +62,31 @@ test("no se lanza ningun aparte antes de que la persona acepte", async () => {
   expect(razon).toContain("DESCARTADO");
   expect(razon).toContain("Gasta tu dinero en una pregunta que no has aceptado");
 });
+
+test("las herramientas del aparte van en su sesion principal, no en un subagente", async () => {
+  // `--agents` define subagentes a los que despachar; el aparte es la sesion principal
+  // de su propio proceso. Declararlo ahi dejaria sin restringir justo al que lee el repo.
+  const b = await import("../src/aparte.ts");
+  const banderas = b.banderasAparte("v1", "/x/spoochie");
+  expect(banderas).not.toContain("--agents");
+  expect(banderas).toContain("--allowedTools");
+  expect(banderas).toContain("--disallowedTools");
+  // Y el motivo escrito donde se tomaria la decision (el comentario si nombra --agents).
+  const a = await Bun.file(new URL("../src/aparte.ts", import.meta.url)).text();
+  expect(a).toContain("define SUBagentes a los que la sesion puede despachar");
+});
+
+test("cada promesa del README nombra el test que la prueba, y ese test existe", async () => {
+  // Una promesa sin comprobacion es publicidad. Esto no comprueba que la promesa sea
+  // cierta (eso lo hacen los tests nombrados), comprueba que el README no pueda
+  // prometer algo apuntando a un fichero que ya no esta.
+  const readme = await Bun.file(new URL("../README.md", import.meta.url)).text();
+  const tabla = readme.slice(readme.indexOf("## The promises"), readme.indexOf("## Security model"));
+  expect(tabla).toContain("No server of ours");
+  expect(tabla).toContain("The model is yours");
+  expect(tabla).toContain("Closing deletes it");
+  for (const f of ["tests/dos-maquinas-nostr.test.ts", "tests/rele.test.ts", "tests/slack.test.ts", "src/guardian.ts"]) {
+    expect(tabla).toContain(f);
+    expect(await Bun.file(new URL(`../${f}`, import.meta.url)).exists()).toBe(true);
+  }
+});
