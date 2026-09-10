@@ -40,3 +40,25 @@ test("un hilo cerrado o inexistente no bloquea nada", () => {
 test("un hilo sin mensajes todavia no reclama nada", () => {
   expect(juzgarTurno(hilo([]), "YO", false).decision).toBeUndefined();
 });
+
+/**
+ * El aviso de lo no leido, que es la unica proactividad que se permite spoochie:
+ * hechos del hilo, nunca iniciativa sobre el trabajo. Las condiciones estan en
+ * `avisarDeLoNoLeido` (daemon.ts) y aqui se prueba la logica que las decide.
+ */
+import { readFileSync } from "node:fs";
+
+test("el aviso de lo no leido solo sale de un tunel que llego a abrirse", async () => {
+  const fuente = readFileSync(new URL("../src/daemon.ts", import.meta.url), "utf8");
+  const f = fuente.slice(fuente.indexOf("async function avisarDeLoNoLeido"), fuente.indexOf("async function tick"));
+  // Si lo rechazaste, recordarte el mensaje que rechazaste es lo contrario de
+  // respetar la decision.
+  expect(f).toContain("if (!t.acceptedAt) return;");
+  // Si contestamos nosotros los ultimos, no hay nada pendiente.
+  expect(f).toContain("if (ultimo.from === mio) return;");
+  // Si el aparte sigue vivo, ya lo ha visto.
+  expect(f).toContain("if (ap && !ap.muerto");
+  // Y lo que dice son hechos: quien, cuando, el texto y donde esta el hilo entero.
+  expect(f).toContain("sin respuesta tuya");
+  expect(f).toContain("no abras otro spoochie por tu cuenta");
+});
