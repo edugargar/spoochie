@@ -8,7 +8,7 @@
  */
 import net from "node:net";
 import { existsSync, unlinkSync, writeFileSync, readFileSync, appendFileSync } from "node:fs";
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { DAEMON_SOCK, DAEMON_LOCK, DAEMON_LOG, ensureDirs } from "./paths.ts";
 import { liveSessions, findSession, unregister, type SessionRecord } from "./registry.ts";
 import * as T from "./threads.ts";
@@ -24,7 +24,7 @@ import * as Aud from "./auditoria.ts";
 import { deliver } from "./inbox.ts";
 import { judge } from "./guardian.ts";
 import { publishTranscript, rutaTranscript } from "./transcript.ts";
-import { SPOOL } from "./files.ts";
+import { SPOOL, barrerHuerfanos } from "./files.ts";
 import { tocaHola } from "./holas.ts";
 import { holaPorNostr, holaPorSlack } from "./claves.ts";
 import { join } from "node:path";
@@ -955,7 +955,42 @@ async function tick() {
       log("aviso-silencio", t.id);
     }
   }
+  // Lo que un contacto dejo en el spool de un hilo que nunca existio: los trozos pueden
+  // llegar antes que la invitacion, pero si la invitacion no llega, nadie los reclama.
+  for (const id of barrerHuerfanos(id => Boolean(T.load(id)), T.PENDING_TTL_MS)) {
+    log("spool-huerfano", id, "borrado: 4 h sin hilo que lo reclame");
+  }
   if (slack) { try { await slack.poll(); } catch (e) { log("slack-poll-error", String(e)); } }
+}
+
+/**
+ * Lo que un contacto dejo aparcado en el spool de un hilo que nunca llego a existir.
+ *
+ * Los ficheros viajan a trozos y los reles no ordenan, asi que un trozo puede llegar
+ * antes que la invitacion y tiene que esperar en el spool. Hasta aqui bien. El problema
+ * es lo que pasa cuando esa invitacion no llega nunca: `tick` recorre los hilos, y de un
+ * hilo que no existe no se ocupa nadie. Medido: un contacto manda un fichero con un id
+ * inventado y se queda en ~/.claude/spoochie/files/<id>/ para siempre, sin que aparezca
+ * en ningun sitio donde alguien lo vea.
+ *
+ * Y ademas contradice la frase que sostiene el resto: hasta que aceptas no pasa nada. Un
+ * fichero de otra persona en tu disco antes de que te pregunten es que si pasa algo.
+ *
+ * Se le da lo mismo que a un spoochie sin aceptar: cuatro horas. Un directorio con hilo
+ * vivo no se toca; de eso se encarga `purgar` al cerrar.
+ */
+function barrerSpoolHuerfano() {
+  if (!existsSync(SPOOL)) return;
+  const ahora = Date.now();
+  for (const id of readdirSync(SPOOL)) {
+    if (T.load(id)) continue;
+    const dir = join(SPOOL, id);
+    try {
+      if (ahora - statSync(dir).mtimeMs < T.PENDING_TTL_MS) continue;
+      rmSync(dir, { recursive: true, force: true });
+      log("spool-huerfano", id, "borrado: 4 h sin hilo que lo reclame");
+    } catch {}
+  }
 }
 
 function main() {

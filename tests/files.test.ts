@@ -80,3 +80,35 @@ test("y el id del hilo se limpia aqui aunque venga limpio de fuera", async () =>
   expect(resolve(rutas[0]).startsWith(resolve(SPOOL) + "/")).toBe(true);
   expect(rutas[0].slice(SPOOL.length + 1).split("/").length).toBe(2);
 });
+
+/**
+ * El spool de un hilo que nunca llego a existir.
+ *
+ * Un trozo puede llegar antes que la invitacion, asi que espera en el spool: eso esta
+ * bien y es necesario, los reles no ordenan. Lo que no estaba previsto es que la
+ * invitacion no llegue nunca. El barrido del demonio recorre los hilos, y de un hilo que
+ * no existe no se ocupaba nadie: medido, un fichero de un contacto se quedaba en
+ * ~/.claude/spoochie/files/<id>/ para siempre, sin salir en ningun sitio donde alguien
+ * lo viera. Y antes de que a nadie le hubieran preguntado nada.
+ */
+test("lo que se queda en el spool sin hilo que lo reclame se barre; lo que tiene hilo, no", async () => {
+  const { barrerHuerfanos } = await import("../src/files.ts");
+  const { mkdirSync, writeFileSync, utimesSync } = await import("node:fs");
+  const TTL = 4 * 60 * 60 * 1000;
+  const viejo = (Date.now() - TTL - 60_000) / 1000;
+
+  for (const id of ["huerfano", "conhilo", "reciente"]) {
+    mkdirSync(join(SPOOL, id), { recursive: true, mode: 0o700 });
+    writeFileSync(join(SPOOL, id, "x.bin"), "x", { mode: 0o600 });
+  }
+  utimesSync(join(SPOOL, "huerfano"), viejo, viejo);
+  utimesSync(join(SPOOL, "conhilo"), viejo, viejo);
+
+  const barridos = barrerHuerfanos(id => id === "conhilo", TTL);
+  expect(barridos).toEqual(["huerfano"]);
+  expect(existsSync(join(SPOOL, "huerfano"))).toBe(false);
+  // El que tiene hilo vivo no se toca aunque sea viejo: de ese se ocupa `purgar` al cerrar.
+  expect(existsSync(join(SPOOL, "conhilo"))).toBe(true);
+  // Y al que acaba de llegar se le deja llegar su invitacion.
+  expect(existsSync(join(SPOOL, "reciente"))).toBe(true);
+});

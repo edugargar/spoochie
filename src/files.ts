@@ -10,7 +10,7 @@
  * sin documentar, con spool e integridad propios. Aqui el fichero se ve ademas en el
  * hilo, que es donde miran las personas.
  */
-import { readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, statSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { basename, join, extname } from "node:path";
 import { ROOT } from "./paths.ts";
 
@@ -85,4 +85,35 @@ export async function bajar(token: string, ficheros: any[], threadId: string): P
     } catch {}
   }
   return rutas;
+}
+
+/**
+ * Lo que alguien dejo aparcado en el spool de un hilo que nunca llego a existir.
+ *
+ * Los ficheros viajan a trozos y los reles no ordenan, asi que un trozo puede llegar
+ * antes que la invitacion y tiene que esperar aqui. Hasta ahi bien. Lo que no estaba
+ * previsto es que esa invitacion no llegue nunca: el barrido del demonio recorre los
+ * hilos, y de un hilo que no existe no se ocupa nadie. Medido: un contacto manda un
+ * fichero con un id inventado y se queda en el spool para siempre, sin aparecer en
+ * ningun sitio donde alguien lo vea.
+ *
+ * Y contradice la frase que sostiene todo lo demas: hasta que aceptas no pasa nada. Un
+ * fichero de otra persona en tu disco antes de que te pregunten es que si pasa algo.
+ *
+ * Se le da lo mismo que a un spoochie sin aceptar. Un directorio con hilo vivo no se
+ * toca: de ese se encarga `purgar` al cerrar.
+ */
+export function barrerHuerfanos(hayHilo: (id: string) => boolean, ttlMs: number, ahora = Date.now()): string[] {
+  if (!existsSync(SPOOL)) return [];
+  const barridos: string[] = [];
+  for (const id of readdirSync(SPOOL)) {
+    if (hayHilo(id)) continue;
+    const dir = join(SPOOL, id);
+    try {
+      if (ahora - statSync(dir).mtimeMs < ttlMs) continue;
+      rmSync(dir, { recursive: true, force: true });
+      barridos.push(id);
+    } catch {}
+  }
+  return barridos;
 }
