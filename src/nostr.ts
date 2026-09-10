@@ -234,6 +234,7 @@ export class NostrBridge {
       return;
     }
     if (!contacto) { this.cb.log("nostr", "sobre de una clave que no esta en la agenda; ignorado", a.de.slice(0, 12)); return; }
+    Cfg.tocarContacto({ npub: a.de });
     if (a.sobre.kind === "invite") { await this.materializar(a, contacto); return; }
     if (a.sobre.kind === "file") { await this.trozo(a); return; }
     const t = T.load(a.sobre.id);

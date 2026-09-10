@@ -420,6 +420,7 @@ async function main() {
       console.log(`Clave Nostr de ${x.name} olvidada. Con ${x.name} va por Slack hasta que le invites de nuevo (spoochie invite --to ${x.id}).`);
       return;
     }
+    const Conf = await import("./confianza.ts");
     const nivel = flag(rest, "nivel");
     if (nivel) {
       const { ponerNivel } = await import("./confianza.ts");
@@ -435,6 +436,9 @@ async function main() {
     }
     for (const [k, x] of Object.entries(c.contacts ?? {})) {
       const extra = [
+        // Cuando se le oyo por ultima vez. No dice si esta ahora, dice cuando estuvo:
+        // es lo mas cerca de "presencia" que se puede decir sin inventarse un sondeo.
+        x.visto ? `visto ${Conf.hace(x.visto)}` : null,
         x.nivel === "alto" ? "confianza:alta" : null,
         x.auto?.length ? `entran solos: ${x.auto.join(",")}` : null,
       ].filter(Boolean).join("  ");
