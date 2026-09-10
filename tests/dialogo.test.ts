@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, chmodSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { textoDialogo } from "../src/dialogo.ts";
+import { textoDialogo, partesDialogo, guionOsascript } from "../src/dialogo.ts";
 
 /**
  * El aviso fuera de la terminal. Aqui el "dialogo" es un programa que recibe el texto y
@@ -53,22 +53,61 @@ const S = fakeInbox("dlg");
 let daemon: ChildProcess;
 afterAll(() => { daemon?.kill(); S.server.close(); });
 
-test("el texto del aviso lleva quien, asunto, rama y la pregunta, y dice que abre una ventana aparte", () => {
-  const t: any = { id: "d1", subject: "el boton", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {}, context: { branch: "feat/x" },
+test("el aviso dice quien, que quiere, con que contexto y que pasa si abres, sin etiquetas", () => {
+  const t: any = { id: "d1", subject: "el boton", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {}, context: { branch: "feat/x", files: ["a.ts", "b.ts"] },
     messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: "mira tu Button" }] };
-  const s = textoDialogo(t);
-  expect(s).toContain("Ana quiere abrir un spoochie");
-  expect(s).toContain("Asunto: el boton");
-  expect(s).toContain("Rama: feat/x");
-  expect(s).toContain("mira tu Button");
-  expect(s).toContain("Poochie no las toca");
+  const { titular, cuerpo } = partesDialogo(t);
+  // Lo primero que se lee es quien llama, no una entradilla.
+  expect(titular).toBe("Ana llama.");
+  // El asunto entra con mayuscula inicial aunque quien lo escribio no la pusiera.
+  expect(cuerpo).toContain("El boton");
+  expect(cuerpo).toContain("feat/x  ·  2 ficheros");
+  expect(cuerpo).toContain("“mira tu Button”");
+  expect(cuerpo).toContain("ventana aparte");
+  // Ni etiquetas de formulario ni entradillas.
+  expect(cuerpo).not.toContain("Asunto:");
+  expect(cuerpo).not.toContain("Rama:");
+  expect(textoDialogo(t)).not.toContain("Poochie");
+});
+
+test("sin contexto no se pinta una linea vacia, y un cuerpo largo se corta por frases", () => {
+  const base = { id: "d2", subject: "s", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {} };
+  const sin: any = { ...base, context: {}, messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: "corto" }] };
+  expect(partesDialogo(sin).cuerpo.split("\n")[1]).toBe("");
+  const largo = "Una frase que ocupa lo suyo y termina aqui. " .repeat(12);
+  const con: any = { ...base, context: {}, messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: largo }] };
+  const c = partesDialogo(con).cuerpo;
+  expect(c).toContain("…");
+  // Cortado tras un punto, no a mitad de palabra.
+  expect(c).toMatch(/\.\s…”/);
+});
+
+test("la caja es display dialog con el icono, y los tres botones en su sitio", () => {
+  // `display alert` se probo y se rechazo: sin icono propio sale la carpeta de
+  // osascript, la caja es mas estrecha y los botones se apilan. Ver guionOsascript.
+  const t: any = { id: "d3", subject: "s", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {}, context: {},
+    messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: "x" }] };
+  const g = guionOsascript(t, 10);
+  expect(g).toStartWith("display dialog");
+  expect(g).toContain("with icon POSIX file");
+  expect(g).toContain(`default button "Que pase"`);
+  expect(g).toContain(`cancel button "Ahora no"`);
+  expect(g).toContain(`"Ver en Slack"`);
+  expect(g).toContain("giving up after 10");
+});
+
+test("el asunto entra en mayuscula aunque quien lo escribio no la pusiera", () => {
+  const t: any = { id: "d4", subject: "el guardado revienta", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {}, context: {},
+    messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: "x" }] };
+  expect(partesDialogo(t).cuerpo).toStartWith("El guardado revienta");
 });
 
 test("el aviso va a un dialogo: la sesion no recibe nada; aceptar abre el aparte, rechazar cierra", async () => {
   const bin = mkdtempSync(join(tmpdir(), "sp-dlg-bin-"));
   writeFileSync(join(bin, "dialogo"), `#!/bin/sh
 printf '%s\\n---\\n' "$1" >> "$SPOOCHIE_HOME/avisos.txt"
-case "$1" in *rechazame*) echo Rechazar ;; *) echo Aceptar ;; esac
+# Se decide por la pregunta, no por el asunto: el asunto se pinta con mayuscula inicial.
+case "$1" in *"pregunta de no1"*) echo Rechazar ;; *) echo Aceptar ;; esac
 `);
   writeFileSync(join(bin, "claude"), `#!/bin/sh
 while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aparte-recibido.txt"; done
@@ -97,7 +136,7 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aparte-rec
 
   // El dialogo se mostro con la pregunta; el aparte nacio en el repo de la sesion y recibio el primer turno.
   expect(await hasta(() => leer(AVISOS).includes("pregunta de ok1"))).toBe(true);
-  expect(await hasta(() => leer(RECIBIDO).includes("Asunto: el boton") && leer(RECIBIDO).includes("pregunta de ok1"))).toBe(true);
+  expect(await hasta(() => leer(RECIBIDO).includes("el boton") && leer(RECIBIDO).includes("pregunta de ok1"))).toBe(true);
   expect(hilo("ok1").state).toBe("open");
   expect(hilo("ok1").to.cwd).toBe(REPO);
 

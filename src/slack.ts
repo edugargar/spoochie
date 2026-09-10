@@ -167,7 +167,7 @@ function contextLine(t: T.Thread): string | null {
 export function inviteBlocks(t: T.Thread): Block[] {
   const c = contextLine(t);
   const blocks: Block[] = [
-    { type: "header", text: { type: "plain_text", text: `Spoochie de ${nameOf(t.from)}`.slice(0, 150), emoji: true } },
+    { type: "header", text: { type: "plain_text", text: `${nameOf(t.from)} llama`.slice(0, 150), emoji: true } },
     sec(`*${t.subject}*`),
   ];
   if (c) blocks.push(ctx(c));
@@ -442,7 +442,7 @@ export class SlackBridge {
     this.firma(env, t.messages[0]?.text ?? "", t.to.slackUser);
     const post = await this.call("chat.postMessage", {
       channel,
-      text: `Spoochie de ${t.from.human ?? t.from.name}: ${t.subject}`,
+      text: `${t.from.human ?? t.from.name} llama: ${t.subject}`,
       blocks: inviteBlocks(t),
       metadata: { event_type: EVENT, event_payload: env },
       unfurl_links: false,
@@ -454,7 +454,7 @@ export class SlackBridge {
       try { const p = await this.call("chat.getPermalink", { channel, message_ts: post.ts }); if (p?.permalink) enlace = `<${p.permalink}|${enlace}>`; } catch {}
       const av = await this.call("chat.postMessage", {
         channel: dm,
-        text: `Spoochie de ${t.from.human ?? t.from.name}: ${t.subject}`,
+        text: `${t.from.human ?? t.from.name} llama: ${t.subject}`,
         blocks: [...inviteBlocks(t), ctx(`La conversacion sigue en ${enlace}, donde la veis los dos.`)],
         metadata: { event_type: EVENT, event_payload: { ...env, thread: { channel, ts: post.ts } } },
         unfurl_links: false,
