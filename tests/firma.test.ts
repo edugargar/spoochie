@@ -43,6 +43,8 @@ const sobre = (x: any = {}, priv = k.priv, pub = k.pub) => {
 
 test("la primera clave de un id se fija, y otra distinta despues se rechaza", () => {
   Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_YO", pollMs: 20_000 } });
+  // Solo se fija la clave de alguien que ya esta en la agenda: le invite yo o me invito el.
+  const c0 = Cfg.load(); Cfg.addContact(c0, { id: "U_SAM", name: "Sam" }); Cfg.save(c0);
   const env = sobre();
   expect(verificarSobre(env, "x")).toBe("nueva");
   expect(Cfg.contactById(Cfg.load(), "U_SAM")?.pk).toBe(k.pub);
@@ -101,4 +103,12 @@ test("quitarle la firma a un sobre no lo cuela: atacar es no firmar", () => {
   // En cuanto tengo su clave fijada, un sobre suyo sin firma es un ataque, no una version vieja.
   const c = Cfg.load(); Cfg.addContact(c, { id: "U_NADIE", name: "Nadie", pk: k.pub }); Cfg.save(c);
   expect(verificarSobre({ id: "t9", kind: "msg", from: "U_NADIE" }, "x")).toBe("degradada");
+});
+
+test("un sobre bien firmado de un id que no esta en tu agenda no fija ninguna clave", () => {
+  Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_YO", pollMs: 20_000 } });
+  // Quien pueda postear con el token del bot puede inventarse un id. Antes, verificarSobre
+  // le daba de alta con el nombre que el mismo dijera solo por verle escribir una vez.
+  expect(verificarSobre(sobre({ from: "U_INTRUSO" }), "x")).toBe("desconocida");
+  expect(Cfg.contactById(Cfg.load(), "U_INTRUSO")).toBeNull();
 });

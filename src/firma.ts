@@ -15,10 +15,12 @@ export type Claves = { pub: string; priv: string };
  *   vieja      firma valida pero de la v1 (anterior a 0.9.9): no ata destinatario ni hora
  *   caducada   firma buena, pero el sobre es de hace mas de un dia o del futuro
  *   ajena      firma buena, pero el sobre iba dirigido a otra persona
+ *   desconocida  la firma cuadra, pero ese id no esta en tu agenda: no lo invitaste
+ *                nadie ni te invito, asi que su clave no se fija
  *   degradada  no trae firma, pero de ese id ya tenia una clave fijada
  *   sin-firma  no trae firma, y de ese id no se nada todavia
  *   mala       la firma no cuadra, o la clave no es la que tenia fijada */
-export type Veredicto = "ok" | "nueva" | "vieja" | "caducada" | "ajena" | "degradada" | "sin-firma" | "mala";
+export type Veredicto = "ok" | "nueva" | "vieja" | "caducada" | "ajena" | "degradada" | "desconocida" | "sin-firma" | "mala";
 
 export function nuevasClaves(): Claves {
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
@@ -159,7 +161,14 @@ export function verificarSobre(env: SobreAVerificar, text: string, ahora = Date.
   const conocido = Cfg.contactById(c, env.from);
   const vieja = env.sv !== 2;
   if (conocido?.pk) return conocido.pk === env.pk ? (vieja ? "vieja" : "ok") : "mala";
-  Cfg.addContact(c, { id: env.from, name: conocido?.name ?? env.fromName ?? env.from, pk: env.pk });
+  // La regla de 0.9.8 dicha entera, y aqui dentro, que es por donde pasa TODO el
+  // trafico: una clave se fija la primera vez que se ve, pero solo de un id que ya
+  // esta en tu agenda, o sea de alguien a quien invitaste o que te invito. Antes esta
+  // funcion daba de alta al remitente por el mero hecho de ver un sobre suyo, con el
+  // nombre que el mismo dijera, asi que quien pudiera postear con el token del bot se
+  // metia en la agenda de todo el equipo escribiendo una vez.
+  if (!conocido) return "desconocida";
+  Cfg.addContact(c, { id: env.from, name: conocido.name ?? env.fromName ?? env.from, pk: env.pk });
   Cfg.save(c);
   return "nueva";
 }
