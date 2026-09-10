@@ -245,3 +245,34 @@ test("un puente cerrado no vuelve a suscribirse ni entrega nada, aunque el rele 
   expect(suscripciones).toBe(1);
   expect(entrega).toBeNull();
 });
+
+/**
+ * Un trozo mas grande que un trozo.
+ *
+ * `f.total` y `f.size` los declara quien envia y se comprueban, pero los bytes que
+ * llegan de verdad no se miraban: se decodificaban enteros en memoria y se escribian en
+ * disco, y solo despues se comparaba el tamano del fichero recompuesto. Medido con un
+ * solo sobre de total=1: 3 MB escritos con TROZO a 20 KB. El limite real lo ponia el
+ * rele, o sea nadie si el rele es de quien envia.
+ */
+test("un trozo mas grande que TROZO no toca el disco", async () => {
+  const { TROZO } = await import("../src/nostr.ts");
+  const { SPOOL } = await import("../src/files.ts");
+  const { existsSync, readFileSync } = await import("node:fs");
+  const a = claves(), b = claves();
+  const c = Cfg.load();
+  Cfg.addContact(c, { id: "nostr:gordo", name: "Ana", npub: a.pk } as any);
+  Cfg.save(c);
+  const entrada = poolMemoria();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, entrada.pool);
+  B.escuchar();
+  const gordo = Buffer.alloc(TROZO * 4, 0x41);
+  entrada.inyectar(envolver(a.sk, b.pk, { v: 1, id: "ngordo", kind: "file", file: { fid: "fg", n: 0, total: 1, name: "x.bin", size: gordo.length } }, gordo.toString("base64")).wrap);
+  await sleep(80);
+  expect(existsSync(join(SPOOL, "ngordo"))).toBe(false);
+  // Y uno del tamano correcto por la misma puerta si entra.
+  const cabe = Buffer.alloc(TROZO, 0x42);
+  entrada.inyectar(envolver(a.sk, b.pk, { v: 1, id: "ncabe", kind: "file", file: { fid: "fc", n: 0, total: 1, name: "y.bin", size: cabe.length } }, cabe.toString("base64")).wrap);
+  await hasta(() => existsSync(join(SPOOL, "ncabe", "fc-y.bin")));
+  expect(readFileSync(join(SPOOL, "ncabe", "fc-y.bin")).equals(cabe)).toBe(true);
+});

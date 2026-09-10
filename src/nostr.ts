@@ -291,12 +291,19 @@ export class NostrBridge {
     const f = a.sobre.file;
     if (!f || !FID_VALIDO.test(String(f.fid)) || !Number.isInteger(f.n) || !Number.isInteger(f.total) || f.n < 0 || f.n >= f.total) return;
     if (f.total > Math.ceil(MAX_BYTES / TROZO) || !(f.size >= 0 && f.size <= MAX_BYTES)) { this.cb.log("nostr", "fichero demasiado grande; ignorado", f.name); return; }
+    // Los numeros de arriba los declara quien envia; esto son los bytes que llegan de
+    // verdad. Sin esta linea un solo sobre traia un trozo tan grande como el rele
+    // aguantara: medido, 3 MB escritos en disco con TROZO a 20 KB, y decodificados
+    // enteros en memoria antes de que nadie comprobara nada. Un trozo mas grande que un
+    // trozo no es un trozo de spoochie.
+    const bruto = Buffer.from(a.texto, "base64");
+    if (bruto.length > TROZO) { this.cb.log("nostr", "trozo mas grande que un trozo; ignorado", f.name, bruto.length); return; }
     const t = T.load(a.sobre.id);
     if (t && (t.transporte !== "nostr" || t.nostr?.otro !== a.de || t.state === "closed")) return;
     if (!t && T.yaVisto(a.sobre.id)) return;
     const dir = join(SPOOL, a.sobre.id, PARTES, f.fid);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
-    writeFileSync(join(dir, String(f.n)), Buffer.from(a.texto, "base64"), { mode: 0o600 });
+    writeFileSync(join(dir, String(f.n)), bruto, { mode: 0o600 });
     const tengo = readdirSync(dir).filter(x => /^\d+$/.test(x)).length;
     if (tengo < f.total) return;
     const partes: Buffer[] = [];
