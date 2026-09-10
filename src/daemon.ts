@@ -258,16 +258,35 @@ async function handle(req: Req): Promise<any> {
         to = { sessionId: m.sessionId, name: m.name, cwd: m.cwd };
       }
 
+      // `--seguir <id>`: este spoochie continua uno anterior. Solo se hereda lo que
+      // sobrevive al borrado al cerrar (asunto, con quien, cuando y por que se cerro):
+      // el texto se borro a proposito y no va a volver por la puerta de atras. Lo que
+      // gana el que recibe es saber que no empieza de cero.
+      let sigue: { id: string; subject: string; closedAt?: number; closeReason?: string } | null = null;
+      if (req.seguir) {
+        const viejo = T.load(String(req.seguir));
+        if (!viejo) return { ok: false, error: `no tengo ningun spoochie ${req.seguir} en esta maquina` };
+        if (!T.isParty(viejo, req.sessionId) && viejo.from.sessionId !== req.sessionId && viejo.to.sessionId !== req.sessionId) {
+          return { ok: false, error: `el spoochie ${req.seguir} no es tuyo` };
+        }
+        sigue = { id: viejo.id, subject: viejo.subject, closedAt: viejo.closedAt, closeReason: viejo.closeReason };
+      }
+
+      const cuerpo = sigue
+        ? `${req.body}\n\n[Continua el spoochie ${sigue.id}, "${sigue.subject}", que se cerro${sigue.closedAt ? ` el ${new Date(sigue.closedAt).toISOString().slice(0, 16).replace("T", " ")}` : ""}${sigue.closeReason ? ` por ${sigue.closeReason}` : ""}. Lo que se dijo alli se borro al cerrar, aqui solo va el hilo del que viene.]`
+        : req.body;
+
       const t: T.Thread = {
         id: T.newId(),
-        subject: req.subject,
+        subject: req.subject ?? (sigue ? sigue.subject : undefined),
+        sigue: sigue?.id,
         from: { sessionId: me.sessionId, name: me.name, cwd: me.cwd, human: cfg.human, slackUser: cfg.slack?.userId },
         to,
         state: "pending",
         createdAt: now,
         lastActivityAt: now,
         context: req.context ?? {},
-        messages: [{ at: now, from: me.sessionId, author: req.author ?? "claude", kind: req.kind ?? "text", text: req.body, files: req.files }],
+        messages: [{ at: now, from: me.sessionId, author: req.author ?? "claude", kind: req.kind ?? "text", text: cuerpo, files: req.files }],
       };
 
       if (remote && porNostr && nostr) {

@@ -69,6 +69,9 @@ export type Thread = {
   borrado?: number;
   /** Por donde viaja con la otra maquina. Sin esto, Slack (hilos de antes de 0.9). */
   transporte?: "slack" | "nostr";
+  /** El spoochie del que este viene, si se abrio con `--seguir`. Solo el id: lo que se
+   *  dijo alli se borro al cerrar y no vuelve por la puerta de atras. */
+  sigue?: string;
   /** Nostr: la clave del otro lado, sus reles, y lo que este lado envio (para borrarlo). */
   nostr?: { otro: string; relays: string[]; enviados: { id: string; wsk: string }[] };
   /** Hasta donde se ha leido el hilo de Slack. Va en disco a proposito: en memoria,

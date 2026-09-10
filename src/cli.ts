@@ -94,7 +94,9 @@ function out(r: any) {
 const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distintas
 
   spoochie sessions                          sesiones vivas en esta maquina
-  spoochie open <destino> --subject "..." --body "..." [--files a,b]
+  spoochie open <destino> --subject "..." --body "..." [--files a,b] [--seguir <id>]
+      --seguir  continua un spoochie anterior: hereda el asunto y dice de cual viene.
+                Lo que se dijo alli se borro al cerrar y no vuelve.
       destino: nombre de sesion local, o @persona para otra maquina (via Slack)
   spoochie take <id>                         quedarte un spoochie cuando tienes varias sesiones
   spoochie accept <id>                       LO EJECUTA EL HUMANO RECEPTOR, no su Claude
@@ -527,7 +529,7 @@ async function main() {
       const [to] = rest;
       const subject = flag(rest, "subject"), body = flag(rest, "body");
       if (!to || !subject || !body) { console.error("faltan argumentos\n" + USAGE); process.exit(2); }
-      const r = await rpc({ op: "open", sessionId: me.sessionId, to, subject, body, files: fileList(rest), context: autoContext(me.cwd) });
+      const r = await rpc({ op: "open", sessionId: me.sessionId, to, subject, body, files: fileList(rest), context: autoContext(me.cwd), seguir: flag(rest, "seguir") });
       out(r);
       // El demonio genera el HTML pero no puede publicarlo: Artifact es una herramienta
       // de la sesion de Claude, no de un proceso suelto. Asi que se lo pide aqui,
