@@ -344,6 +344,11 @@ What you should know:
   newcomer talks over Nostr and never holds it. Everyone who joined
   before 0.9.7 has it in their config; rotate it when someone leaves. Per-person OAuth
   (`xoxp`) is still supported via `spoochie slack setup` for teams that want it.
+  **A team where everyone has a Nostr key does not need the token at all**: spoochies go
+  encrypted through relays, and the notification is the local system dialog, not a DM.
+  `doctor` says so when it applies, and `spoochie slack off` removes it from a machine.
+  That is the only way out of "whoever holds the token is on the team", and it is
+  available today, not a plan.
 - **A Nostr key enters your contact list only through your own invitation.** The
   invitation carries a one-time nonce; the newcomer's "hola" returns it and the key is
   bound to the id and name you wrote down when inviting, not to what the hola says. A
