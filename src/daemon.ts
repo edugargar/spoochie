@@ -20,6 +20,7 @@ import * as Ap from "./aparte.ts";
 import * as Dlg from "./dialogo.ts";
 import * as Cfg from "./config.ts";
 import * as Conf from "./confianza.ts";
+import * as Aud from "./auditoria.ts";
 import { deliver } from "./inbox.ts";
 import { judge } from "./guardian.ts";
 import { publishTranscript, rutaTranscript } from "./transcript.ts";
@@ -308,6 +309,7 @@ async function handle(req: Req): Promise<any> {
       if (Cfg.load().transcript) { t.transcriptOwner = me.sessionId; T.save(t); }
       const delivered = remote ? true : await sendToSide(t, t.to, T.renderInvite(t, t.to.sessionId));
       log("open", t.id, me.name, "->", to.name, delivered ? "entregado" : "FALLO");
+      Aud.apuntar("abierto", t.id, cfg.human ?? me.name, `-> ${to.human ?? to.name} · ${t.subject}`);
       return { ok: true, id: t.id, to: to.name, delivered, transcript: t.transcriptUrl };
     }
 
@@ -589,6 +591,7 @@ async function assign(t: T.Thread): Promise<string | null> {
   if (Conf.entraSolo(Cfg.load(), { slackUser: t.from.slackUser, npub: t.nostr?.otro }, pick.cwd)) {
     log("assign", t.id, "-> aceptado solo (confianza en", Conf.nombreRepo(pick.cwd) + ")");
     if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, `:key: aceptado sin preguntar: tienes puesto que los spoochies de ${t.from.human ?? t.from.name} sobre *${Conf.nombreRepo(pick.cwd)}* entran solos. Quitalo con \`spoochie confiar ${t.from.human ?? t.from.name} --repo ${Conf.nombreRepo(pick.cwd)} --quitar\`.`);
+    Aud.apuntar("aceptado-solo", t.id, Cfg.load().human ?? "esta maquina", `de ${t.from.human ?? t.from.name} · repo ${Conf.nombreRepo(pick.cwd)}`);
     await onSlackAccept(t, "por consentimiento permanente");
     return pick.sessionId;
   }
@@ -612,8 +615,8 @@ function avisarConDialogo(t: T.Thread, pick: SessionRecord) {
     log("aviso", t.id, "dialogo:", r ?? "sin respuesta");
     // Mientras el dialogo estaba abierto pudo aceptarse en Slack o caducar: manda el estado.
     if (!fresco || fresco.state !== "pending") return;
-    if (r === "acepto") await onSlackAccept(fresco, "en el aviso");
-    else if (r === "rechazo") await closeThread(fresco, `rechazado por ${Cfg.load().human ?? "la persona"}`, pick.sessionId);
+    if (r === "acepto") { Aud.apuntar("aceptado", fresco.id, Cfg.load().human ?? "esta maquina", "en el dialogo"); await onSlackAccept(fresco, "en el aviso"); }
+    else if (r === "rechazo") { Aud.apuntar("rechazado", fresco.id, Cfg.load().human ?? "esta maquina", "en el dialogo"); await closeThread(fresco, `rechazado por ${Cfg.load().human ?? "la persona"}`, pick.sessionId); }
     else if (r === "slack" && fresco.slack) Dlg.abrirEnSlack(slack ? await slack.teamId() : null, fresco.slack.channel, fresco.slack.ts);
   });
 }
@@ -717,6 +720,7 @@ async function vigilar(t: T.Thread, m: T.Msg): Promise<boolean> {
     T.save(t);
     const receptor = T.mySide(t, sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId);
     if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, `:no_entry: *retenido por el vigilante*: ${v.why}. <@${receptor.slackUser ?? ""}> escribe \`suelta\` en este hilo para entregarlo, o \`descarta\`.`);
+    Aud.apuntar("retenido", t.id, quien.human ?? quien.name, v.why);
     const local = sessById(receptor.sessionId);
     if (local) await send(local, `[spoochie ${t.id} | ${t.subject}] un mensaje de ${quien.human ?? quien.name} esta RETENIDO por el vigilante: ${v.why}. No lo has recibido. Tu humano decide: "suelta" o "descarta" en el hilo de Slack, o  spoochie release ${t.id}  /  spoochie discard ${t.id}`);
     return false;
@@ -745,6 +749,7 @@ async function soltar(t: T.Thread, orden: "suelta" | "descarta", como: string): 
     if (orden === "suelta" && local) await send(local, conTranscript(t, mio, T.renderMessage(t, m, mio)));
   }
   if (n) {
+    Aud.apuntar(orden === "suelta" ? "soltado" : "descartado", t.id, Cfg.load().human ?? "esta maquina", `${n} mensaje(s) · ${como}`);
     t.lastActivityAt = Date.now();
     T.save(t);
     if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, orden === "suelta" ? `:unlock: ${n} mensaje(s) retenido(s) entregado(s) ${como}.` : `:wastebasket: ${n} mensaje(s) retenido(s) descartado(s) ${como}.`);
@@ -823,6 +828,7 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string, remo
   }
   await refreshTranscript(t);
   log("close", t.id, reason, notified.join(" "));
+  Aud.apuntar("cerrado", t.id, bySession ? (Cfg.load().human ?? "esta maquina") : "el reloj", reason);
 
   // Proactividad acotada: hechos del hilo, nunca iniciativa sobre el trabajo.
   //

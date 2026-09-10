@@ -113,6 +113,7 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie search "<texto>"              busca entre los spoochies de esta maquina
   spoochie transcript <id> [--url <url-del-artifact>]
   spoochie selftest                      prueba el bucle entero aqui, sin necesitar a nadie
+  spoochie auditoria [--n 50]            quien abrio, quien acepto, que se retuvo y quien lo solto
   spoochie doctor                        repasa lo que tiene que estar bien para entregar,
                                          y audita lo que no deberia seguir en disco
   spoochie config [--human "Edu"] [--guardian on|off] [--transcript on|off] [--aparte on|off] [--copia on|off] [--borrar on|off] [--transporte nostr|slack] [--hilos grupo|canal|dm] [--canal C0..]
@@ -408,6 +409,20 @@ async function main() {
     if (reles) { c.nostr = { ...c.nostr, relays: reles.split(",").map(s => s.trim()).filter(s => /^wss?:\/\//.test(s)) }; }
     Cfg.save(c);
     console.log(JSON.stringify({ npub: N.npub(k.pk), pk: k.pk, relays: N.misReles(c), transporte: c.transporte ?? "nostr (si el otro tiene clave)" }, null, 2));
+    return;
+  }
+
+  // El registro de lo que decidieron las personas. Solo hechos y nombres: nunca el
+  // texto de los mensajes, porque el borrado al cerrar tiene que seguir siendo verdad.
+  if (cmd === "auditoria") {
+    const { leer, FICHERO } = await import("./auditoria.ts");
+    const n = Number(flag(rest, "n") ?? 50);
+    const lineas = leer(n);
+    if (!lineas.length) { console.log(`(nada apuntado todavia; el registro vive en ${FICHERO})`); return; }
+    for (const l of lineas) {
+      console.log(`${l.cuando.slice(0, 19).replace("T", " ")}  ${l.hecho.padEnd(15)} ${l.id.padEnd(8)} ${l.quien.padEnd(14)} ${l.detalle}`);
+    }
+    console.log(`\n${FICHERO} · no se borra al cerrar un spoochie: son hechos, no conversacion.`);
     return;
   }
 
