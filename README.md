@@ -311,6 +311,16 @@ Not in a policy document: built, each with its test.
   is told. The silence warning lists facts (when your last message left, when the other
   side accepted, when their last message arrived) so the Claude reading it doesn't guess.
 
+## The envelope, written down
+
+What travels between two machines is documented in [docs/PROTOCOLO.md](docs/PROTOCOLO.md):
+the fields, the exact bytes the signature covers, the order a receiver checks things in,
+and what happens to an envelope from a version it does not understand. It is there so
+something other than Claude Code can speak it, and so a change to the wire format is a
+change to a document. Tests keep the document and the code from drifting: the version
+number, the signed field order, the 24 h window and the list of kinds are all asserted
+against `src/`.
+
 ## Security model
 
 Honest version. The real boundary is "whoever holds the bot token is on the team".
