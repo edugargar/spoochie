@@ -104,4 +104,23 @@ test("dos maquinas por Nostr: abrir, aceptar, contestar, cerrar, y solo queda el
   for (const f of readdirSync(NOSTR)) { const s = readFileSync(join(NOSTR, f), "utf8"); expect(s).not.toContain("min-width"); expect(s).not.toContain("pantalla"); }
   // La captura se fue con el spoochie: el spool de Ana ya no la tiene.
   expect(existsSync(join(HOME_A, "files", open.id))).toBe(false);
+
+  // La promesa entera, medida en disco y no afirmada: despues de cerrar, NINGUN fichero
+  // de ninguna de las dos maquinas contiene el texto de la conversacion. Antes se
+  // comprobaba solo el JSON del hilo, que es donde ya sabiamos que no estaba.
+  const { readdirSync: ls2, statSync } = await import("node:fs");
+  const todos = (dir: string): string[] => ls2(dir).flatMap(f => {
+    const p = join(dir, f);
+    try { return statSync(p).isDirectory() ? todos(p) : [p]; } catch { return []; }
+  });
+  for (const home of [HOME_A, HOME_B]) {
+    for (const f of todos(home)) {
+      if (f.endsWith("daemon.log")) continue; // el log lleva ids y estados, nunca texto
+      // El socket del demonio no es un fichero que se pueda leer (EOPNOTSUPP).
+      let contenido: string;
+      try { contenido = readFileSync(f).toString("utf8"); } catch { continue; }
+      expect({ fichero: f, tiene: contenido.includes("min-width del contenedor") }).toEqual({ fichero: f, tiene: false });
+      expect({ fichero: f, tiene: contenido.includes("mira tu Button") }).toEqual({ fichero: f, tiene: false });
+    }
+  }
 }, 40_000);
