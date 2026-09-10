@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { escanear, juzgarBash, portero } from "../src/portero.ts";
-import { ajustesAparte, banderasAparte, modoPermisos, scriptVentana, MODELO_APARTE } from "../src/aparte.ts";
+import { ajustesAparte, banderasAparte, modoPermisos, scriptVentana, MODELO_APARTE, presupuestoAparte, PRESUPUESTO_APARTE } from "../src/aparte.ts";
 
 const CLI = "/usr/local/bin/spoochie";
 const CLI_DEV = "/opt/bun run /repo/src/cli.ts";
@@ -140,4 +140,13 @@ test("el aparte contesta con un modelo fijado, no con el que tenga puesto quien 
   const b = banderasAparte("v1", "/usr/local/bin/spoochie");
   expect(b[b.indexOf("--model") + 1]).toBe(MODELO_APARTE);
   expect(MODELO_APARTE).toBe("claude-sonnet-5");
+});
+
+test("el aparte sin nadie mirandolo lleva tope de gasto; la ventana no lo necesita", () => {
+  // `--max-budget-usd` solo funciona con --print, o sea en modo fondo. En ventana el
+  // freno es la persona que la mira, mas los dos relojes del spoochie.
+  expect(presupuestoAparte()).toBe(PRESUPUESTO_APARTE);
+  expect(banderasAparte("v1")).not.toContain("--max-budget-usd");
+  const t: any = { id: "v1", subject: "s", from: { sessionId: "A", name: "a", cwd: "/a" }, to: { sessionId: "B", name: "b", cwd: "/b" }, context: {}, state: "open", messages: [] };
+  expect(scriptVentana(t, "/tmp", "s1")).not.toContain("max-budget-usd");
 });

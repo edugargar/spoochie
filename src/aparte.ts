@@ -91,6 +91,25 @@ export function banderasAparte(id: string, cli = comandoCli()): string[] {
 }
 
 /**
+ * Cuanto puede gastarse un aparte en contestar una pregunta.
+ *
+ * `--max-budget-usd` solo funciona con `--print`, o sea en modo fondo, que es el que
+ * corre sin que nadie lo mire: en un servidor sin escritorio, o cuando la ventana no
+ * se pudo abrir. Ahi nada impedia que se pusiera a leer el repo entero en bucle
+ * mientras el otro lado espera. En modo ventana el freno es que hay una persona
+ * delante viendolo, mas los dos relojes del spoochie (10 min de silencio, 4 h sin
+ * aceptar), asi que no hace falta.
+ *
+ * Un dolar es de sobra para leer unos ficheros y contestar. SPOOCHIE_APARTE_PRESUPUESTO
+ * lo cambia; "0" lo quita.
+ */
+export const PRESUPUESTO_APARTE = "1.00";
+export function presupuestoAparte(): string | null {
+  const v = process.env.SPOOCHIE_APARTE_PRESUPUESTO ?? PRESUPUESTO_APARTE;
+  return v === "0" || v === "" ? null : v;
+}
+
+/**
  * Con que modelo contesta el Claude aparte.
  *
  * Fijado, y no el que tenga puesto la persona, por una razon de dinero que no es suya:
@@ -246,9 +265,13 @@ export function lanzar(t: T.Thread, cwd: string, como: Modo = modo()): Aparte | 
   }
 
   const out = openSync(join(APARTE_DIR, `${t.id}.log`), "a");
+  const presupuesto = presupuestoAparte();
   const child = spawn("claude", [
     "-p", "--verbose",
     "--input-format", "stream-json", "--output-format", "stream-json",
+    // Solo aqui: `--max-budget-usd` no vale sin `--print`, y en la ventana el freno es
+    // la persona que la esta mirando.
+    ...(presupuesto ? ["--max-budget-usd", presupuesto] : []),
     ...banderasAparte(t.id),
   ], { cwd, env, stdio: ["pipe", out, out] });
   child.on("error", () => {});
