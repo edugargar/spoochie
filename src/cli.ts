@@ -113,6 +113,7 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie search "<texto>"              busca entre los spoochies de esta maquina
   spoochie transcript <id> [--url <url-del-artifact>]
   spoochie selftest                      prueba el bucle entero aqui, sin necesitar a nadie
+  spoochie llavero [on|off]              tus claves y el token, en el llavero de macOS
   spoochie auditoria [--n 50]            quien abrio, quien acepto, que se retuvo y quien lo solto
   spoochie doctor                        repasa lo que tiene que estar bien para entregar,
                                          y audita lo que no deberia seguir en disco
@@ -423,6 +424,32 @@ async function main() {
       console.log(`${l.cuando.slice(0, 19).replace("T", " ")}  ${l.hecho.padEnd(15)} ${l.id.padEnd(8)} ${l.quien.padEnd(14)} ${l.detalle}`);
     }
     console.log(`\n${FICHERO} · no se borra al cerrar un spoochie: son hechos, no conversacion.`);
+    return;
+  }
+
+  // Los secretos al llavero de macOS. A mano y reversible: una migracion automatica de
+  // las claves de alguien, si sale mal, le deja fuera de su agenda sin forma de volver.
+  if (cmd === "llavero") {
+    const L = await import("./llavero.ts");
+    const c = Cfg.load();
+    const que = rest[0];
+    if (!L.disponible()) { console.error("el llavero solo esta en macOS (y hace falta el comando `security`)"); process.exit(1); return; }
+    if (que === "on") {
+      const movidos = Cfg.alLlavero(c);
+      Cfg.save(c);
+      console.log(movidos.length ? `Al llavero: ${movidos.join(", ")}. En config.json queda "${L.SENAL}" en su sitio.` : "No habia nada que mover.");
+      return;
+    }
+    if (que === "off") {
+      const vueltos = Cfg.delLlavero(c);
+      Cfg.save(c);
+      console.log(vueltos.length ? `De vuelta a config.json: ${vueltos.join(", ")}. Vuelven a estar en claro, a 0600.` : "En el llavero no habia nada de spoochie.");
+      return;
+    }
+    const estado = Object.entries(L.CUENTAS).map(([k, cuenta]) => `${k.padEnd(6)} ${L.leer(cuenta) ? "en el llavero" : "en config.json"}`);
+    console.log(estado.join("\n"));
+    console.log(`\nspoochie llavero on   los mueve al llavero de macOS`);
+    console.log(`spoochie llavero off  los devuelve a config.json`);
     return;
   }
 
