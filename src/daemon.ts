@@ -404,6 +404,30 @@ async function handle(req: Req): Promise<any> {
       return { ok: true, id: t.id, state: t.state, delivered, offTopic: m.offTopic, transcript: t.transcriptUrl };
     }
 
+    /**
+     * Echar a alguien de la agenda.
+     *
+     * Sin servidor no hay revocacion global, y no la va a haber: cada maquina decide a
+     * quien conoce. Lo que si se puede hacer, y no se podia, es echarle de la tuya de
+     * una vez: cerrar lo que tengas abierto con esa persona, quitarle del todo (clave
+     * incluida) y que lo que llegue despues no entre, porque desde 0.9.9 un sobre de un
+     * id que no esta en la agenda se descarta.
+     */
+    case "olvidar": {
+      const c = Cfg.load();
+      const quien = String(req.quien ?? "").replace(/^@/, "");
+      const clave = Cfg.claveContacto(quien);
+      const x = c.contacts?.[clave];
+      if (!x) return { ok: false, error: `no tengo a "${quien}" en la agenda` };
+      const suyos = T.all().filter(t => t.state !== "closed" && (t.from.slackUser === x.id || t.to.slackUser === x.id || t.nostr?.otro === x.npub));
+      for (const t of suyos) await closeThread(t, req.motivo ?? `${x.name} fuera de la agenda`, req.sessionId);
+      delete c.contacts![clave];
+      Cfg.save(c);
+      Aud.apuntar("confianza", "-", Cfg.load().human ?? "esta maquina", `olvidado ${x.name} (${x.id})${req.motivo ? ` · ${req.motivo}` : ""}`);
+      log("olvidar", x.id, x.name, `${suyos.length} spoochies cerrados`);
+      return { ok: true, quien: x.name, cerrados: suyos.map(t => t.id) };
+    }
+
     // Cerrar de una vez los N tuneles de la misma pregunta. Cada uno se cierra como
     // cualquier otro: se avisa al otro lado y se borra. El grupo solo los junta.
     case "close-grupo": {
