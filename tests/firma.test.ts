@@ -93,3 +93,12 @@ test("la clave de la invitacion queda en la agenda con el nombre", () => {
   Cfg.addContact(c, { id: "U_EDU", name: "Edu" });
   expect(Cfg.contact(c, "edu")?.pk).toBe("PK1");
 });
+
+test("quitarle la firma a un sobre no lo cuela: atacar es no firmar", () => {
+  Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_YO", pollMs: 20_000 } });
+  // De un desconocido, un sobre sin firma entra marcado: puede ser una version vieja.
+  expect(verificarSobre({ id: "t9", kind: "msg", from: "U_NADIE" }, "x")).toBe("sin-firma");
+  // En cuanto tengo su clave fijada, un sobre suyo sin firma es un ataque, no una version vieja.
+  const c = Cfg.load(); Cfg.addContact(c, { id: "U_NADIE", name: "Nadie", pk: k.pub }); Cfg.save(c);
+  expect(verificarSobre({ id: "t9", kind: "msg", from: "U_NADIE" }, "x")).toBe("degradada");
+});
