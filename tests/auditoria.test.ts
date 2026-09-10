@@ -50,3 +50,15 @@ test("el ultimo arranque del hook se lee de disco, incluido cuando fallo", () =>
   expect(mal?.detalle).toContain("SHA256SUMS");
   expect(mal?.detalle).toContain("2026-09-10T12:00:00Z");
 });
+
+test("doctor dice cuales de los tres secretos siguen en claro en el fichero", () => {
+  const enClaro = auditar({ ...base, keys: { pub: "P", priv: "SECRETA" }, nostr: { sk: "aaa", pk: "bbb" }, slack: { userId: "U0", botToken: "xoxb-x", pollMs: 20_000 } });
+  const l = linea(enClaro, "secretos en config.json");
+  expect(l?.detalle).toContain("clave de firma");
+  expect(l?.detalle).toContain("clave Nostr");
+  expect(l?.detalle).toContain("token del bot");
+  expect(l?.detalle).toContain("spoochie llavero on");
+  // Los que ya estan en el llavero no se cuentan.
+  const enLlavero = auditar({ ...base, keys: { pub: "P", priv: "@llavero" }, nostr: { sk: "@llavero", pk: "bbb" } });
+  expect(linea(enLlavero, "secretos en config.json")).toBeUndefined();
+});

@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, ensureDirs } from "./paths.ts";
+import * as L from "./llavero.ts";
 
 export type Config = {
   /** Nombre con el que te ven los demas. Por defecto, tu usuario del sistema. */
@@ -80,8 +81,46 @@ const DEFAULTS: Config = { guardian: true, transcript: false, aparte: true };
 export function load(): Config {
   ensureDirs();
   if (!existsSync(FILE)) return { ...DEFAULTS };
-  try { return { ...DEFAULTS, ...JSON.parse(readFileSync(FILE, "utf8")) }; }
+  try { return rellenarDelLlavero({ ...DEFAULTS, ...JSON.parse(readFileSync(FILE, "utf8")) }); }
   catch { return { ...DEFAULTS }; }
+}
+
+/**
+ * Cambia las senales `@llavero` por el secreto de verdad. Si el llavero no contesta se
+ * deja la senal: mejor que spoochie diga "no tengo clave" a que firme con la cadena
+ * "@llavero" y el otro lado descarte los sobres sin saber por que.
+ */
+export function rellenarDelLlavero(c: Config): Config {
+  const necesita = c.keys?.priv === L.SENAL || c.nostr?.sk === L.SENAL || c.slack?.botToken === L.SENAL;
+  if (!necesita) return c;
+  if (c.keys?.priv === L.SENAL) { const v = L.leer(L.CUENTAS.firma); if (v) c.keys = { ...c.keys, priv: v }; }
+  if (c.nostr?.sk === L.SENAL) { const v = L.leer(L.CUENTAS.nostr); if (v) c.nostr = { ...c.nostr, sk: v }; }
+  if (c.slack?.botToken === L.SENAL) { const v = L.leer(L.CUENTAS.bot); if (v) c.slack = { ...c.slack!, botToken: v }; }
+  return c;
+}
+
+/** Mueve los tres secretos al llavero y deja la senal en el fichero. Devuelve cuales. */
+export function alLlavero(c: Config): string[] {
+  const movidos: string[] = [];
+  if (c.keys?.priv && c.keys.priv !== L.SENAL && L.guardar(L.CUENTAS.firma, c.keys.priv)) { c.keys.priv = L.SENAL; movidos.push("clave de firma"); }
+  if (c.nostr?.sk && c.nostr.sk !== L.SENAL && L.guardar(L.CUENTAS.nostr, c.nostr.sk)) { c.nostr.sk = L.SENAL; movidos.push("clave Nostr"); }
+  if (c.slack?.botToken && c.slack.botToken !== L.SENAL && L.guardar(L.CUENTAS.bot, c.slack.botToken)) { c.slack.botToken = L.SENAL; movidos.push("token del bot"); }
+  return movidos;
+}
+
+/** Los saca del llavero y los devuelve al fichero. Para poder deshacer. */
+export function delLlavero(c: Config): string[] {
+  const vueltos: string[] = [];
+  const par: [keyof typeof L.CUENTAS, (v: string) => void][] = [
+    ["firma", v => { c.keys = { ...c.keys!, priv: v }; }],
+    ["nostr", v => { c.nostr = { ...c.nostr, sk: v }; }],
+    ["bot", v => { c.slack = { ...c.slack!, botToken: v }; }],
+  ];
+  for (const [cuenta, poner] of par) {
+    const v = L.leer(L.CUENTAS[cuenta]);
+    if (v) { poner(v); L.borrar(L.CUENTAS[cuenta]); vueltos.push(cuenta); }
+  }
+  return vueltos;
 }
 
 /** El token, venga de donde venga. Leerlo del fichero de otra herramienta en vez de
@@ -138,7 +177,24 @@ export function contact(c: Config, needle: string): { id: string; name: string; 
 
 export function save(c: Config) {
   ensureDirs();
-  writeFileSync(FILE, JSON.stringify(c, null, 2), { mode: 0o600 });
+  writeFileSync(FILE, JSON.stringify(enmascarar(c), null, 2), { mode: 0o600 });
+}
+
+/**
+ * Vuelve a poner la senal en los secretos que viven en el llavero.
+ *
+ * Sin esto, la migracion se deshacia sola y en silencio: `load` rellenaba el secreto de
+ * verdad, cualquier `save` posterior (y hay uno en casi cada operacion) lo escribia en
+ * claro otra vez, y el llavero quedaba de adorno. Se decide preguntandole al llavero,
+ * no recordando un estado: si ahi hay una clave para esa cuenta, en el fichero va la senal.
+ */
+export function enmascarar(c: Config): Config {
+  if (!L.disponible()) return c;
+  const copia: Config = JSON.parse(JSON.stringify(c));
+  if (copia.keys?.priv && L.leer(L.CUENTAS.firma)) copia.keys.priv = L.SENAL;
+  if (copia.nostr?.sk && L.leer(L.CUENTAS.nostr)) copia.nostr.sk = L.SENAL;
+  if (copia.slack?.botToken && L.leer(L.CUENTAS.bot)) copia.slack.botToken = L.SENAL;
+  return copia;
 }
 
 /**

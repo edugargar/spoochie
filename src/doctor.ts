@@ -223,6 +223,21 @@ export function auditar(c: Cfg.Config, ahora = Date.now()): Chequeo[] {
       : "ningun spoochie cerrado guarda texto",
   });
 
+  // Donde viven los secretos. No es un fallo tenerlos en el fichero, pero conviene
+  // saberlo: cualquier proceso que corra como tu lee un fichero sin pedir permiso.
+  {
+    const enFichero = [
+      c.keys?.priv && c.keys.priv !== "@llavero" ? "clave de firma" : null,
+      c.nostr?.sk && c.nostr.sk !== "@llavero" ? "clave Nostr" : null,
+      c.slack?.botToken && c.slack.botToken !== "@llavero" ? "token del bot" : null,
+    ].filter(Boolean);
+    if (enFichero.length) out.push({
+      ok: "aviso",
+      que: "secretos en config.json",
+      detalle: `${enFichero.join(", ")} en claro a 0600. En macOS, \`spoochie llavero on\` los mueve al llavero: pasa de "leer un fichero" a "pedirle permiso al sistema"`,
+    });
+  }
+
   // El token del bot en la config es el borde real del modelo de seguridad. No es un
   // fallo, pero quien lo tiene tiene el DM del bot con todo el equipo, y hay que
   // rotarlo cuando alguien se va.
