@@ -703,6 +703,7 @@ export class SlackBridge {
           caducada: `venia firmado hace mas de un dia: alguien lo ha guardado y lo ha vuelto a soltar`,
           ajena: `venia firmado para otra persona, no para ti`,
           degradada: `venia sin firma, y de ${env.from} ya tengo una clave fijada: una version suya vieja no puede quitarse la firma`,
+          desconocida: `venia de un id que no esta en tu agenda: no le invitaste tu ni te invito el`,
         };
         if (NO_ENTRA[firma]) {
           // No se entrega. Se dice en el hilo, que es donde lo ven las personas.
@@ -811,11 +812,12 @@ export class SlackBridge {
       }
       if (!env || env.kind !== "invite" || known.has(env.id) || env.from === this.me) continue;
       const vInv = verificarSobre(env, bodyFromBlocks(msg.blocks));
-      if (vInv === "mala" || vInv === "caducada" || vInv === "ajena" || vInv === "degradada") {
+      if (vInv === "mala" || vInv === "caducada" || vInv === "ajena" || vInv === "degradada" || vInv === "desconocida") {
         known.add(env.id);
         const por = vInv === "mala" ? "pero la firma no es suya"
           : vInv === "caducada" ? "pero se firmo hace mas de un dia"
           : vInv === "degradada" ? "pero venia sin firma, y de esa persona ya tengo clave"
+          : vInv === "desconocida" ? "pero ese id no esta en tu agenda"
           : "pero venia firmada para otra persona";
         await this.avisoEn(ch, msg.thread_ts ?? msg.ts, `:no_entry: esta invitacion dice venir de ${env.fromName ?? env.from} ${por}. Descartada.`);
         continue;
