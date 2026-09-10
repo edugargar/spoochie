@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, chmodSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { textoDialogo, partesDialogo, guionOsascript } from "../src/dialogo.ts";
+import { textoDialogo, partesDialogo, guionOsascript, guionVentana } from "../src/dialogo.ts";
 import { hasta } from "./espera.ts";
 
 /**
@@ -61,7 +61,7 @@ test("el aviso dice quien, que quiere, con que contexto y que pasa si abres, sin
   expect(titular).toBe("Ana llama.");
   // El asunto entra con mayuscula inicial aunque quien lo escribio no la pusiera.
   expect(cuerpo).toContain("El boton");
-  expect(cuerpo).toContain("feat/x  ·  2 ficheros");
+  expect(cuerpo).toContain("feat/x · 2 ficheros");
   expect(cuerpo).toContain("“mira tu Button”");
   expect(cuerpo).toContain("ventana aparte");
   // Ni etiquetas de formulario ni entradillas.
@@ -82,11 +82,15 @@ test("sin contexto no se pinta una linea vacia, y un cuerpo largo se corta por f
   expect(c).toMatch(/\.\s…”/);
 });
 
-test("la caja es display dialog con el icono, y los tres botones en su sitio", () => {
-  // `display alert` se probo y se rechazo: sin icono propio sale la carpeta de
-  // osascript, la caja es mas estrecha y los botones se apilan. Ver guionOsascript.
+test("el aviso normal es la ventana nativa, y la caja de AppleScript es el plan B", () => {
+  // El pintor de verdad es `ventana.ts`. `display dialog` solo sale si el programa de la
+  // ventana no arranca, porque un aviso feo es mejor que un spoochie que nadie ve.
   const t: any = { id: "d3", subject: "s", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {}, context: {},
     messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: "x" }] };
+  const v = guionVentana(t);
+  expect(v).toStartWith("ObjC.import('Cocoa');");
+  expect(v).toContain("runModalForWindow");
+  expect(v).toContain("NSVisualEffectView");
   const g = guionOsascript(t, 10);
   expect(g).toStartWith("display dialog");
   expect(g).toContain("with icon POSIX file");
