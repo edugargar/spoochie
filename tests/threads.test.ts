@@ -209,3 +209,25 @@ test("--seguir hereda solo lo que sobrevive al borrado al cerrar", async () => {
   // Y no se puede continuar el spoochie de otro.
   expect(f).toContain("no es tuyo");
 });
+
+test("un mensaje de un spoochie en grupo dice de que grupo viene", async () => {
+  const { renderMessage } = await import("../src/threads.ts");
+  const base: any = { id: "k1", subject: "el modal", from: { sessionId: "A", name: "a", cwd: "/a", human: "Ana" }, to: { sessionId: "B", name: "b", cwd: "/b", human: "Edu" }, context: {}, state: "open", messages: [] };
+  const m: any = { at: 1, from: "A", author: "claude", kind: "text", text: "es el z-index" };
+  // Sin grupo, como siempre.
+  expect(renderMessage(base, m, "B")).toContain("[spoochie k1 | el modal]");
+  // Con grupo, para que quien preguntó a tres sepa cual de las tres respuestas es esta.
+  expect(renderMessage({ ...base, grupo: "gabc" }, m, "B")).toContain("[spoochie k1 | grupo gabc | el modal]");
+});
+
+test("preguntar a varios son N tuneles 1:1, no un canal", async () => {
+  const cli = await Bun.file(new URL("../src/cli.ts", import.meta.url)).text();
+  const f = cli.slice(cli.indexOf("const destinos = to.split"), cli.indexOf("const r = await rpc({ op: \"open\", sessionId: me.sessionId, to,"));
+  // Un `open` por destino: cada uno con su dialogo y su consentimiento.
+  expect(f).toContain("for (const d of destinos)");
+  expect(f).toContain('op: "open"');
+  // Y se dice, porque la diferencia importa: nadie ha aceptado que los demas le lean.
+  expect(f).toContain("cada persona ve solo lo suyo");
+  // Si uno falla, los demas siguen.
+  expect(f).toContain("no se pudo abrir");
+});

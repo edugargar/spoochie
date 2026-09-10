@@ -94,7 +94,8 @@ function out(r: any) {
 const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distintas
 
   spoochie sessions                          sesiones vivas en esta maquina
-  spoochie open <destino> --subject "..." --body "..." [--files a,b] [--seguir <id>]
+  spoochie open <destino[,destino2,...]> --subject "..." --body "..." [--files a,b] [--seguir <id>]
+      varios destinos: N tuneles 1:1 con un id de grupo comun, no un canal de varios
       --seguir  continua un spoochie anterior: hereda el asunto y dice de cual viene.
                 Lo que se dijo alli se borro al cerrar y no vuelve.
       destino: nombre de sesion local, o @persona para otra maquina (via Slack)
@@ -107,7 +108,7 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie patch <id> [--diff-file f | --from-git]
   spoochie branch <id> <nombre-de-rama>
   spoochie release <id> | discard <id>   LO EJECUTA EL HUMANO RECEPTOR: suelta o tira lo que retuvo el vigilante
-  spoochie close <id> [--reason "..."]
+  spoochie close <id> [--reason "..."]  |  spoochie close --grupo <g..>
   spoochie list | show <id>
   spoochie search "<texto>"              busca entre los spoochies de esta maquina
   spoochie transcript <id> [--url <url-del-artifact>]
@@ -529,6 +530,26 @@ async function main() {
       const [to] = rest;
       const subject = flag(rest, "subject"), body = flag(rest, "body");
       if (!to || !subject || !body) { console.error("faltan argumentos\n" + USAGE); process.exit(2); }
+      // La misma pregunta a varios: `spoochie open @sam,@ana --subject ...`. Son N
+      // tuneles 1:1 de verdad, cada uno con su dialogo y su consentimiento; lo que
+      // comparten es un id de grupo, para que las respuestas lleguen juntas y se
+      // puedan cerrar de una vez. No hay ningun "canal de varios": eso obligaria a que
+      // cada persona viera lo que dicen las demas, y nadie ha aceptado eso.
+      const destinos = to.split(",").map(x => x.trim()).filter(Boolean);
+      if (destinos.length > 1) {
+        const grupo = `g${Date.now().toString(36)}`;
+        const abiertos: string[] = [];
+        for (const d of destinos) {
+          const r = await rpc({ op: "open", sessionId: me.sessionId, to: d, subject, body, files: fileList(rest), context: autoContext(me.cwd), grupo });
+          if (r?.ok) { abiertos.push(`${r.id} -> ${d}`); }
+          else console.error(`${d}: ${r?.error ?? "no se pudo abrir"}`);
+        }
+        if (!abiertos.length) process.exit(1);
+        console.log(JSON.stringify({ ok: true, grupo, abiertos }, null, 2));
+        console.log(`\nSon ${abiertos.length} tuneles 1:1, no un canal: cada persona ve solo lo suyo y acepta por su cuenta.`);
+        console.log(`Las respuestas te llegan etiquetadas con el grupo. Cerrarlos todos:  spoochie close --grupo ${grupo}`);
+        break;
+      }
       const r = await rpc({ op: "open", sessionId: me.sessionId, to, subject, body, files: fileList(rest), context: autoContext(me.cwd), seguir: flag(rest, "seguir") });
       out(r);
       // El demonio genera el HTML pero no puede publicarlo: Artifact es una herramienta
@@ -593,9 +614,16 @@ async function main() {
     case "discard":
       out(await rpc({ op: cmd, sessionId: whoAmI().sessionId, id: rest[0] }));
       break;
-    case "close":
+    case "close": {
+      const grupo = flag(rest, "grupo");
+      if (grupo) {
+        const r = await rpc({ op: "close-grupo", sessionId: whoAmI().sessionId, grupo, reason: flag(rest, "reason") });
+        out(r);
+        break;
+      }
       out(await rpc({ op: "close", sessionId: whoAmI().sessionId, id: rest[0], reason: flag(rest, "reason") }));
       break;
+    }
     case "list": {
       let sessionId: string | undefined;
       try { sessionId = whoAmI().sessionId; } catch {}

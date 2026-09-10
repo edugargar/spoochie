@@ -72,6 +72,9 @@ export type Thread = {
   /** El spoochie del que este viene, si se abrio con `--seguir`. Solo el id: lo que se
    *  dijo alli se borro al cerrar y no vuelve por la puerta de atras. */
   sigue?: string;
+  /** La misma pregunta hecha a varios: N tuneles 1:1 con este id en comun. No es un
+   *  canal de varios; cada persona ve solo lo suyo y acepta por su cuenta. */
+  grupo?: string;
   /** Nostr: la clave del otro lado, sus reles, y lo que este lado envio (para borrarlo). */
   nostr?: { otro: string; relays: string[]; enviados: { id: string; wsk: string }[] };
   /** Hasta donde se ha leido el hilo de Slack. Va en disco a proposito: en memoria,
@@ -283,7 +286,7 @@ export function renderAccepted(t: Thread, forSession: string): string {
 export function renderMessage(t: Thread, m: Msg, forSession: string): string {
   const from = otherSide(t, forSession);
   const who = m.author === "human" ? `${from.human ?? from.name} (humano, en persona)` : (from.human ?? from.name);
-  const lines = [`[spoochie ${t.id} | ${t.subject}] ${who}:`, ``, vallar(body(m)), ``];
+  const lines = [`[spoochie ${t.id}${t.grupo ? ` | grupo ${t.grupo}` : ""} | ${t.subject}] ${who}:`, ``, vallar(body(m)), ``];
   if (m.offTopic && m.offTopic.verdict !== "dentro") {
     lines.push(`[aviso del vigilante: ${m.offTopic.verdict} del asunto. ${m.offTopic.why}]`, ``);
   }
