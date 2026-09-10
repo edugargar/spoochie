@@ -62,3 +62,17 @@ test("doctor dice cuales de los tres secretos siguen en claro en el fichero", ()
   const enLlavero = auditar({ ...base, keys: { pub: "P", priv: "@llavero" }, nostr: { sk: "@llavero", pk: "bbb" } });
   expect(linea(enLlavero, "secretos en config.json")).toBeUndefined();
 });
+
+test("si todos tus contactos tienen clave Nostr, doctor dice que ya no necesitas el token", () => {
+  const todos = auditar({ ...base,
+    contacts: { sam: { id: "U_S", name: "Sam", npub: "a".repeat(64) }, ana: { id: "U_A", name: "Ana", npub: "b".repeat(64) } },
+    slack: { userId: "U0", botToken: "xoxb-x", pollMs: 20_000 } });
+  const l = linea(todos, "ya no necesitas el token del bot");
+  expect(l?.detalle).toContain("2 contacto(s)");
+  expect(l?.detalle).toContain("spoochie slack off");
+  // Con uno solo sin clave, no: ese seguiria necesitando Slack.
+  const mixto = auditar({ ...base,
+    contacts: { sam: { id: "U_S", name: "Sam", npub: "a".repeat(64) }, ana: { id: "U_A", name: "Ana" } },
+    slack: { userId: "U0", botToken: "xoxb-x", pollMs: 20_000 } });
+  expect(linea(mixto, "ya no necesitas el token del bot")).toBeUndefined();
+});

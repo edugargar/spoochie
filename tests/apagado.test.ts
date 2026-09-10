@@ -48,3 +48,17 @@ test("el script de capturas no dispara sin que se lo pidan", async () => {
   // Y al terminar recuerda mirarlas antes de ensenarlas.
   expect(s).toContain("MIRA LAS DOS IMAGENES antes de ensenarselas a nadie");
 });
+
+test("no se lanza ningun aparte antes de que la persona acepte", async () => {
+  // Se penso adelantar el trabajo mientras el dialogo espera. Descartado: gasta tu
+  // dinero en una pregunta que no has aceptado, y "hasta que aceptas no pasa nada" deja
+  // de ser verdad si un Claude ya esta leyendo tu repo por la pregunta de otro.
+  const d = await Bun.file(new URL("../src/daemon.ts", import.meta.url)).text();
+  const dialogo = d.slice(d.indexOf("function avisarConDialogo"), d.indexOf("function cerrarDialogo"));
+  expect(dialogo).not.toContain("Ap.lanzar");
+  expect(dialogo).not.toContain("lanzarAparte");
+  // Y el motivo esta escrito donde se tomaria la decision, no en un commit que nadie lee.
+  const razon = d.slice(d.indexOf("Se penso lanzar el aparte YA"), d.indexOf("function avisarConDialogo"));
+  expect(razon).toContain("DESCARTADO");
+  expect(razon).toContain("Gasta tu dinero en una pregunta que no has aceptado");
+});

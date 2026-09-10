@@ -631,6 +631,22 @@ async function assign(t: T.Thread): Promise<string | null> {
   return pick.sessionId;
 }
 
+/**
+ * Se penso lanzar el aparte YA, mientras el dialogo espera, para que la respuesta
+ * estuviera lista al aceptar. DESCARTADO, y por dos motivos que no se arreglan:
+ *
+ * 1. Gasta tu dinero en una pregunta que no has aceptado. La mitad de los spoochies que
+ *    se rechazan se rechazan porque no tocaba, y esos habrian pagado un modelo entero
+ *    leyendo un repo para nada.
+ * 2. Rompe la frase que sostiene todo lo demas. "Hasta que aceptas no pasa nada" deja de
+ *    ser verdad si un Claude ya esta leyendo tu repo por la pregunta de otro. Da igual
+ *    que no salga nada por el tunel: lo que se prometio es que no empieza, no que no se
+ *    entrega.
+ *
+ * La forma buena de que el demonio "trabaje" ya esta hecha y es otra: el aparte sigue
+ * trabajando despues de aceptar aunque no lo mires, y si al cerrar quedaba una respuesta
+ * sin leer se te dice (`avisarDeLoNoLeido`).
+ */
 function avisarConDialogo(t: T.Thread, pick: SessionRecord) {
   const { child, respuesta } = Dlg.preguntar(t);
   dialogos.set(t.id, child);

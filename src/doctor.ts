@@ -238,6 +238,19 @@ export function auditar(c: Cfg.Config, ahora = Date.now()): Chequeo[] {
     });
   }
 
+  // Un equipo entero por Nostr no necesita el token compartido para nada: ni para
+  // abrir, ni para avisar (el aviso es el dialogo local), ni para el hilo. Merece
+  // decirse, porque es la unica forma de salir del "quien tiene el token esta dentro".
+  {
+    const conClave = Object.values(c.contacts ?? {}).filter(x => x.npub).length;
+    const total = Object.values(c.contacts ?? {}).length;
+    if (total && conClave === total && c.slack?.botToken) out.push({
+      ok: "aviso",
+      que: "ya no necesitas el token del bot",
+      detalle: `tus ${total} contacto(s) tienen clave Nostr: los spoochies van cifrados sin pasar por Slack y el aviso es el dialogo del sistema. \`spoochie slack off\` quita el token de esta maquina; solo perderias los avisos por DM`,
+    });
+  }
+
   // El token del bot en la config es el borde real del modelo de seguridad. No es un
   // fallo, pero quien lo tiene tiene el DM del bot con todo el equipo, y hay que
   // rotarlo cuando alguien se va.
