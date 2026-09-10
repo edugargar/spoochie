@@ -161,5 +161,62 @@ export async function revisar(): Promise<Chequeo[]> {
     if (viejos.length) out.push({ ok: "aviso", que: "limpieza", detalle: `${viejos.length} spoochies cerrados hace mas de un mes` });
   }
 
+  // La parte de auditoria: no "esto esta roto", sino "esto es una credencial o un resto
+  // que no deberia seguir aqui". Los fallos de seguridad tampoco dan error.
+  out.push(...auditar(c));
+
+  return out;
+}
+
+/**
+ * Lo que no deberia seguir en disco. Cada punto es un agujero que hubo o que puede
+ * abrirse solo con el paso del tiempo, y ninguno da error por su cuenta.
+ */
+export function auditar(c: Cfg.Config, ahora = Date.now()): Chequeo[] {
+  const out: Chequeo[] = [];
+
+  // Invitaciones sin canjear: cada una es un nonce que todavia deja entrar una clave.
+  const pendientes = Object.values(c.invitaciones ?? {});
+  if (pendientes.length) {
+    const nombres = pendientes.map(i => i.name ?? i.id ?? "sin nombre").join(", ");
+    out.push({
+      ok: "aviso",
+      que: "invitaciones sin canjear",
+      detalle: `${pendientes.length} viva(s) (${nombres}): cada una deja entrar una clave en tu agenda hasta que caduque a los 30 dias`,
+    });
+  }
+
+  // Contactos sin clave ed25519: sus sobres no se pueden comprobar, asi que entran
+  // marcados y cualquiera con el token del bot podria ser el primero en firmar por ellos.
+  const sinClave = Object.values(c.contacts ?? {}).filter(x => !x.pk);
+  if (sinClave.length) {
+    out.push({
+      ok: "aviso",
+      que: "contactos sin clave fijada",
+      detalle: `${sinClave.map(x => x.name).join(", ")}: hasta que llegue un sobre suyo firmado, su primera firma es la que se fija`,
+    });
+  }
+
+  // Un spoochie cerrado con texto todavia en disco: el borrado al cerrar no cumplio.
+  const conTexto = T.all().filter(t => t.state === "closed" && t.messages.some(m => (m.text ?? "").trim()));
+  out.push({
+    ok: conTexto.length === 0,
+    que: "borrado al cerrar",
+    detalle: conTexto.length
+      ? `${conTexto.length} spoochie(s) cerrados que todavia guardan el texto: ${conTexto.map(t => t.id).join(", ")}`
+      : "ningun spoochie cerrado guarda texto",
+  });
+
+  // El token del bot en la config es el borde real del modelo de seguridad. No es un
+  // fallo, pero quien lo tiene tiene el DM del bot con todo el equipo, y hay que
+  // rotarlo cuando alguien se va.
+  if (c.slack?.botToken) {
+    out.push({
+      ok: "aviso",
+      que: "token de bot en reposo",
+      detalle: `esta maquina guarda el token del bot del equipo en config.json: quien lo lea puede leer el DM del bot con cualquiera y postear como el. Rotalo cuando alguien se vaya`,
+    });
+  }
+
   return out;
 }

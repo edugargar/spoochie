@@ -110,7 +110,8 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie search "<texto>"              busca entre los spoochies de esta maquina
   spoochie transcript <id> [--url <url-del-artifact>]
   spoochie selftest                      prueba el bucle entero aqui, sin necesitar a nadie
-  spoochie doctor                        repasa lo que tiene que estar bien para entregar
+  spoochie doctor                        repasa lo que tiene que estar bien para entregar,
+                                         y audita lo que no deberia seguir en disco
   spoochie config [--human "Edu"] [--guardian on|off] [--transcript on|off] [--aparte on|off] [--copia on|off] [--borrar on|off] [--transporte nostr|slack] [--hilos grupo|canal|dm] [--canal C0..]
   spoochie nostr [--relays wss://a,wss://b]      tu clave Nostr y tus reles
   spoochie contacts [--olvidar-clave <nombre>]   tu agenda con sus claves; olvidar una para reinvitar
