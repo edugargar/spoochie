@@ -36,3 +36,15 @@ test("las tres cosas que SI nacen encendidas son controles, no funciones", async
   const cfg = await Bun.file(new URL("../src/config.ts", import.meta.url)).text();
   expect(cfg).toContain("const DEFAULTS: Config = { guardian: true");
 });
+
+test("el script de capturas no dispara sin que se lo pidan", async () => {
+  // Captura la pantalla entera, asi que mete en un PNG lo que tenga detras quien lo
+  // corra. En una herramienta cuyo argumento entero es que las cosas no se escapan, eso
+  // no puede pasar por defecto. Medido: el primer intento capturo el dialogo del permiso
+  // de Accesibilidad, y el segundo el escritorio con las ventanas que hubiera abiertas.
+  const s = await Bun.file(new URL("../scripts/capturas.ts", import.meta.url)).text();
+  expect(s).toContain('if (!process.argv.includes("--pantalla-entera"))');
+  expect(s).toContain("process.exit(2)");
+  // Y al terminar recuerda mirarlas antes de ensenarlas.
+  expect(s).toContain("MIRA LAS DOS IMAGENES antes de ensenarselas a nadie");
+});
