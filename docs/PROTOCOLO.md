@@ -19,6 +19,10 @@ that fences it. An envelope with no `v` predates the field and is treated as 1.
 Since spoochie ships as a binary pinned to a plugin version, two machines on different
 versions is the normal case for weeks after a release, not an edge case.
 
+This holds on both transports. It did not: over Nostr the envelope was dropped before
+anything could say so, which is worse than either branch of the rule, because the sender
+sees it delivered.
+
 ## Shape
 
 ```jsonc
@@ -70,6 +74,23 @@ trimmed. Without that, a signature made before posting would not verify after.
 
 Version 1 signed only `id`, `kind`, `from` and the text hash. It still verifies, and is
 labelled as old. Do not produce it.
+
+### Two kinds act on their own
+
+`accept` opens the tunnel and starts the side Claude. `close` closes the spoochie and
+purges what it stored. Nobody reads them; they just happen. So for those two, "not
+rejected" is not enough: they need a signature that verifies. An unsigned envelope from
+an id with no pinned key is still delivered **as a message**, labelled unsigned, because
+a person reads it and sees the label. As an `accept` or a `close` it is dropped and said
+in the thread.
+
+That breaks accept and close over Slack with machines older than 0.9.9, which send them
+unsigned. The fallbacks are unchanged: accept in the notification or by writing in the
+thread, and a tunnel dies on its own after 10 minutes of silence.
+
+`notice` carries no signature. It does nothing on arrival, and signing it would mean
+signing the ones the *receiver* posts into the thread ("is looking at their code"), which
+have no owner there.
 
 ### What a receiver checks, in order
 
