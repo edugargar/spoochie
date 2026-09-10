@@ -180,3 +180,16 @@ test("tampoco saca por el tunel un fichero de fuera con --file", () => {
   // Sin cwd (fuera del aparte) no se opina de rutas: el portero solo manda en su ventana.
   expect(portero({ tool_name: "Bash", tool_input: { command: `${CLI} say v1 --file /x` } }, CLI).hookSpecificOutput.permissionDecision).toBe("allow");
 });
+
+test("crossSessionInbound solo puede ser accept: los ajustes del aparte son solo suyos", () => {
+  // No hay forma de acotarlo a un remitente (el ajuste admite accept, hold o refuse y
+  // nada mas), asi que la frontera real es el token del buzon, que vive en el registro
+  // a 0600. Lo que si se comprueba aqui es que spoochie no escribe estos ajustes en
+  // ningun sitio permanente: van en la linea de arranque del aparte y mueren con el.
+  expect(ajustesAparte("/x").crossSessionInbound).toBe("accept");
+  const t: any = { id: "v1", subject: "s", from: { sessionId: "A", name: "a", cwd: "/a" }, to: { sessionId: "B", name: "b", cwd: "/b" }, context: {}, state: "open", messages: [] };
+  const script = scriptVentana(t, "/tmp", "s1");
+  expect(script).toContain("crossSessionInbound");
+  // Ni settings.json del proyecto ni del usuario: solo el proceso que se lanza aqui.
+  expect(script).not.toContain(".claude/settings.json");
+});
