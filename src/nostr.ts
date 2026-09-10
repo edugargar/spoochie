@@ -112,7 +112,15 @@ export function abrir(wrap: Event, sk: string): Abierto | null {
     const sp = rumor.tags.find((t: string[]) => t[0] === "sp")?.[1];
     if (!sp) return null;
     const sobre = JSON.parse(sp) as Sobre;
-    if (sobre.v !== 1 || typeof sobre.id !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(sobre.id)) return null;
+    // Aqui NO se juzga la version. `abrir` decide si el sobre es de spoochie y esta
+    // bien formado; que hacer con una version que no entiendo lo decide `recibir`, que
+    // es quien puede decirlo en el hilo. Ponia `sobre.v !== 1`, asi que un sobre del
+    // protocolo 2 (y uno sin `v`, de antes de que el campo existiera) se evaporaba sin
+    // dejar rastro, mientras el otro lado lo veia entregado. La regla escrita en
+    // protocolo.ts y publicada en docs/PROTOCOLO.md dice justo lo contrario, y por
+    // Slack si se cumplia: las dos rutas hacian cosas distintas.
+    if (sobre.v !== undefined && typeof sobre.v !== "number") return null;
+    if (typeof sobre.id !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(sobre.id)) return null;
     return { de: sello.pubkey, sobre, texto: String(rumor.content ?? ""), subject: rumor.tags.find((t: string[]) => t[0] === "subject")?.[1] };
   } catch { return null; }
 }
@@ -218,22 +226,27 @@ export class NostrBridge {
     this.guardarVistos();
     const a = abrir(ev, this.sk);
     if (!a) return;
-    // Si no entiendo el sobre no puedo tratarlo como si lo entendiera: le faltaria
-    // justo la parte que lo acota o la que lo retiene. Se dice y no se entrega.
-    const lectura = leerVersion(a.sobre.v, a.sobre.app);
-    if (!lectura.entiendo) {
-      this.cb.log("nostr", a.sobre.id, `sobre no entregado: ${lectura.por}`);
-      const t0 = T.load(a.sobre.id);
-      if (t0) await this.cb.onMessage(t0, { at: Date.now(), from: t0.from.sessionId === `nostr:${a.de}` ? t0.from.sessionId : t0.to.sessionId, author: "claude", kind: "text", text: `[spoochie] Un mensaje de la otra maquina no se ha entregado: ${lectura.por}`, firma: "ok" });
-      return;
-    }
     const c = Cfg.load();
     const contacto = Cfg.contactoPorNpub(c, a.de);
     if (a.sobre.kind === "hola") {
       await this.cb.onHola(a.de, a.sobre, a.sobre.fromName ?? a.texto);
       return;
     }
+    // Quien no esta en la agenda no llega ni a hacerme escribir en un hilo: la version
+    // se mira despues, porque el aviso de "actualiza" se publica y eso lo puede pedir
+    // cualquiera que sepa cifrar hacia mi clave.
     if (!contacto) { this.cb.log("nostr", "sobre de una clave que no esta en la agenda; ignorado", a.de.slice(0, 12)); return; }
+    // Si no entiendo el sobre no puedo tratarlo como si lo entendiera: le faltaria
+    // justo la parte que lo acota o la que lo retiene. Se dice y no se entrega.
+    const lectura = leerVersion(a.sobre.v, a.sobre.app);
+    if (!lectura.entiendo) {
+      this.cb.log("nostr", a.sobre.id, `sobre no entregado: ${lectura.por}`);
+      // Si es una invitacion todavia no hay hilo donde decirlo, y por Nostr no hay otro
+      // sitio: queda en el log del demonio y `spoochie doctor` lo saca.
+      const t0 = T.load(a.sobre.id);
+      if (t0) await this.cb.onMessage(t0, { at: Date.now(), from: t0.from.sessionId === `nostr:${a.de}` ? t0.from.sessionId : t0.to.sessionId, author: "claude", kind: "text", text: `[spoochie] Un mensaje de la otra maquina no se ha entregado: ${lectura.por}`, firma: "ok" });
+      return;
+    }
     Cfg.tocarContacto({ npub: a.de });
     if (a.sobre.kind === "invite") { await this.materializar(a, contacto); return; }
     if (a.sobre.kind === "file") { await this.trozo(a); return; }
