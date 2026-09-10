@@ -18,7 +18,24 @@
  * `$(...)` y las comillas invertidas.
  */
 
+import { resolve, relative, isAbsolute } from "node:path";
+
 export type Veredicto = { ok: true } | { ok: false; por: string };
+
+/** Si una ruta cae dentro del directorio del aparte. `..` y las absolutas de fuera, no. */
+export function dentro(base: string, ruta: string): boolean {
+  if (!base) return true;
+  // La tilde la expande el shell, no nosotros: `resolve("/repo", "~/x")` daria
+  // "/repo/~/x", que parece de dentro y no lo es. Un repo no se llama "~".
+  if (ruta.startsWith("~")) return false;
+  const r = relative(resolve(base), resolve(base, ruta));
+  return r === "" || (!r.startsWith("..") && !isAbsolute(r));
+}
+
+/** Las banderas de la CLI de spoochie que abren un fichero del disco y lo mandan por el
+ *  tunel. `spoochie say v1 --file ~/.ssh/id_rsa` era una linea que la lista blanca
+ *  aprobaba entera: el subcomando es `say`, que esta permitido. */
+const SP_BANDERAS_DE_FICHERO = ["--file", "--files", "--diff-file"];
 
 /** Subcomandos de git que solo leen. `branch` entra aparte: a secas admite -D y -f. */
 const GIT_LECTURA = new Set(["diff", "log", "show", "status", "blame", "grep", "ls-files", "branch"]);
@@ -143,10 +160,20 @@ function juzgarGit(resto: string[]): Veredicto {
   return { ok: true };
 }
 
-function juzgarSpoochie(resto: string[]): Veredicto {
+function juzgarSpoochie(resto: string[], cwd: string): Veredicto {
   const sub = resto[0];
   if (!sub) return { ok: false, por: "spoochie sin subcomando" };
   if (!SP_SUBCOMANDOS.has(sub)) return { ok: false, por: `\`spoochie ${sub}\` no es de las que puede correr el aparte` };
+
+  for (let i = 1; i < resto.length; i++) {
+    const n = nombreBandera(resto[i]);
+    if (!SP_BANDERAS_DE_FICHERO.includes(n)) continue;
+    const valor = resto[i].includes("=") ? resto[i].slice(resto[i].indexOf("=") + 1) : resto[i + 1];
+    if (!valor || valor === "-") continue;
+    for (const ruta of valor.split(",").map(x => x.trim()).filter(Boolean)) {
+      if (!dentro(cwd, ruta)) return { ok: false, por: `\`${n} ${ruta}\` saca por el tunel un fichero de fuera de este repo` };
+    }
+  }
   return { ok: true };
 }
 
@@ -154,7 +181,7 @@ function juzgarSpoochie(resto: string[]): Veredicto {
  * El veredicto sobre una linea de Bash. `cli` es como se invoca la CLI de spoochie en
  * esta maquina, que puede ser una palabra (binario compilado) o tres (`bun run cli.ts`).
  */
-export function juzgarBash(cmd: string, cli: string): Veredicto {
+export function juzgarBash(cmd: string, cli: string, cwd = ""): Veredicto {
   const { palabras, problema } = escanear(cmd);
   if (problema) return { ok: false, por: `la linea lleva ${problema}` };
   if (!palabras.length) return { ok: false, por: "una linea vacia" };
@@ -167,7 +194,7 @@ export function juzgarBash(cmd: string, cli: string): Veredicto {
   if (!p.length) return { ok: false, por: "rtk sin comando detras" };
 
   if (cabeceraCli.length && p.length >= cabeceraCli.length && cabeceraCli.every((w, n) => p[n] === w)) {
-    return juzgarSpoochie(p.slice(cabeceraCli.length));
+    return juzgarSpoochie(p.slice(cabeceraCli.length), cwd);
   }
   if (p[0] === "git") return juzgarGit(p.slice(1));
 
@@ -191,14 +218,29 @@ const decision = (permissionDecision: "allow" | "deny", permissionDecisionReason
  * pasar sin opinar: de eso se encargan la lista blanca y las denegaciones duras.
  */
 export function portero(entrada: unknown, cli: string): Decision {
-  const e = entrada as { tool_name?: string; tool_input?: { command?: string } } | null;
+  const e = entrada as { tool_name?: string; cwd?: string; tool_input?: Record<string, unknown> } | null;
   if (!e || typeof e !== "object") return decision("deny", "spoochie: no entiendo la entrada del hook");
+  const cwd = typeof e.cwd === "string" ? e.cwd : "";
+
+  // Leer fuera del directorio del aparte. El aparte trabaja en una copia limpia del
+  // repo; su lista de herramientas lleva Read, Grep y Glob sin acotar, asi que podia
+  // leer ~/.ssh o el .env de otro proyecto y contarlo por el tunel.
+  if (["Read", "Grep", "Glob", "NotebookRead"].includes(e.tool_name ?? "")) {
+    for (const campo of ["file_path", "path", "notebook_path"]) {
+      const v = e.tool_input?.[campo];
+      if (typeof v === "string" && v && !dentro(cwd, v)) {
+        return decision("deny", `spoochie: ${v} esta fuera del repo que atiende este spoochie. Este Claude solo lee lo de aqui; si necesitas algo de fuera, pidelo por el tunel y que lo mire la persona.`);
+      }
+    }
+    return decision("allow", "");
+  }
+
   if (e.tool_name !== "Bash") return decision("allow", "");
 
   const cmd = e.tool_input?.command;
   if (typeof cmd !== "string") return decision("deny", "spoochie: un Bash sin comando");
 
-  const v = juzgarBash(cmd, cli);
+  const v = juzgarBash(cmd, cli, cwd);
   return v.ok
     ? decision("allow", "")
     : decision("deny", `spoochie: este Claude atiende un tunel y solo lee. No paso porque ${v.por}. Si necesitas eso, dilo por el tunel con \`spoochie say\` y que lo haga la persona del otro lado.`);
