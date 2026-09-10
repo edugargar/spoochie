@@ -58,6 +58,13 @@ export const HERRAMIENTAS_PROHIBIDAS = ["Edit", "Write", "MultiEdit", "NotebookE
 /** Los ajustes con los que arranca el Claude aparte.
  *
  *  `crossSessionInbound: accept` es lo que hace que el tunel le entregue los turnos.
+ *  Se miro si se podia acotar a un remitente concreto: NO se puede. El ajuste solo
+ *  admite "accept", "hold" o "refuse" (los tres estan en los mensajes del propio
+ *  binario de Claude Code), y no hay lista de remitentes. "hold" rompe el tunel: los
+ *  turnos se quedarian esperando una aprobacion que nadie va a dar en una ventana que
+ *  existe justo para no molestar a nadie. Quien autentica al que escribe es el propio
+ *  buzon, que exige el token del registro (0600) y ademas verifica el pid del proceso
+ *  que se conecta.
  *  El hook `PreToolUse` es el portero: la lista blanca de arriba casa por prefijo y no
  *  mira los argumentos, asi que `git diff --output=fichero` la pasaba. El portero ve la
  *  linea entera antes de ejecutarla. Los dos modos (ventana y fondo) usan estos mismos
