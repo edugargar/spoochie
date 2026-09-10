@@ -69,12 +69,24 @@ export const HERRAMIENTAS_PROHIBIDAS = ["Edit", "Write", "MultiEdit", "NotebookE
  *  mira los argumentos, asi que `git diff --output=fichero` la pasaba. El portero ve la
  *  linea entera antes de ejecutarla. Los dos modos (ventana y fondo) usan estos mismos
  *  ajustes: un aparte que se comporta distinto segun donde corre no es un control. */
+
+/** Las herramientas que pasan por el portero.
+ *
+ *  El `matcher` de un hook PreToolUse es una expresion regular contra el nombre de la
+ *  herramienta, y aqui ponia "Bash" a secas. O sea que el portero solo veia los Bash:
+ *  toda su parte de acotar Read, Grep y Glob al worktree estaba escrita, probada por su
+ *  cuenta, y no se ejecutaba nunca. Un aparte podia leer ~/.ssh y contarlo por el tunel,
+ *  que es justo lo que ese codigo iba a impedir.
+ *
+ *  Hay un test que compara esta lista con la que juzga `portero()`: si una crece y la
+ *  otra no, salta. */
+export const HERRAMIENTAS_DEL_PORTERO = ["Bash", "Read", "Grep", "Glob", "NotebookRead", "Artifact"];
 export function ajustesAparte(cli = comandoCli()): Record<string, unknown> {
   return {
     crossSessionInbound: "accept",
     hooks: {
       PreToolUse: [
-        { matcher: "Bash", hooks: [{ type: "command", command: `${cli} portero` }] },
+        { matcher: HERRAMIENTAS_DEL_PORTERO.join("|"), hooks: [{ type: "command", command: `${cli} portero` }] },
       ],
       // El centinela: un aparte que termina su turno sin haber contestado por el tunel
       // deja al otro lado en silencio hasta que el reloj cierra el spoochie.

@@ -19,6 +19,12 @@
  */
 
 import { resolve, relative, isAbsolute } from "node:path";
+import { rutaTranscript } from "./transcript.ts";
+
+/** Las herramientas que abren un fichero por su ruta. `aparte.ts` engancha el hook para
+ *  estas mas Bash y Artifact, y hay un test que compara las dos listas: un nombre en una
+ *  y no en la otra es codigo que se escribe y no se ejecuta, que es lo que paso. */
+export const LEEN_FICHEROS = ["Read", "Grep", "Glob", "NotebookRead"];
 
 export type Veredicto = { ok: true } | { ok: false; por: string };
 
@@ -225,12 +231,31 @@ export function portero(entrada: unknown, cli: string): Decision {
   // Leer fuera del directorio del aparte. El aparte trabaja en una copia limpia del
   // repo; su lista de herramientas lleva Read, Grep y Glob sin acotar, asi que podia
   // leer ~/.ssh o el .env de otro proyecto y contarlo por el tunel.
-  if (["Read", "Grep", "Glob", "NotebookRead"].includes(e.tool_name ?? "")) {
+  if (LEEN_FICHEROS.includes(e.tool_name ?? "")) {
     for (const campo of ["file_path", "path", "notebook_path"]) {
       const v = e.tool_input?.[campo];
       if (typeof v === "string" && v && !dentro(cwd, v)) {
         return decision("deny", `spoochie: ${v} esta fuera del repo que atiende este spoochie. Este Claude solo lee lo de aqui; si necesitas algo de fuera, pidelo por el tunel y que lo mire la persona.`);
       }
+    }
+    return decision("allow", "");
+  }
+
+  // Artifact publica en claude.ai lo que le des, o sea que es la unica herramienta del
+  // aparte que saca contenido de esta maquina. Esta en su lista blanca por un motivo
+  // concreto y estrecho: el demonio no puede publicar un Artifact y la sesion
+  // interactiva no debe ver el spoochie, asi que el transcript lo publica el aparte.
+  //
+  // Sin esto, ese motivo estrecho era una puerta ancha: `Artifact` con cualquier
+  // `file_path` publica lo que el aparte haya podido leer, y lo que puede leer es el
+  // repo entero, `.env` incluido. El vigilante mira el mensaje que entra, pero el
+  // vigilante es un modelo y el corpus da 23 de 24. Esto no es un modelo.
+  if (e.tool_name === "Artifact") {
+    const mio = rutaTranscript(process.env.SPOOCHIE_APARTE ?? "");
+    const ruta = e.tool_input?.file_path;
+    if (!process.env.SPOOCHIE_APARTE) return decision("deny", "spoochie: aqui Artifact solo publica el transcript de un spoochie, y este Claude no atiende ninguno");
+    if (typeof ruta !== "string" || resolve(ruta) !== resolve(mio)) {
+      return decision("deny", `spoochie: Artifact aqui solo publica el transcript de este spoochie (${mio}). Publicar otra cosa saca de esta maquina algo que nadie ha aceptado que salga.`);
     }
     return decision("allow", "");
   }
