@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { escanear, juzgarBash, portero } from "../src/portero.ts";
-import { ajustesAparte } from "../src/aparte.ts";
+import { ajustesAparte, banderasAparte, modoPermisos, scriptVentana } from "../src/aparte.ts";
 
 const CLI = "/usr/local/bin/spoochie";
 const CLI_DEV = "/opt/bun run /repo/src/cli.ts";
@@ -117,4 +117,19 @@ test("el aparte arranca con el portero enganchado, en ventana y en fondo", () =>
   expect(a.crossSessionInbound).toBe("accept");
   expect(a.hooks.PreToolUse[0].matcher).toBe("Bash");
   expect(a.hooks.PreToolUse[0].hooks[0].command).toBe("/usr/local/bin/spoochie portero");
+});
+
+test("la ventana y el fondo arrancan con las mismas banderas", () => {
+  // Estaban escritas dos veces y habian divergido: la ventana con modoPermisos() y el
+  // fondo con "default" a mano. El script de la ventana lleva las banderas entrecomilladas
+  // por sq(), asi que se comparan las palabras que salen de banderasAparte en los dos sitios.
+  const b = banderasAparte("v1", "/usr/local/bin/spoochie");
+  expect(b).toContain("--permission-mode");
+  expect(b[b.indexOf("--permission-mode") + 1]).toBe(modoPermisos());
+  expect(b[b.indexOf("--settings") + 1]).toBe(JSON.stringify(ajustesAparte("/usr/local/bin/spoochie")));
+
+  const t: any = { id: "v1", subject: "s", from: { sessionId: "A", name: "a", cwd: "/a" }, to: { sessionId: "B", name: "b", cwd: "/b" }, context: {}, state: "open", messages: [] };
+  const script = scriptVentana(t, "/tmp", "sesion-1");
+  for (const palabra of banderasAparte("v1")) expect(script).toContain(palabra.split("\n")[0].slice(0, 40));
+  expect(script).not.toContain("--permission-mode default\n");
 });
