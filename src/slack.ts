@@ -38,7 +38,7 @@ export const EVENT = "spoochie";
 export type Envelope = {
   v: number;
   id: string;
-  kind: "invite" | "msg" | "notice" | "accept" | "close" | "hola";
+  kind: "invite" | "msg" | "notice" | "accept" | "close" | "hola" | "rota";
   /** Quien habla, por su id de Slack. Sin esto un demonio no distingue lo que postea
    *  el de enfrente de lo que ha posteado el mismo: los dos postean como el bot. */
   from: string;
@@ -79,6 +79,25 @@ export function holaFirmado(me: string, to: string, nombre: string, np: string, 
   const k = misClaves(Cfg.load());
   env.pk = k.pub;
   env.sig = firmar(k.priv, env, np);
+  return env;
+}
+
+/**
+ * El sobre de una rotacion de clave, firmado con la clave VIEJA.
+ *
+ * Es la unica forma de cambiar una clave fijada sin que cada persona tenga que
+ * reinvitarte a mano: quien recibe ya tiene fijada tu clave vieja, comprueba con ella
+ * que este mensaje es tuyo, y solo entonces se queda con la nueva. Si te robaron la
+ * vieja, el ladron tambien puede firmar esto: por eso la rotacion se dice en el DM en
+ * texto, para que la persona lo vea y pregunte si no lo esperaba.
+ */
+export function rotaFirmado(me: string, to: string, nombre: string, pubNueva: string, priv: string, pubVieja: string): Envelope & { pkNueva: string } {
+  const env: Envelope & { pkNueva: string } = {
+    v: PROTOCOLO, id: "rota", kind: "rota", from: me, to, fromName: nombre, pkNueva: pubNueva,
+    app: VERSION, ts: Math.floor(Date.now() / 1000), sv: 2,
+  };
+  env.pk = pubVieja;
+  env.sig = firmar(priv, env, pubNueva);
   return env;
 }
 
@@ -486,6 +505,21 @@ export class SlackBridge {
       return true;
     } catch { return false; }
   }
+  /** Le digo a una persona que cambio de clave de firma, firmandolo con la vieja. */
+  async rotar(userId: string, pubNueva: string, priv: string, pubVieja: string, nombre: string): Promise<boolean> {
+    try {
+      const im = await this.call("conversations.open", { users: userId });
+      await this.call("chat.postMessage", {
+        channel: im.channel.id, text: `${nombre} ha cambiado su clave de firma de spoochie.`,
+        blocks: [ctx(`:key: ${nombre} ha cambiado su clave de firma de spoochie. Su Claude lo comprueba con la clave que ya tenia fijada y se queda con la nueva. *Si ${nombre} no te ha dicho que iba a rotar, preguntaselo por otro sitio antes de seguir.*`)],
+        metadata: { event_type: EVENT, event_payload: rotaFirmado(this.me, userId, nombre, pubNueva, priv, pubVieja) },
+      });
+      return true;
+    } catch { return false; }
+  }
+  /** Al recibir una rotacion por Slack. */
+  onRota: ((de: string, pkNueva: string, veredicto: Veredicto) => Promise<void>) | null = null;
+
   /** Al recibir un hola por Slack. */
   onHola: ((de: string, nombre: string, np: string, r: string[], veredicto: Veredicto) => Promise<void>) | null = null;
 
@@ -816,6 +850,11 @@ export class SlackBridge {
       if (env?.kind === "hola" && env.from !== this.me && env.np && /^[0-9a-f]{64}$/.test(env.np) && !this.holasVistos.has(msg.ts)) {
         this.holasVistos.add(msg.ts);
         if (this.onHola) await this.onHola(env.from, env.fromName ?? env.from, env.np, Array.isArray(env.r) ? env.r : [], verificarSobre({ id: "hola", kind: "hola", from: env.from, fromName: env.fromName, pk: env.pk, sig: env.sig }, env.np));
+        continue;
+      }
+      if (env?.kind === "rota" && env.from !== this.me && typeof (env as any).pkNueva === "string") {
+        // Se comprueba contra la clave que YA estaba fijada: el texto firmado es la nueva.
+        if (this.onRota) await this.onRota(env.from, (env as any).pkNueva, verificarSobre(env, (env as any).pkNueva));
         continue;
       }
       if (!env || env.kind !== "invite" || known.has(env.id) || env.from === this.me) continue;
