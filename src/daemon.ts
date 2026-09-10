@@ -792,6 +792,14 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string, remo
   }
   await refreshTranscript(t);
   log("close", t.id, reason, notified.join(" "));
+
+  // Proactividad acotada: hechos del hilo, nunca iniciativa sobre el trabajo.
+  //
+  // El caso: la respuesta llego al Claude aparte, que vivia en una ventana que has
+  // cerrado, o el spoochie murio de silencio mientras estabas en otra cosa. Se cierra,
+  // se borra, y nadie te dice que habia una respuesta que no leiste. Esto no propone
+  // nada ni reabre nada: dice que llego, de quien, cuando y donde esta el transcript.
+  await avisarDeLoNoLeido(t);
   if (Cfg.load().borrarAlCerrar !== false) {
     // En local, ya: la conversacion vive en el Claude que la tuvo, no aqui.
     T.purgar(t, { spool: join(SPOOL, t.id), transcript: rutaTranscript(t.id) });
@@ -806,6 +814,30 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string, remo
   if (ap?.modo === "fondo") setTimeout(() => Ap.matar(ap), 15_000).unref();
   if (ap?.modo === "ventana" && ap.listo) { const r = sessById(ap.sess.sessionId); if (r) await send(r, `Este spoochie ha terminado. Puedes cerrar esta ventana.`); }
   if (ap) apartes.delete(t.id);
+}
+
+/**
+ * Si al cerrar quedaba una respuesta del otro lado sin contestar, se dice una vez en la
+ * sesion que presto el repo. Antes de purgar, porque despues ya no queda el texto.
+ */
+async function avisarDeLoNoLeido(t: T.Thread) {
+  // Solo de un tunel que llego a abrirse. Si lo rechazaste, recordarte el mensaje que
+  // rechazaste es justo lo contrario de respetar la decision.
+  if (!t.acceptedAt) return;
+  const entregados = t.messages.filter(m => m.retenido !== "si" && m.retenido !== "descartado");
+  const ultimo = entregados[entregados.length - 1];
+  if (!ultimo) return;
+  const mio = sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId;
+  if (ultimo.from === mio) return;               // contestamos nosotros los ultimos
+  const local = sessById(mio);
+  if (!local) return;
+  // Si lo atendio un aparte que sigue vivo, ya lo ha visto: no hace falta repetirlo.
+  const ap = apartes.get(t.id);
+  if (ap && !ap.muerto && ap.sess.sessionId !== mio) return;
+  const quien = T.otherSide(t, mio);
+  const hace = Math.round((Date.now() - ultimo.at) / 60000);
+  await send(local, `[spoochie ${t.id}] se ha cerrado (${t.closeReason}) y lo ultimo que se dijo fue de ${quien.human ?? quien.name}, hace ${hace} min, sin respuesta tuya:\n\n${(ultimo.text ?? "").slice(0, 400)}\n\n${t.transcriptUrl ? `El hilo entero: ${t.transcriptUrl}` : "No hay transcript publicado de este spoochie."} Diselo a tu humano; no abras otro spoochie por tu cuenta.`);
+  log("no-leido", t.id, quien.name, `${hace} min`);
 }
 
 async function tick() {
