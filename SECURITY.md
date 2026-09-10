@@ -33,9 +33,10 @@ practice. In short:
 - Keys and tokens live in `~/.claude/spoochie/config.json` with mode 0600, in a
   directory with mode 0700. They are not in a keychain.
 - An invitation is base64 JSON that anyone can decode. It carries public keys, a Slack
-  id and a name; no token unless the inviter passes `--con-slack`, and then the DM says
-  so. Before 0.9.7 every invitation carried the Slack bot token: if one of those was
-  pasted somewhere public, rotate the token in the Slack app.
+  id and a name, and never a token: `--con-slack`, which put one back, was removed in
+  0.9.9. Before 0.9.7 every invitation carried the Slack bot token, and between 0.9.7
+  and 0.9.8 that flag could. If one of those was pasted somewhere public, rotate the
+  token in the Slack app. `join` drops a token it finds in an old invitation and says so.
 - The side Claude runs in a fresh git worktree with a read-only tool allowlist. It
   cannot write to your checkout; it can read it, including files you would not share.
 - Binaries are built by GitHub Actions from a tag and verified by SHA256 before they

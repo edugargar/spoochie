@@ -100,11 +100,14 @@ it. At the end it runs `spoochie selftest` and prints `Todo bien` or which step 
 
 What the invitation carries: the inviter's public keys and relays, the newcomer's Slack
 id and name, and the team name. It is base64 JSON, not encrypted, and anyone can open
-it, so there is no secret inside. Since 0.9.7 the Slack bot token is not in it: the
+it, so there is no secret inside, and there is no flag that puts one there. The
 newcomer's daemon talks over Nostr, and the DM that tells them someone opened a
-spoochie comes from the opener's bot. `spoochie invite --con-slack` puts the token back
-for a newcomer who must reach contacts still on the Slack transport (pre-0.9); the DM
-then says so in its first lines.
+spoochie comes from the opener's bot. Until 0.9.8 `--con-slack` put the bot token back
+in the string for a newcomer who had to reach contacts still on the Slack transport
+(pre-0.9); that flag is gone. Handing a team-wide credential to a newcomer over a DM
+so they can talk to someone who has not updated is the wrong trade: those contacts
+update instead. A pre-0.9.9 invitation that still carries a token is read, the token is
+dropped, and `join` tells the newcomer to have it rotated.
 
 ## How it works
 
@@ -327,8 +330,8 @@ otherwise; both timeouts; no secrets in this repo.
 What you should know:
 
 - **One bot token for the whole team.** Whoever holds it can read the bot's DM with
-  anyone and post as the bot. Since 0.9.7 it is not in invitations: a newcomer talks
-  over Nostr and never holds it unless you pass `--con-slack`. Everyone who joined
+  anyone and post as the bot. It is not in invitations and no flag puts it there: a
+  newcomer talks over Nostr and never holds it. Everyone who joined
   before 0.9.7 has it in their config; rotate it when someone leaves. Per-person OAuth
   (`xoxp`) is still supported via `spoochie slack setup` for teams that want it.
 - **A Nostr key enters your contact list only through your own invitation.** The
@@ -345,14 +348,17 @@ What you should know:
   header or as spoochie's rules, and the guardian holds what asks you to act, but a
   persuasive message is still a persuasive message. Run Claude Code with normal
   permissions, not bypass, on machines that use spoochie.
-- **With `--con-slack`, the bot token goes through the model once.** `/spoochie:join
-  <blob>` passes the invitation as a prompt argument, so the token is in that session's
-  context and in its local transcript under `~/.claude/projects/`. Without the flag
-  (the default since 0.9.7) the invitation holds public keys and ids only.
+- **The invitation goes through the model.** `/spoochie:join <blob>` passes it as a
+  prompt argument, so whatever is inside lands in that session's context and in its
+  local transcript under `~/.claude/projects/`. That is why nothing secret is allowed
+  in there: the invitation holds public keys and ids only.
 - **The side Claude is read-only in practice, not by proof.** Its allowlist is Read,
   Grep, Glob, read-only git and the spoochie subcommands; Edit, Write and the git
   commands that change history are denied. `allowedTools` cannot filter arguments, so
-  `git diff --output=<file>` would write a file, and in `auto` mode a Bash command
+  a `PreToolUse` hook (the *portero*) reads every Bash line before it runs and denies
+  shell metacharacters outside quotes, unknown programs, and the git flags that write
+  (`--output`, `-o`), read outside the repo (`--no-index`, `-C`, `--git-dir`) or run
+  another program (`-c`, `--ext-diff`). In `auto` mode a Bash command
   outside the allowlist is decided by Claude Code's classifier, not by a person.
 - **The guardian fails open, visibly.** If Haiku is unreachable or times out (20 s), the
   message is delivered labelled `sin vigilar` in the session and in the thread, rather

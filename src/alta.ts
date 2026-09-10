@@ -5,9 +5,11 @@ import { ORIGEN } from "./origen.ts";
  *  buscarse a si mismo en Slack, que exige un scope que la app puede no tener) e `i`
  *  es quien invita, para que "@edu" resuelva en local sin llamar a Slack. */
 export type Invitacion = {
-  /** Token del bot de Slack. Puede faltar: una invitacion solo por Nostr. */
-  b?: string;
   t?: string; u?: string; n?: string;
+  /** Solo al leer: la cadena traia un token de bot (una invitacion de 0.9.7 o anterior
+   *  hecha con --con-slack). No se guarda; se dice, porque quien la mando debe saber
+   *  que ha repartido una credencial del equipo por un DM. */
+  traiaToken?: boolean;
   /** Nonce de un solo uso: el hola de quien se da de alta lo devuelve, y sin el no
    *  entra ninguna clave en la agenda de quien invito (claves.ts). */
   k?: string;
@@ -16,14 +18,20 @@ export type Invitacion = {
 };
 
 /**
- * Lo que va dentro de una invitacion por Slack. El token del bot solo con `conSlack`:
- * la cadena es JSON en base64, cualquiera la abre con un decodificador, y un companero
- * lo hizo el primer dia y vio el token de la app. Con Nostr el recien llegado no lo
- * necesita: su demonio habla cifrado por los reles, y los avisos por DM se los manda el
- * bot de quien le escribe. Sin el token, la cadena solo lleva claves publicas y su id.
+ * Lo que va dentro de una invitacion. Nunca un secreto.
+ *
+ * La cadena es JSON en base64: cualquiera la abre con un decodificador, y un companero
+ * lo hizo el primer dia y vio el token de la app. 0.9.7 lo saco del camino normal y
+ * dejo `--con-slack` para volver a meterlo; una bandera que reparte una credencial de
+ * todo el equipo por un DM sigue siendo la misma fuga, solo que a peticion. Un
+ * recien llegado no necesita el token: su demonio habla cifrado por los reles y los
+ * avisos por DM se los manda el bot de quien le escribe.
+ *
+ * Lo que se pierde: quien entra hoy no puede hablar con alguien que siga en el
+ * transporte de Slack de antes de 0.9. Esa persona actualiza; el token no viaja.
  */
-export function datosInvitacion(x: { bot: string; team?: string; dest: { id: string; name: string }; yo: Invitacion["i"]; conSlack?: boolean; k?: string }): Invitacion {
-  return { ...(x.conSlack ? { b: x.bot } : {}), t: x.team, u: x.dest.id, n: x.dest.name, i: x.yo, k: x.k };
+export function datosInvitacion(x: { team?: string; dest: { id: string; name: string }; yo: Invitacion["i"]; k?: string }): Invitacion {
+  return { t: x.team, u: x.dest.id, n: x.dest.name, i: x.yo, k: x.k };
 }
 
 export function crearInvitacion(inv: Invitacion): string {
@@ -43,15 +51,17 @@ export function limpiarCadena(entrada: string): string | null {
   return null;
 }
 
-/** Una invitacion es un JSON en base64url con el token del bot dentro. Si no
- *  descodifica o no trae token, no es una invitacion: se dice, no se adivina. */
+/** Una invitacion es un JSON en base64url con las claves publicas de quien invita.
+ *  Si no descodifica o no trae clave Nostr, no es una invitacion: se dice, no se
+ *  adivina. Un `b` de una version vieja se tira aqui y se avisa: aceptar un token que
+ *  llega en una cadena pegada es exactamente lo que dejamos de hacer. */
 export function leerInvitacion(blob: string): Invitacion | null {
   try {
     const j = JSON.parse(Buffer.from(blob, "base64url").toString("utf8"));
-    const conSlack = typeof j?.b === "string" && j.b;
     const conNostr = typeof j?.i?.np === "string" && /^[0-9a-f]{64}$/.test(j.i.np);
-    if (!conSlack && !conNostr) return null;
-    const inv: Invitacion = conSlack ? { b: j.b } : {};
+    if (!conNostr) return null;
+    const inv: Invitacion = {};
+    if (typeof j?.b === "string" && j.b) inv.traiaToken = true;
     if (typeof j.t === "string") inv.t = j.t;
     if (typeof j.u === "string" && /^[UW][A-Z0-9]{6,}$/.test(j.u)) inv.u = j.u;
     // Como se llama quien se da de alta, para que no firme con el usuario de su Mac.
@@ -68,14 +78,12 @@ export function leerInvitacion(blob: string): Invitacion | null {
 
 /** El DM que recibe quien se da de alta. Lleva todo lo que tiene que hacer, en
  *  orden, con la cadena ya dentro: no hay nada que pedir aparte. */
-export function textoInvitacion(blob: string, quien: string, repo = ORIGEN, conToken = false): string {
+export function textoInvitacion(blob: string, quien: string, repo = ORIGEN): string {
   const arroba = quien.toLowerCase().replace(/\s+/g, "");
   return [
     `${quien} te invita a spoochie: un tunel entre tu sesion de Claude Code y la suya.`,
     `Nadie escribe en tu maquina y ningun tunel se abre sin que tu aceptes.`,
-    conToken
-      ? `La cadena de abajo lleva el token del bot de Slack de la app: no la pegues en ningun sitio publico.`
-      : `La cadena de abajo solo lleva claves publicas de ${quien} y tu id de Slack. No hay ninguna contrasena dentro.`,
+    `La cadena de abajo solo lleva claves publicas de ${quien} y tu id de Slack. No hay ninguna contrasena dentro.`,
     ``,
     `Para entrar no hace falta instalar nada antes:`,
     `1. En Claude Code:  /plugin marketplace add ${repo}`,
