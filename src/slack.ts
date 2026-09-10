@@ -566,10 +566,17 @@ export class SlackBridge {
       from: mine.slackUser ?? this.me,
       ...(m ? { kindOfMsg: m.kind } : {}),
     };
-    if (m) this.firma(env, m.text, T.otherSide(t, mine.sessionId).slackUser);
-    const body = m
+    const body: any = m
       ? { text: fallbackText(t, m), blocks: messageBlocks(t, m) }
       : noticeBlocks(t, notice);
+    // Se firma lo que el otro lado va a reconstruir, que es el cuerpo de los bloques.
+    // `accept` y `close` no se firmaban, y son los dos sobres que HACEN algo al llegar:
+    // abrir el tunel y cerrarlo purgando el hilo. Los `notice` siguen sin firma porque al
+    // llegar no hacen nada, y firmarlos obligaria a firmar tambien los que postea el
+    // receptor ("esta mirando su codigo"), que no tienen dueno en el hilo.
+    if (m || env.kind === "accept" || env.kind === "close") {
+      this.firma(env, m ? m.text : (bodyFromBlocks(body.blocks) || body.text || ""), T.otherSide(t, mine.sessionId).slackUser);
+    }
     // Los ficheros van al hilo antes que el texto, para que se lean juntos.
     if (m?.files?.length) {
       for (const f of m.files) await subir(this.botToken, f, t.slack.channel, t.slack.ts);
@@ -724,10 +731,8 @@ export class SlackBridge {
         // Lo postea spoochie. Los dos lados postean como el bot, asi que quien habla
         // solo se sabe por el sobre. Sin esto un demonio se salta al otro.
         if (env.from === this.me) continue;
-        if (env.kind === "accept") { await this.onRemoteAccept(t, "en la otra maquina"); continue; }
-        // El cierre del otro lado: antes era un aviso mas y se ignoraba, y este lado
-        // se enteraba por silencio a los 10 min. Ahora cierra (y borra) aqui tambien.
-        if (env.kind === "close") { if (this.onCierre) await this.onCierre(t, /cerrado \(([^)]*)\)/.exec(rep.text ?? "")?.[1] ?? "cerrado por el otro lado"); continue; }
+        // Un `notice` no hace nada al llegar, y el `invite` se verifica en `discover`.
+        // Todo lo demas pasa por la firma antes de tocar nada.
         if (env.kind === "notice" || env.kind === "invite") continue;
         const texto = bodyFromBlocks((rep as any).blocks) || rep.text || "";
         // Antes que la firma: si no entiendo el sobre, no puedo afirmar nada sobre el.
@@ -749,9 +754,27 @@ export class SlackBridge {
         };
         if (NO_ENTRA[firma]) {
           // No se entrega. Se dice en el hilo, que es donde lo ven las personas.
-          await this.aviso(t, `:no_entry: un mensaje que decia venir de ${env.fromName ?? env.from} ${NO_ENTRA[firma]}. Descartado.`);
+          const que = env.kind === "accept" ? "una aceptacion" : env.kind === "close" ? "un cierre" : "un mensaje";
+          await this.aviso(t, `:no_entry: ${que} que decia venir de ${env.fromName ?? env.from} ${NO_ENTRA[firma]}. Descartado.`);
           continue;
         }
+        // Ya con la firma comprobada: los dos sobres que hacen algo por si solos.
+        //
+        // Y para estos dos no basta con "no rechazada": hace falta firma de verdad. Un
+        // sobre sin firma de un id sin clave fijada se entrega como mensaje, marcado
+        // como sin firmar, porque quien lo lee es una persona que ve la marca. Un
+        // `accept` o un `close` no los lee nadie: abren el tunel o cierran y purgan el
+        // hilo ellos solos. Sin firma no se hace nada, y se dice en el hilo.
+        if (env.kind === "accept" || env.kind === "close") {
+          if (firma !== "ok" && firma !== "nueva" && firma !== "vieja") {
+            await this.aviso(t, `:no_entry: ${env.kind === "accept" ? "una aceptacion" : "un cierre"} de ${env.fromName ?? env.from} venia sin firmar. Descartado: esto lo puede postear cualquiera que tenga el token del bot.`);
+            continue;
+          }
+        }
+        if (env.kind === "accept") { await this.onRemoteAccept(t, "en la otra maquina"); continue; }
+        // El cierre del otro lado: antes era un aviso mas y se ignoraba, y este lado
+        // se enteraba por silencio a los 10 min. Ahora cierra (y borra) aqui tambien.
+        if (env.kind === "close") { if (this.onCierre) await this.onCierre(t, /cerrado \(([^)]*)\)/.exec(rep.text ?? "")?.[1] ?? "cerrado por el otro lado"); continue; }
         await this.onMessage(t, {
           at: Math.round(Number(rep.ts) * 1000),
           from: T.otherSide(t, this.localSideId(t)).sessionId,

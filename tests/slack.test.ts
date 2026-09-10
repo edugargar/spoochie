@@ -247,6 +247,23 @@ test("con --hilos canal, el hilo va al canal y el aviso al DM", async () => {
   Cfg.save({ guardian: false, transcript: false } as any);
 });
 
+/**
+ * Un `close` firmado como lo firma el emisor de verdad. Desde 0.9.9 un cierre sin firma
+ * no cierra nada: es lo unico que se puede postear con el token del bot y que borra el
+ * hilo de otra persona. Se deja al contacto con su clave fijada, que es el caso normal.
+ */
+function cierreFirmado(id: string, from: string, texto: string) {
+  const { nuevasClaves, firmar } = require("../src/firma.ts");
+  const Cfg = require("../src/config.ts");
+  const k = nuevasClaves();
+  const c = Cfg.load();
+  Cfg.addContact(c, { id: from, name: "Edu", pk: k.pub });
+  Cfg.save(c);
+  const env: any = { v: 1, id, kind: "close", from, ts: Math.floor(Date.now() / 1000), sv: 2, pk: k.pub };
+  env.sig = firmar(k.priv, env, texto);
+  return env;
+}
+
 test("el cierre viaja con su propio tipo y el otro lado cierra al leerlo", async () => {
   const b: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_EDU", async () => {}, async () => {}, async () => {});
   const posts: any[] = [];
@@ -262,7 +279,7 @@ test("el cierre viaja con su propio tipo y el otro lado cierra al leerlo", async
   r.onCierre = async (_t: any, motivo: string) => { cerrados.push(motivo); };
   r.get = async () => ({ messages: [
     { ts: "0.1", user: "UBOT", text: "raiz" },
-    { ts: "0.2", user: "UBOT", bot_id: "B1", text: "[spoochie a3f1 | s] cerrado (resuelto). x", metadata: { event_type: EVENT, event_payload: { v: 1, id: "a3f1", kind: "close", from: "U_EDU" } } },
+    { ts: "0.2", user: "UBOT", bot_id: "B1", text: "[spoochie a3f1 | s] cerrado (resuelto). x", metadata: { event_type: EVENT, event_payload: cierreFirmado("a3f1", "U_EDU", "[spoochie a3f1 | s] cerrado (resuelto). x") } },
   ] });
   const hilo = { ...t, slack: { channel: "G1", ts: "0.1" } };
   const Tm = await import("../src/threads.ts"); Tm.save(hilo as any);
