@@ -113,6 +113,7 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie search "<texto>"              busca entre los spoochies de esta maquina
   spoochie transcript <id> [--url <url-del-artifact>]
   spoochie selftest                      prueba el bucle entero aqui, sin necesitar a nadie
+  spoochie olvidar @sam [--motivo "..."] echale de tu agenda y cierra lo suyo
   spoochie llavero [on|off]              tus claves y el token, en el llavero de macOS
   spoochie auditoria [--n 50]            quien abrio, quien acepto, que se retuvo y quien lo solto
   spoochie doctor                        repasa lo que tiene que estar bien para entregar,
@@ -429,6 +430,18 @@ async function main() {
 
   // Los secretos al llavero de macOS. A mano y reversible: una migracion automatica de
   // las claves de alguien, si sale mal, le deja fuera de su agenda sin forma de volver.
+  // Echar a alguien de la agenda: cierra lo suyo y deja de conocerle.
+  if (cmd === "olvidar") {
+    const quien = (rest[0] ?? "").replace(/^@/, "");
+    if (!quien) { console.error('uso:  spoochie olvidar @sam [--motivo "se ha ido del equipo"]'); process.exit(2); return; }
+    const r = await rpc({ op: "olvidar", sessionId: (() => { try { return whoAmI().sessionId; } catch { return undefined; } })(), quien, motivo: flag(rest, "motivo") });
+    if (r?.ok === false) { console.error(`spoochie: ${r.error}`); process.exit(1); return; }
+    console.log(`${r.quien} ya no esta en tu agenda${r.cerrados.length ? `, y se han cerrado ${r.cerrados.length} spoochie(s): ${r.cerrados.join(", ")}` : ""}.`);
+    console.log(`Lo que mande a partir de ahora se descarta: un sobre de un id que no esta en la agenda no entra.`);
+    console.log(`Sin servidor no hay revocacion para todo el equipo: cada maquina echa a quien quiera de la suya.`);
+    return;
+  }
+
   if (cmd === "llavero") {
     const L = await import("./llavero.ts");
     const c = Cfg.load();

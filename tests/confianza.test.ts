@@ -80,3 +80,15 @@ test("de un contacto se guarda cuando se le oyo, no si esta ahi ahora", async ()
   expect(hace(t0, t0 + 3 * 3600_000)).toBe("hace 3 h");
   expect(hace(t0, t0 + 5 * 24 * 3600_000)).toBe("hace 5 dias");
 });
+
+test("olvidar cierra lo suyo y deja de conocerle, y sin servidor no hay mas que eso", async () => {
+  const fuente = await Bun.file(new URL("../src/daemon.ts", import.meta.url)).text();
+  const f = fuente.slice(fuente.indexOf('case "olvidar"'), fuente.indexOf('// Cerrar de una vez los N tuneles'));
+  // Cierra los spoochies vivos con esa persona, por los dos transportes.
+  expect(f).toContain("t.from.slackUser === x.id || t.to.slackUser === x.id || t.nostr?.otro === x.npub");
+  expect(f).toContain("await closeThread(t");
+  // Y la borra entera, clave incluida: no es lo mismo que --olvidar-clave.
+  expect(f).toContain("delete c.contacts![clave]");
+  // Queda apuntado en el registro, que es donde se mira despues.
+  expect(f).toContain('Aud.apuntar("confianza"');
+});
