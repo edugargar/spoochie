@@ -161,6 +161,14 @@ export async function revisar(): Promise<Chequeo[]> {
     if (viejos.length) out.push({ ok: "aviso", que: "limpieza", detalle: `${viejos.length} spoochies cerrados hace mas de un mes` });
   }
 
+  {
+    // Lo que imprime el hook entra en el contexto de ESA sesion y ahi se queda; si
+    // fallo y la persona reinicio, sin esto no hay forma de saberlo despues.
+    const p = join(ROOT, "arranque.txt");
+    const chequeo = ultimoArranque(existsSync(p) ? readFileSync(p, "utf8") : null);
+    if (chequeo) out.push(chequeo);
+  }
+
   // La parte de auditoria: no "esto esta roto", sino "esto es una credencial o un resto
   // que no deberia seguir aqui". Los fallos de seguridad tampoco dan error.
   out.push(...auditar(c));
@@ -172,6 +180,14 @@ export async function revisar(): Promise<Chequeo[]> {
  * Lo que no deberia seguir en disco. Cada punto es un agujero que hubo o que puede
  * abrirse solo con el paso del tiempo, y ninguno da error por su cuenta.
  */
+/** Lo que dejo escrito el hook SessionStart la ultima vez que corrio. */
+export function ultimoArranque(texto: string | null): Chequeo | null {
+  if (!texto?.trim()) return null;
+  const [cuando, estado, detalle] = texto.trim().split("\n")[0].split("\t");
+  if (estado !== "fallo") return { ok: true, que: "ultimo arranque del hook", detalle: `${detalle ?? "sin detalle"} (${cuando})` };
+  return { ok: false, que: "ultimo arranque del hook", detalle: `${detalle ?? "fallo sin detalle"} (${cuando})` };
+}
+
 export function auditar(c: Cfg.Config, ahora = Date.now()): Chequeo[] {
   const out: Chequeo[] = [];
 
