@@ -321,6 +321,21 @@ change to a document. Tests keep the document and the code from drifting: the ve
 number, the signed field order, the 24 h window and the list of kinds are all asserted
 against `src/`.
 
+## The promises, and what proves each one
+
+Three things this tool claims about your data. Each one is a test that runs in CI, not a
+sentence in a README. The order matters: these are the three that the reporting on
+consumer AI assistants keeps finding broken, and a claim without a check is marketing.
+
+| The promise | What proves it |
+|---|---|
+| **No server of ours.** Nothing routes through infrastructure we run. | `tests/dos-maquinas-nostr.test.ts` runs two real daemons, two homes, two key sets, with no Slack and no relay of ours, and a full open/accept/answer/close. `tests/rele.test.ts` runs the real transport against a relay it can kill. |
+| **The model is yours.** No key of ours, no model of ours. | The guardian shells out to `claude -p` (`src/guardian.ts`), the side Claude is your `claude` binary. There is no API key anywhere in this repo, and the leak scanner fails the build if one appears. |
+| **Closing deletes it.** Not "hides", not "archives". | After a close, `tests/dos-maquinas-nostr.test.ts` walks **every file on both machines** and asserts the conversation text is in none of them. `tests/slack.test.ts` asserts the bot's own messages, files, root and notice are deleted. `doctor` re-checks it on a real machine and complains if a closed spoochie still holds text. |
+
+The keys stay yours too: `spoochie llavero on` moves them to the macOS keychain, and
+`spoochie rotar` changes your signing key without anyone re-inviting you.
+
 ## Security model
 
 Honest version. The real boundary is "whoever holds the bot token is on the team".
