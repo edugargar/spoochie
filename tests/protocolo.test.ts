@@ -65,3 +65,28 @@ test("los kind del documento son los del codigo", async () => {
     expect(doc).toContain(k);
   }
 });
+
+/**
+ * La regla, en el transporte por defecto.
+ *
+ * `leerVersion` estaba bien y se llamaba en `recibir`, pero `abrir` cortaba antes con
+ * `sobre.v !== 1`: un sobre del protocolo 2 se evaporaba sin dejar rastro mientras el
+ * otro lado lo veia entregado, y uno sin `v` (de antes de que el campo existiera)
+ * tambien. O sea que toda la regla escrita en este fichero y publicada en
+ * docs/PROTOCOLO.md era, por Nostr, codigo muerto. Por Slack si se cumplia: las dos
+ * rutas hacian cosas distintas con el mismo sobre.
+ */
+test("por Nostr, un sobre de otra version llega hasta quien sabe que hacer con el", async () => {
+  const { envolver, abrir, misClaves } = await import("../src/nostr.ts");
+  const yo = misClaves({} as any), otro = misClaves({} as any);
+  const manda = (v: unknown) => {
+    const { wrap } = envolver(otro.sk, yo.pk, { v, id: "abc", kind: "msg", subject: "s" } as any, "hola");
+    return abrir(wrap, yo.sk);
+  };
+  // Ni el de mas adelante ni el de antes se tiran a la basura aqui.
+  expect(manda(2)?.sobre.v).toBe(2);
+  expect(manda(undefined)).not.toBeNull();
+  expect(manda(1)?.sobre.v).toBe(1);
+  // Lo que si se descarta es lo que no es un sobre de spoochie.
+  expect(manda("dos")).toBeNull();
+});
