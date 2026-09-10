@@ -73,7 +73,23 @@ export function ajustesAparte(cli = comandoCli()): Record<string, unknown> {
   };
 }
 
-/** Con que modo de permisos arranca la ventana. "auto" por defecto: lo que no esta en la
+/** Las banderas con las que arranca el Claude aparte, iguales en ventana y en fondo.
+ *
+ *  Estaban escritas dos veces y ya habian divergido: la ventana usaba `modoPermisos()`
+ *  y el fondo tenia `"default"` a mano, asi que el mismo mensaje se juzgaba distinto
+ *  segun donde corriera el aparte, y el modo sin pantalla era ademas el que no puede
+ *  preguntar a nadie. Un solo sitio decide, y hay un test que compara las dos listas. */
+export function banderasAparte(id: string, cli = comandoCli()): string[] {
+  return [
+    "--name", `spoochie-${id}`,
+    "--permission-mode", modoPermisos(),
+    "--allowedTools", herramientasPermitidas(cli).join(","),
+    "--disallowedTools", HERRAMIENTAS_PROHIBIDAS.join(","),
+    "--settings", JSON.stringify(ajustesAparte(cli)),
+  ];
+}
+
+/** Con que modo de permisos arranca el aparte, en ventana y en fondo. "auto" por defecto: lo que no esta en la
  *  lista blanca lo decide el clasificador de Claude Code en vez de parar a preguntar; la
  *  primera prueba real dejo la ventana esperando un "ls" mientras la persona estaba en
  *  una reunion. SPOOCHIE_APARTE_PERMISOS=default vuelve a preguntar por todo. */
@@ -163,7 +179,7 @@ export function scriptVentana(t: T.Thread, cwd: string, sessionId: string): stri
     `printf '\\033]0;spoochie ${t.id}\\007'`,
     `echo ${sq(`spoochie ${t.id} · ${t.subject}`)}`,
     `echo ${sq(`Claude aparte: solo lectura + spoochie say. Puedes escribirle aqui. Cerrar la ventana cierra el spoochie.`)}`,
-    `exec ${sq(claude)} --name ${sq(`spoochie-${t.id}`)} --permission-mode ${modoPermisos()} --allowedTools ${sq(herramientasPermitidas().join(","))} --disallowedTools ${sq(HERRAMIENTAS_PROHIBIDAS.join(","))} --settings ${sq(JSON.stringify(ajustesAparte()))}${dev ? ` --plugin-dir ${sq(dev)}` : ""}`,
+    `exec ${sq(claude)} ${banderasAparte(t.id).map(sq).join(" ")}${dev ? ` --plugin-dir ${sq(dev)}` : ""}`,
     ``,
   ].join("\n");
 }
@@ -216,11 +232,7 @@ export function lanzar(t: T.Thread, cwd: string, como: Modo = modo()): Aparte | 
   const child = spawn("claude", [
     "-p", "--verbose",
     "--input-format", "stream-json", "--output-format", "stream-json",
-    "--settings", JSON.stringify(ajustesAparte()),
-    "--name", `spoochie-${t.id}`,
-    "--permission-mode", "default",
-    "--allowedTools", herramientasPermitidas().join(","),
-    "--disallowedTools", HERRAMIENTAS_PROHIBIDAS.join(","),
+    ...banderasAparte(t.id),
   ], { cwd, env, stdio: ["pipe", out, out] });
   child.on("error", () => {});
   const sess: SessionRecord = { ...base, socket: "(stdin)", token: "", pid: child.pid ?? 0 };
