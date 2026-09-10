@@ -28,3 +28,40 @@ test("el numero de protocolo no se escribe a mano en cada sobre", async () => {
     expect(fuente).toContain("v: PROTOCOLO,");
   }
 });
+
+/**
+ * La especificacion publicada tiene que decir lo que hace el codigo. Un documento de
+ * protocolo que se queda atras es peor que no tenerlo: alguien lo implementa y sus
+ * sobres se descartan sin que entienda por que.
+ */
+test("docs/PROTOCOLO.md dice el mismo numero de version que el codigo", async () => {
+  const doc = await Bun.file(new URL("../docs/PROTOCOLO.md", import.meta.url)).text();
+  expect(doc).toContain(`Protocol version: **${PROTOCOLO}**`);
+});
+
+test("el orden de los campos firmados del documento es el del codigo", async () => {
+  const doc = await Bun.file(new URL("../docs/PROTOCOLO.md", import.meta.url)).text();
+  const firma = await Bun.file(new URL("../src/firma.ts", import.meta.url)).text();
+  const enCodigo = firma.slice(firma.indexOf("const datosV2"), firma.indexOf("export function firmar"));
+  // Los campos, en orden, tal cual se firman.
+  for (const campo of ["d.id", "d.kind", "d.from", "d.to", "d.ts", "d.app", "d.subject"]) {
+    expect(enCodigo).toContain(campo);
+  }
+  const enDoc = doc.slice(doc.indexOf("JSON.stringify(["), doc.indexOf("])", doc.indexOf("JSON.stringify([")));
+  for (const campo of ["id,", "kind,", "from,", "to ??", "ts ??", "app ??", "subject ??", "thread ?"]) {
+    expect(enDoc).toContain(campo);
+  }
+  // Y la ventana de tiempo, que es un numero que se puede desincronizar solo.
+  expect(doc).toContain("**24 hours**");
+  expect(firma).toContain("export const VENTANA_MS = 24 * 60 * 60 * 1000;");
+});
+
+test("los kind del documento son los del codigo", async () => {
+  const doc = await Bun.file(new URL("../docs/PROTOCOLO.md", import.meta.url)).text();
+  const slack = await Bun.file(new URL("../src/slack.ts", import.meta.url)).text();
+  const enCodigo = slack.slice(slack.indexOf('kind: "invite"'), slack.indexOf('kind: "invite"') + 120);
+  for (const k of ["invite", "msg", "accept", "close", "notice", "hola", "rota"]) {
+    expect(enCodigo).toContain(`"${k}"`);
+    expect(doc).toContain(k);
+  }
+});
