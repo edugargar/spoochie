@@ -1,5 +1,6 @@
 import { expect, test, afterAll } from "bun:test";
 import { releDePruebas } from "./rele.ts";
+import { hasta } from "./espera.ts";
 
 /**
  * El transporte de verdad, contra un rele de verdad.
@@ -12,7 +13,6 @@ import { releDePruebas } from "./rele.ts";
 const rele = releDePruebas();
 afterAll(() => rele.cerrar());
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-async function hasta(pred: () => boolean, ms = 8000) { for (let i = 0; i < ms / 50; i++) { if (pred()) return true; await sleep(50); } return pred(); }
 
 test("un sobre cruza un rele de verdad, cifrado, y llega solo a quien va dirigido", async () => {
   const N = await import("../src/nostr.ts");

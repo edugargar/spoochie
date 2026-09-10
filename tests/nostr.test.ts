@@ -6,10 +6,10 @@ import { verifyEvent } from "nostr-tools";
 import { envolver, abrir, peticionBorrado, NostrBridge, poolDeFichero, misClaves, npub, pkDe, type Pool } from "../src/nostr.ts";
 import * as Cfg from "../src/config.ts";
 import * as T from "../src/threads.ts";
+import { hasta } from "./espera.ts";
 
 const claves = () => misClaves({ guardian: false, transcript: false } as any);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-async function hasta(pred: () => boolean, ms = 5000) { for (let i = 0; i < ms / 50; i++) { if (pred()) return true; await sleep(50); } return pred(); }
 
 test("un sobre envuelto solo lo abre el receptor, dice de quien es, y lleva asunto y texto legibles", () => {
   const a = claves(), b = claves(), x = claves();

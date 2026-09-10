@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, existsSync, writeFileSync, chmodSync, readFileS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { herramientasPermitidas, primerTurno } from "../src/aparte.ts";
+import { hasta } from "./espera.ts";
 
 /**
  * El Claude aparte de verdad es `claude -p`. Aqui hay uno falso en el PATH que apunta
@@ -44,7 +45,6 @@ function rpc(req: any): Promise<any> {
   });
 }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-async function hasta(pred: () => boolean, ms = 8000) { for (let i = 0; i < ms / 50; i++) { if (pred()) return true; await sleep(50); } return pred(); }
 const recibido = () => existsSync(RECIBIDO) ? readFileSync(RECIBIDO, "utf8") : "";
 
 const A = fakeInbox("apa"), B = fakeInbox("apb");

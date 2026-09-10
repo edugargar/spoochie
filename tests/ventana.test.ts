@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, existsSync, writeFileSync, chmodSync, readFileS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scriptVentana } from "../src/aparte.ts";
+import { hasta } from "./espera.ts";
 
 /**
  * El Claude aparte en una ventana nueva. Aqui no hay iTerm: SPOOCHIE_VENTANA apunta a un
@@ -47,7 +48,6 @@ function rpc(req: any): Promise<any> {
   });
 }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-async function hasta(pred: () => boolean, ms = 8000) { for (let i = 0; i < ms / 50; i++) { if (pred()) return true; await sleep(50); } return pred(); }
 const ventanas = () => existsSync(VENTANAS) ? readFileSync(VENTANAS, "utf8").trim().split("\n").filter(Boolean) : [];
 
 // A y B son sesiones interactivas; V es el buzon de la ventana del aparte.

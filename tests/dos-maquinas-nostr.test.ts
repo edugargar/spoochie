@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hasta } from "./espera.ts";
 
 /**
  * Dos demonios de verdad, dos estados, cero Slack y cero reles: el "pool" es un directorio
@@ -33,7 +34,6 @@ function rpc(home: string, req: any): Promise<any> {
     c.on("data", d => { buf += d.toString(); const i = buf.indexOf("\n"); if (i >= 0) { c.destroy(); resolve(JSON.parse(buf.slice(0, i))); } });
   });
 }
-async function hasta(pred: () => boolean, ms = 10000) { for (let i = 0; i < ms / 50; i++) { if (pred()) return true; await sleep(50); } return pred(); }
 const hilo = (home: string, id: string) => { const p = join(home, "threads", `${id}.json`); return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null; };
 
 const A = fakeInbox("2ma"), B = fakeInbox("2mb");
