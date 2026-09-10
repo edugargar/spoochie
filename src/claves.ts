@@ -82,3 +82,21 @@ export function holaPorSlack(c: Cfg.Config, x: { de: string; nombre: string; np:
   if (vinculo === "conflicto") return { ok: false, motivo: `${name} ya tiene otra clave; no se sustituye` };
   return { ok: true, id: x.de, name, vinculo };
 }
+
+/**
+ * Una rotacion de clave de firma que llega.
+ *
+ * Solo se acepta si el sobre venia firmado con la clave que YA estaba fijada para ese
+ * id ("ok"). "nueva" no vale: seria alguien de quien no sabiamos nada estrenandose con
+ * un cambio de clave, que es exactamente lo que no queremos.
+ */
+export function rotacionEntrante(c: Cfg.Config, de: string, pkNueva: string, veredicto: Veredicto): { ok: false; por: string } | { ok: true; nombre: string; antes: string } {
+  if (veredicto !== "ok") return { ok: false, por: `la firma de la rotacion no cuadra con la clave fijada (${veredicto})` };
+  const x = Cfg.contactById(c, de);
+  if (!x?.pk) return { ok: false, por: "no tenia ninguna clave fijada de ese id" };
+  if (!/^[A-Za-z0-9+/=]{20,}$/.test(pkNueva)) return { ok: false, por: "la clave nueva no tiene forma de clave" };
+  if (x.pk === pkNueva) return { ok: false, por: "la clave nueva es la misma que ya tenia" };
+  const antes = x.pk;
+  Cfg.addContact(c, { id: x.id, name: x.name, pk: pkNueva });
+  return { ok: true, nombre: x.name, antes };
+}

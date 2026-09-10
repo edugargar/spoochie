@@ -561,6 +561,7 @@ async function handle(req: Req): Promise<any> {
 
     case "slack-reload": {
       slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}), onRemoteClose);
+  engancharRota();
       arrancarNostr();
       return { ok: true, slack: Boolean(slack), nostr: Boolean(nostr) };
     }
@@ -901,6 +902,22 @@ async function avisarDeLoNoLeido(t: T.Thread) {
   log("no-leido", t.id, quien.name, `${hace} min`);
 }
 
+/** El puente de Slack se recrea al recargar la config, y cada vez hay que volver a
+ *  engancharle el manejador de rotaciones: sin esto, una rotacion despues de un
+ *  `slack-reload` no la aplicaba nadie y la persona se quedaba con la clave vieja. */
+function engancharRota() {
+  if (!slack) return;
+  slack.onRota = async (de, pkNueva, veredicto) => {
+    const c = Cfg.load();
+    const { rotacionEntrante } = await import("./claves.ts");
+    const r = rotacionEntrante(c, de, pkNueva, veredicto);
+    if (!r.ok) { log("rota", de, "rechazada:", r.por); Aud.apuntar("clave-rechazada", "-", de, `rotacion: ${r.por}`); return; }
+    Cfg.save(c);
+    log("rota", de, r.nombre, "clave cambiada");
+    Aud.apuntar("clave-fijada", "-", r.nombre, `rotacion aceptada · antes ${r.antes.slice(0, 12)}...`);
+  };
+}
+
 async function tick() {
   const now = Date.now();
   for (const t of T.all()) {
@@ -934,6 +951,7 @@ function main() {
   latir();
   setInterval(latir, LATIDO_MS).unref();
   slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}), onRemoteClose);
+  engancharRota();
   arrancarNostr();
   // Lo que un demonio anterior dejo sin sacar, y las ventanas de aparte que siguen vivas.
   const reanudados = reanudar(async (tt, mm) => {

@@ -113,6 +113,7 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie search "<texto>"              busca entre los spoochies de esta maquina
   spoochie transcript <id> [--url <url-del-artifact>]
   spoochie selftest                      prueba el bucle entero aqui, sin necesitar a nadie
+  spoochie rotar [--si]                  cambia tu clave de firma y se lo dice a tus contactos
   spoochie olvidar @sam [--motivo "..."] echale de tu agenda y cierra lo suyo
   spoochie llavero [on|off]              tus claves y el token, en el llavero de macOS
   spoochie auditoria [--n 50]            quien abrio, quien acepto, que se retuvo y quien lo solto
@@ -430,6 +431,39 @@ async function main() {
 
   // Los secretos al llavero de macOS. A mano y reversible: una migracion automatica de
   // las claves de alguien, si sale mal, le deja fuera de su agenda sin forma de volver.
+  // Cambiar tu clave de firma sin que todo el equipo tenga que reinvitarte.
+  if (cmd === "rotar") {
+    const c = Cfg.load();
+    const { nuevasClaves, misClaves } = await import("./firma.ts");
+    const vieja = misClaves(c);
+    const bot = Cfg.slackBotToken(c);
+    if (!bot || !c.slack?.userId) { console.error("la rotacion se anuncia por el DM del bot, y aqui no hay Slack configurado"); process.exit(1); return; }
+    const contactos = Object.values(c.contacts ?? {}).filter(x => x.pk && !x.id.startsWith("nostr:"));
+    if (!has(rest, "si")) {
+      console.log(`Vas a cambiar tu clave de firma. Se lo diria a ${contactos.length} contacto(s), firmado con la clave vieja.`);
+      console.log(`Cada uno lo comprueba con la clave que ya tiene tuya y se queda con la nueva.`);
+      console.log(`Si te robaron la vieja, el ladron tambien puede firmar eso: por eso el DM lo dice en texto y avisa de que pregunten.`);
+      console.log(`\nCuando lo tengas claro:  spoochie rotar --si`);
+      return;
+    }
+    const { SlackBridge } = await import("./slack.ts");
+    const nueva = nuevasClaves();
+    const puente = SlackBridge.fromConfig(async () => {}, async () => {}, async () => {}, () => {}, async () => {});
+    if (!puente) { console.error("no puedo abrir el puente de Slack"); process.exit(1); return; }
+    let n = 0;
+    for (const x of contactos) {
+      const ok = await puente.rotar(x.id, nueva.pub, vieja.priv, vieja.pub, c.human ?? "alguien");
+      if (ok) n++; else console.error(`no he podido avisar a ${x.name}`);
+    }
+    c.keys = nueva;
+    Cfg.save(c);
+    const { apuntar } = await import("./auditoria.ts");
+    apuntar("clave-fijada", "-", c.human ?? "esta maquina", `rotacion propia · avisados ${n}/${contactos.length}`);
+    console.log(`Clave nueva puesta y anunciada a ${n} de ${contactos.length} contacto(s).`);
+    if (n < contactos.length) console.log(`A los que no se enteraron, tendran que hacer  spoochie contacts --olvidar-clave ${c.human ?? ""}  y reinvitarte.`);
+    return;
+  }
+
   // Echar a alguien de la agenda: cierra lo suyo y deja de conocerle.
   if (cmd === "olvidar") {
     const quien = (rest[0] ?? "").replace(/^@/, "");
