@@ -155,3 +155,28 @@ test("el aparte arranca con el centinela enganchado al Stop", () => {
   const a = ajustesAparte("/usr/local/bin/spoochie") as any;
   expect(a.hooks.Stop[0].hooks[0].command).toBe("/usr/local/bin/spoochie centinela");
 });
+
+test("el aparte no lee fuera del repo que atiende", () => {
+  const r = (tool: string, input: any, cwd = "/repo") => portero({ tool_name: tool, cwd, tool_input: input }, CLI).hookSpecificOutput;
+  expect(r("Read", { file_path: "/repo/src/cli.ts" }).permissionDecision).toBe("allow");
+  expect(r("Read", { file_path: "src/cli.ts" }).permissionDecision).toBe("allow");
+  // Su lista de herramientas lleva Read, Grep y Glob sin acotar: eso llegaba a ~/.ssh.
+  expect(r("Read", { file_path: "/Users/x/.ssh/id_rsa" }).permissionDecision).toBe("deny");
+  expect(r("Read", { file_path: "../otro-repo/.env" }).permissionDecision).toBe("deny");
+  expect(r("Grep", { pattern: "clave", path: "/etc" }).permissionDecision).toBe("deny");
+  expect(r("Glob", { pattern: "**/*.pem", path: "/Users/x" }).permissionDecision).toBe("deny");
+  expect(r("Read", { file_path: "/Users/x/.ssh/id_rsa" }).permissionDecisionReason).toContain("pidelo por el tunel");
+});
+
+test("tampoco saca por el tunel un fichero de fuera con --file", () => {
+  // La linea entera la aprobaba la lista blanca: el subcomando es `say`, que esta permitido.
+  const cwd = "/repo";
+  const d = (cmd: string) => portero({ tool_name: "Bash", cwd, tool_input: { command: cmd } }, CLI).hookSpecificOutput.permissionDecision;
+  expect(d(`${CLI} say v1 --file /repo/notas.md`)).toBe("allow");
+  expect(d(`${CLI} say v1 --file ~/.ssh/id_rsa`)).toBe("deny");
+  expect(d(`${CLI} say v1 --file ../otro/.env`)).toBe("deny");
+  expect(d(`${CLI} say v1 --files /repo/a.png,/etc/hosts`)).toBe("deny");
+  expect(d(`${CLI} patch v1 --diff-file /tmp/x.diff`)).toBe("deny");
+  // Sin cwd (fuera del aparte) no se opina de rutas: el portero solo manda en su ventana.
+  expect(portero({ tool_name: "Bash", tool_input: { command: `${CLI} say v1 --file /x` } }, CLI).hookSpecificOutput.permissionDecision).toBe("allow");
+});
