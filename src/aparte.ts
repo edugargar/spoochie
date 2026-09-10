@@ -82,11 +82,28 @@ export function ajustesAparte(cli = comandoCli()): Record<string, unknown> {
 export function banderasAparte(id: string, cli = comandoCli()): string[] {
   return [
     "--name", `spoochie-${id}`,
+    "--model", modeloAparte(),
     "--permission-mode", modoPermisos(),
     "--allowedTools", herramientasPermitidas(cli).join(","),
     "--disallowedTools", HERRAMIENTAS_PROHIBIDAS.join(","),
     "--settings", JSON.stringify(ajustesAparte(cli)),
   ];
+}
+
+/**
+ * Con que modelo contesta el Claude aparte.
+ *
+ * Fijado, y no el que tenga puesto la persona, por una razon de dinero que no es suya:
+ * el aparte corre en TU maquina para contestar la pregunta de OTRO. Si tu sesion esta
+ * en Opus, la pregunta de un companero se lleva Opus sin que tu lo hayas decidido.
+ * Sonnet lee un repo y contesta con hechos de los ficheros, que es todo lo que hace.
+ * El vigilante ya iba fijado a Haiku por lo mismo (guardian.ts).
+ *
+ * SPOOCHIE_APARTE_MODELO lo cambia, para quien quiera lo contrario.
+ */
+export const MODELO_APARTE = "claude-sonnet-5";
+export function modeloAparte(): string {
+  return process.env.SPOOCHIE_APARTE_MODELO || MODELO_APARTE;
 }
 
 /** Con que modo de permisos arranca el aparte, en ventana y en fondo. "auto" por defecto: lo que no esta en la

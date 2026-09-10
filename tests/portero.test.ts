@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { escanear, juzgarBash, portero } from "../src/portero.ts";
-import { ajustesAparte, banderasAparte, modoPermisos, scriptVentana } from "../src/aparte.ts";
+import { ajustesAparte, banderasAparte, modoPermisos, scriptVentana, MODELO_APARTE } from "../src/aparte.ts";
 
 const CLI = "/usr/local/bin/spoochie";
 const CLI_DEV = "/opt/bun run /repo/src/cli.ts";
@@ -132,4 +132,12 @@ test("la ventana y el fondo arrancan con las mismas banderas", () => {
   const script = scriptVentana(t, "/tmp", "sesion-1");
   for (const palabra of banderasAparte("v1")) expect(script).toContain(palabra.split("\n")[0].slice(0, 40));
   expect(script).not.toContain("--permission-mode default\n");
+});
+
+test("el aparte contesta con un modelo fijado, no con el que tenga puesto quien recibe", () => {
+  // El aparte corre en tu maquina para contestar la pregunta de otro: que se lleve tu
+  // modelo caro es una factura que no has decidido tu.
+  const b = banderasAparte("v1", "/usr/local/bin/spoochie");
+  expect(b[b.indexOf("--model") + 1]).toBe(MODELO_APARTE);
+  expect(MODELO_APARTE).toBe("claude-sonnet-5");
 });
