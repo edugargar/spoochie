@@ -28,7 +28,8 @@ test("la invitacion menciona a quien recibe y dice como aceptar", () => {
   const b = flat(inviteBlocks(t));
   expect(b).toContain("<@U_SAM>");
   expect(b).toContain("spoochie accept a3f1");
-  expect(b).toContain("Spoochie de Edu");
+  // La misma voz que el dialogo de macOS: quien llama, no de quien es el spoochie.
+  expect(b).toContain("Edu llama");
   expect(b).toContain("feat/perfil");
   expect(b).toContain("src/Modal.tsx");
 });

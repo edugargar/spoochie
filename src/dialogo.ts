@@ -29,32 +29,57 @@ export function modoAviso(): Modo {
   return process.platform === "darwin" ? "dialogo" : "terminal";
 }
 
-const MAX_CUERPO = 500;
+/** El cuerpo se recorta por frases, no por caracteres: cortar a mitad de palabra y
+ *  pegar "[...]" es lo que hace que un aviso parezca un log y no un mensaje. */
+const MAX_CUERPO = 280;
 
-/** Poochie murio volviendo a su planeta. Aqui vuelve cada vez que alguien llama. */
-const ENTRADAS = [
-  (q: string) => `Poochie ha vuelto de su planeta con un recado: ${q} quiere abrir un spoochie contigo.`,
-  (q: string) => `Guau. ${q} quiere abrir un spoochie contigo. Poochie trae el hueso.`,
-  (q: string) => `${q} rasca la puerta: quiere abrir un spoochie contigo.`,
-  (q: string) => `Poochie, gafas de sol puestas, anuncia que ${q} quiere abrir un spoochie contigo.`,
-  (q: string) => `Interrumpimos esta programacion: ${q} quiere abrir un spoochie contigo.`,
-];
+function recortar(texto: string): string {
+  const limpio = texto.trim().replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n");
+  if (limpio.length <= MAX_CUERPO) return limpio;
+  const corte = limpio.slice(0, MAX_CUERPO);
+  const fin = Math.max(corte.lastIndexOf(". "), corte.lastIndexOf("? "), corte.lastIndexOf("! "));
+  return (fin > MAX_CUERPO / 2 ? corte.slice(0, fin + 1) : corte.replace(/\s+\S*$/, "")) + " …";
+}
 
-export function textoDialogo(t: T.Thread): string {
+/**
+ * El texto del aviso.
+ *
+ * Cuatro bloques y ni una etiqueta: quien llama, que quiere, lo que ha dicho, y que
+ * pasa si abres. Antes habia cinco entradillas de broma que rotaban por el id del hilo
+ * ("Poochie ha vuelto de su planeta con un recado"), dos lineas con etiqueta ("Asunto:",
+ * "Rama:") y un parrafo final de tres frases. Eran 5 lineas de adorno alrededor de 2 de
+ * informacion, y lo primero que leia la persona no era quien llamaba.
+ *
+ * La gracia la pone el icono, que es Poochie, y el boton, que sigue siendo "Que pase".
+ * En el texto no hace falta repetirla: un aviso que interrumpe tiene un segundo para
+ * decir lo que es.
+ */
+export function partesDialogo(t: T.Thread): { titular: string; cuerpo: string } {
   const quien = t.from.human ?? t.from.name;
-  const cuerpo = (t.messages[0]?.text ?? "").trim();
-  const recorte = cuerpo.length > MAX_CUERPO ? cuerpo.slice(0, MAX_CUERPO) + " [...]" : cuerpo;
-  const n = [...t.id].reduce((a, c) => a + c.charCodeAt(0), 0) % ENTRADAS.length;
-  return [
-    ENTRADAS[n](quien),
-    ``,
-    `Asunto: ${t.subject}`,
-    t.context.branch ? `Rama: ${t.context.branch}` : null,
-    ``,
-    recorte,
-    ``,
-    `"${BOTONES.aceptar}" abre una ventana de Terminal aparte con un Claude de solo lectura que le contesta desde tu repo. Tus terminales siguen a lo suyo; Poochie no las toca.`,
-  ].filter(x => x !== null).join("\n");
+  // La linea de contexto, con punto medio, y solo con lo que exista de verdad: una
+  // etiqueta vacia ("Rama: -") es peor que no ponerla.
+  const contexto = [
+    t.context.branch,
+    t.context.files?.length ? `${t.context.files.length} ${t.context.files.length === 1 ? "fichero" : "ficheros"}` : null,
+  ].filter(Boolean).join("  ·  ");
+  const asunto = t.subject.trim();
+  return {
+    titular: `${quien} llama.`,
+    cuerpo: [
+      asunto.charAt(0).toUpperCase() + asunto.slice(1),
+      contexto || null,
+      ``,
+      `“${recortar(t.messages[0]?.text ?? "")}”`,
+      ``,
+      `Le contesta un Claude de solo lectura, en una ventana aparte. Tus sesiones no se enteran.`,
+    ].filter(x => x !== null).join("\n"),
+  };
+}
+
+/** Todo seguido, para la caja que no separa titular de cuerpo (y para los tests). */
+export function textoDialogo(t: T.Thread): string {
+  const { titular, cuerpo } = partesDialogo(t);
+  return `${titular}\n\n${cuerpo}`;
 }
 
 const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
@@ -71,15 +96,32 @@ function interpretar(salida: string, codigo: number | null): Respuesta {
   return null;
 }
 
+/**
+ * El AppleScript que pinta la caja.
+ *
+ * Probado tambien con `display alert`, que separa titular y cuerpo y es lo que da la
+ * jerarquia tipografica de los avisos del sistema. RECHAZADO despues de verlo en
+ * pantalla: `display alert` no admite icono propio, asi que en vez de Poochie sale la
+ * carpeta naranja generica de osascript; la caja es mas estrecha y parte las frases a
+ * media linea; y los tres botones se apilan en vertical, que hace que el aviso parezca
+ * un error del sistema en vez de alguien llamando. La negrita del titular no compensa
+ * ninguna de las tres. `partesDialogo` sigue devolviendo titular y cuerpo por separado
+ * porque el DM de Slack y el primer turno del aparte los usan.
+ */
+export function guionOsascript(t: T.Thread, esperaSeg = 3600): string {
+  const icono = existsSync(poochie) ? ` with icon POSIX file "${esc(poochie)}"` : "";
+  return `display dialog "${esc(textoDialogo(t))}" with title "spoochie"${icono}`
+    + ` buttons {"${BOTONES.rechazar}", "${BOTONES.slack}", "${BOTONES.aceptar}"}`
+    + ` default button "${BOTONES.aceptar}" cancel button "${BOTONES.rechazar}" giving up after ${esperaSeg}`;
+}
+
 /** Muestra el aviso y espera al boton. Hasta una hora; si nadie pulsa, null. */
 export function preguntar(t: T.Thread, esperaSeg = 3600): { child: ChildProcess; respuesta: Promise<Respuesta> } {
   const texto = textoDialogo(t);
   const custom = process.env.SPOOCHIE_AVISO;
   const child = custom && custom !== "dialogo"
     ? spawn(custom, [texto], { stdio: ["ignore", "pipe", "pipe"] })
-    : spawn("osascript", ["-e",
-        `display dialog "${esc(texto)}" with title "spoochie"${existsSync(poochie) ? ` with icon POSIX file "${esc(poochie)}"` : ""} buttons {"${BOTONES.rechazar}", "${BOTONES.slack}", "${BOTONES.aceptar}"} default button "${BOTONES.aceptar}" cancel button "${BOTONES.rechazar}" giving up after ${esperaSeg}`,
-      ], { stdio: ["ignore", "pipe", "pipe"] });
+    : spawn("osascript", ["-e", guionOsascript(t, esperaSeg)], { stdio: ["ignore", "pipe", "pipe"] });
   let salida = "";
   child.stdout?.on("data", d => { salida += d.toString(); });
   child.stderr?.on("data", d => { salida += d.toString(); });
