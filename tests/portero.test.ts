@@ -115,7 +115,9 @@ test("el hook deja pasar lo que no es Bash y niega lo que no entiende", () => {
 test("el aparte arranca con el portero enganchado, en ventana y en fondo", () => {
   const a = ajustesAparte("/usr/local/bin/spoochie") as any;
   expect(a.crossSessionInbound).toBe("accept");
-  expect(a.hooks.PreToolUse[0].matcher).toBe("Bash");
+  // El matcher decia "Bash" a secas, y eso dejaba fuera del hook a Read, Grep y Glob:
+  // el test lo daba por bueno porque comprobaba la cadena, no lo que cubre.
+  expect(a.hooks.PreToolUse[0].matcher.split("|")).toContain("Bash");
   expect(a.hooks.PreToolUse[0].hooks[0].command).toBe("/usr/local/bin/spoochie portero");
 });
 
@@ -206,4 +208,51 @@ test("el primer turno del aparte lleva la regla de no afirmar lo que no ha leido
   expect(turno).toContain("Nunca contestes de memoria");
   // Y dice desde donde lee, que es lo que hace comprobable la regla.
   expect(turno).toContain("/repo");
+});
+
+/**
+ * El portero solo servia para los Bash.
+ *
+ * `ajustesAparte` enganchaba el hook con `matcher: "Bash"`, y el matcher de un
+ * PreToolUse es una expresion regular contra el nombre de la herramienta. O sea que toda
+ * la parte de acotar Read, Grep y Glob al worktree estaba escrita, tenia sus tests, y no
+ * se ejecutaba nunca: el hook no se disparaba con esas herramientas. Un aparte podia
+ * leer ~/.ssh y contarlo por el tunel, que es exactamente lo que ese codigo impide.
+ *
+ * Este test compara las dos listas. Si una crece y la otra no, salta aqui.
+ */
+test("el hook se dispara con TODAS las herramientas que el portero juzga", async () => {
+  const { HERRAMIENTAS_DEL_PORTERO, ajustesAparte } = await import("../src/aparte.ts");
+  const { LEEN_FICHEROS } = await import("../src/portero.ts");
+  const juzgadas = [...LEEN_FICHEROS, "Bash", "Artifact"].sort();
+  expect([...HERRAMIENTAS_DEL_PORTERO].sort()).toEqual(juzgadas);
+
+  const matcher = (ajustesAparte("sp").hooks as any).PreToolUse[0].matcher as string;
+  const re = new RegExp(`^(${matcher})$`);
+  for (const h of juzgadas) expect(re.test(h)).toBe(true);
+});
+
+/**
+ * Artifact publica en claude.ai lo que le des: es la unica herramienta del aparte que
+ * saca contenido de la maquina. Esta en su lista blanca para una cosa concreta, publicar
+ * el transcript, y el portero no la miraba, asi que servia para publicar cualquier
+ * fichero que el aparte pudiera leer, o sea el repo entero con su `.env`.
+ */
+test("Artifact solo publica el transcript de ESTE spoochie", async () => {
+  const { rutaTranscript } = await import("../src/transcript.ts");
+  const antes = process.env.SPOOCHIE_APARTE;
+  try {
+    process.env.SPOOCHIE_APARTE = "k7f";
+    const v = (file_path?: string) => portero({ tool_name: "Artifact", tool_input: file_path ? { file_path } : {} }, "sp");
+    expect(v(rutaTranscript("k7f")).hookSpecificOutput.permissionDecision).toBe("allow");
+    // Ni otro fichero, ni el transcript de otro spoochie, ni sin ruta ninguna.
+    expect(v("/tmp/robado/.env").hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(v(rutaTranscript("otro")).hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(v().hookSpecificOutput.permissionDecision).toBe("deny");
+    // Y en un Claude que no atiende ningun spoochie, Artifact no publica nada.
+    delete process.env.SPOOCHIE_APARTE;
+    expect(v(rutaTranscript("k7f")).hookSpecificOutput.permissionDecision).toBe("deny");
+  } finally {
+    if (antes === undefined) delete process.env.SPOOCHIE_APARTE; else process.env.SPOOCHIE_APARTE = antes;
+  }
 });
