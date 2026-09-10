@@ -49,14 +49,27 @@ export async function subir(token: string, ruta: string, channel: string, thread
   return j3.ok ? { id: j1.file_id, nombre } : null;
 }
 
+/**
+ * De donde se aceptan bytes con el token del bot delante.
+ *
+ * `bajar` manda `Authorization: Bearer <token del bot>` a la URL que diga el campo
+ * `url_private` del mensaje. Hoy ese campo lo pone la API de Slack por TLS, asi que no
+ * hay agujero abierto; el problema es que la funcion depende de eso y no lo comprueba.
+ * Una URL con otro anfitrion se lleva el token del equipo entero.
+ */
+const ANFITRIONES = /^https:\/\/([a-z0-9-]+\.)*slack(-files)?\.com\//i;
+
 /** Baja los ficheros de un mensaje al spool y devuelve sus rutas locales. */
 export async function bajar(token: string, ficheros: any[], threadId: string): Promise<string[]> {
-  const dir = join(SPOOL, threadId);
+  // El id llega validado por `ID_VALIDO` desde que se materializa el hilo, pero esta
+  // funcion no lo sabe: aqui acaba en un `join`, y un id con `../` escribe fuera del
+  // spool. Se limpia igual, que cuesta una linea y no depende de nadie.
+  const dir = join(SPOOL, seguro(threadId));
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const rutas: string[] = [];
   for (const f of ficheros ?? []) {
     const url = f?.url_private_download ?? f?.url_private;
-    if (!url) continue;
+    if (typeof url !== "string" || !ANFITRIONES.test(url)) continue;
     try {
       const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
       if (!res.ok) continue;
