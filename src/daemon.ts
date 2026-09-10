@@ -280,6 +280,7 @@ async function handle(req: Req): Promise<any> {
         id: T.newId(),
         subject: req.subject ?? (sigue ? sigue.subject : undefined),
         sigue: sigue?.id,
+        grupo: req.grupo,
         from: { sessionId: me.sessionId, name: me.name, cwd: me.cwd, human: cfg.human, slackUser: cfg.slack?.userId },
         to,
         state: "pending",
@@ -399,6 +400,17 @@ async function handle(req: Req): Promise<any> {
       await refreshTranscript(t);
       log("say", t.id, req.sessionId, m.kind, m.offTopic?.verdict ?? "-", delivered ? "entregado" : "FALLO");
       return { ok: true, id: t.id, state: t.state, delivered, offTopic: m.offTopic, transcript: t.transcriptUrl };
+    }
+
+    // Cerrar de una vez los N tuneles de la misma pregunta. Cada uno se cierra como
+    // cualquier otro: se avisa al otro lado y se borra. El grupo solo los junta.
+    case "close-grupo": {
+      const grupo = String(req.grupo ?? "");
+      if (!grupo) return { ok: false, error: "falta el grupo" };
+      const suyos = T.all().filter(t => t.grupo === grupo && t.state !== "closed" && T.isParty(t, req.sessionId));
+      if (!suyos.length) return { ok: false, error: `no tengo ningun spoochie abierto del grupo ${grupo}` };
+      for (const t of suyos) await closeThread(t, req.reason ?? "cerrado el grupo", req.sessionId);
+      return { ok: true, grupo, cerrados: suyos.map(t => t.id) };
     }
 
     case "close": {
