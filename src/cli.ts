@@ -150,6 +150,15 @@ async function main() {
     return;
   }
 
+  // El hook Stop del Claude aparte: que no se calle sin haber contestado por el tunel.
+  if (cmd === "centinela") {
+    const { centinela } = await import("./centinela.ts");
+    let entrada: unknown = null;
+    try { entrada = JSON.parse(await new Response(Bun.stdin.stream()).text()); } catch {}
+    console.log(JSON.stringify(centinela(entrada, process.env.SPOOCHIE_APARTE, process.env.SPOOCHIE_APARTE_SESION)));
+    return;
+  }
+
   if (cmd === "register") {
     // Con el hook, el evento llega por stdin. A mano desde una terminal no llega nada
     // y leer stdin se quedaba colgado para siempre: el env de la sesion ya trae lo

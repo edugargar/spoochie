@@ -150,3 +150,8 @@ test("el aparte sin nadie mirandolo lleva tope de gasto; la ventana no lo necesi
   const t: any = { id: "v1", subject: "s", from: { sessionId: "A", name: "a", cwd: "/a" }, to: { sessionId: "B", name: "b", cwd: "/b" }, context: {}, state: "open", messages: [] };
   expect(scriptVentana(t, "/tmp", "s1")).not.toContain("max-budget-usd");
 });
+
+test("el aparte arranca con el centinela enganchado al Stop", () => {
+  const a = ajustesAparte("/usr/local/bin/spoochie") as any;
+  expect(a.hooks.Stop[0].hooks[0].command).toBe("/usr/local/bin/spoochie centinela");
+});

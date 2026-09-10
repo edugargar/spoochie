@@ -69,6 +69,11 @@ export function ajustesAparte(cli = comandoCli()): Record<string, unknown> {
       PreToolUse: [
         { matcher: "Bash", hooks: [{ type: "command", command: `${cli} portero` }] },
       ],
+      // El centinela: un aparte que termina su turno sin haber contestado por el tunel
+      // deja al otro lado en silencio hasta que el reloj cierra el spoochie.
+      Stop: [
+        { hooks: [{ type: "command", command: `${cli} centinela` }] },
+      ],
     },
   };
 }
