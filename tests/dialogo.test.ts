@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, existsSync, writeFileSync, chmodSync, readFileS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { textoDialogo, partesDialogo, guionOsascript } from "../src/dialogo.ts";
+import { hasta } from "./espera.ts";
 
 /**
  * El aviso fuera de la terminal. Aqui el "dialogo" es un programa que recibe el texto y
@@ -45,7 +46,6 @@ function rpc(req: any): Promise<any> {
   });
 }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-async function hasta(pred: () => boolean, ms = 8000) { for (let i = 0; i < ms / 50; i++) { if (pred()) return true; await sleep(50); } return pred(); }
 const leer = (f: string) => existsSync(f) ? readFileSync(f, "utf8") : "";
 const hilo = (id: string) => JSON.parse(readFileSync(join(HOME, "threads", `${id}.json`), "utf8"));
 

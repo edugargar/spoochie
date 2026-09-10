@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hasta } from "./espera.ts";
 
 /**
  * Un demonio que se reinicia con un spoochie vivo.
@@ -43,7 +44,6 @@ function rpc(home: string, req: any): Promise<any> {
 async function paso<T>(nombre: string, f: () => Promise<T>): Promise<T> {
   try { return await f(); } catch (e) { throw new Error(`[${nombre}] ${String(e)}`); }
 }
-async function hasta(pred: () => boolean | Promise<boolean>, ms = 10000) { for (let i = 0; i < ms / 50; i++) { if (await pred()) return true; await sleep(50); } return await pred(); }
 const hilo = (home: string, id: string) => { const p = join(home, "threads", `${id}.json`); return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null; };
 
 const C = fakeInbox("rec"), D = fakeInbox("red");

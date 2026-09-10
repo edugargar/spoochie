@@ -4,6 +4,7 @@ import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { hasta } from "./espera.ts";
 
 /**
  * Una version anterior hablando con HEAD, en las dos direcciones.
@@ -46,7 +47,6 @@ function rpc(home: string, req: any): Promise<any> {
     c.on("data", d => { buf += d.toString(); const i = buf.indexOf("\n"); if (i >= 0) { c.destroy(); resolve(JSON.parse(buf.slice(0, i))); } });
   });
 }
-async function hasta(pred: () => boolean | Promise<boolean>, ms = 20000) { for (let i = 0; i < ms / 50; i++) { if (await pred()) return true; await sleep(50); } return await pred(); }
 
 const N = fakeInbox("cn"), V = fakeInbox("cv");
 const demonios: ChildProcess[] = [];
