@@ -115,6 +115,8 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie config [--human "Edu"] [--guardian on|off] [--transcript on|off] [--aparte on|off] [--copia on|off] [--borrar on|off] [--transporte nostr|slack] [--hilos grupo|canal|dm] [--canal C0..]
   spoochie nostr [--relays wss://a,wss://b]      tu clave Nostr y tus reles
   spoochie contacts [--olvidar-clave <nombre>]   tu agenda con sus claves; olvidar una para reinvitar
+  spoochie contacts --nivel <nombre> alto|normal  confianza alta: sin avisos de "fuera del asunto"
+  spoochie confiar @sam --repo <repo> [--quitar]  sus spoochies sobre ese repo entran sin dialogo
   spoochie --version
       aparte: los spoochies que llegan los atiende un Claude propio; tu sesion solo ve el aviso
   spoochie take <id> --aqui | accept <id> --aqui   que conteste ESTA sesion, sin Claude aparte
@@ -418,11 +420,50 @@ async function main() {
       console.log(`Clave Nostr de ${x.name} olvidada. Con ${x.name} va por Slack hasta que le invites de nuevo (spoochie invite --to ${x.id}).`);
       return;
     }
+    const nivel = flag(rest, "nivel");
+    if (nivel) {
+      const { ponerNivel } = await import("./confianza.ts");
+      const valor = rest[rest.indexOf("--nivel") + 2];
+      if (valor !== "alto" && valor !== "normal") { console.error("el nivel es `alto` o `normal`:  spoochie contacts --nivel <nombre> alto"); process.exit(2); return; }
+      const r = ponerNivel(c, nivel, valor);
+      if (!r.ok) { console.error(r.error); process.exit(1); return; }
+      Cfg.save(c);
+      console.log(valor === "alto"
+        ? `${nivel} pasa a confianza alta: sus mensajes fuera del asunto ya no te avisan en el hilo. Lo que pide actuar se sigue reteniendo igual, eso no depende de la confianza.`
+        : `${nivel} vuelve a confianza normal.`);
+      return;
+    }
     for (const [k, x] of Object.entries(c.contacts ?? {})) {
-      console.log(`@${k.padEnd(14)} ${x.name.padEnd(16)} ${x.id.padEnd(12)} firma:${x.pk ? "fijada" : "no    "}  nostr:${x.npub ? `${x.npub.slice(0, 12)}... (${(x.relays ?? []).length} reles)` : "sin clave"}`);
+      const extra = [
+        x.nivel === "alto" ? "confianza:alta" : null,
+        x.auto?.length ? `entran solos: ${x.auto.join(",")}` : null,
+      ].filter(Boolean).join("  ");
+      console.log(`@${k.padEnd(14)} ${x.name.padEnd(16)} ${x.id.padEnd(12)} firma:${x.pk ? "fijada" : "no    "}  nostr:${x.npub ? `${x.npub.slice(0, 12)}... (${(x.relays ?? []).length} reles)` : "sin clave"}${extra ? "  " + extra : ""}`);
     }
     const pendientes = Object.entries(c.invitaciones ?? {});
     if (pendientes.length) console.log(`\n${pendientes.length} invitacion${pendientes.length === 1 ? "" : "es"} sin canjear: ${pendientes.map(([, v]) => v.name ?? v.id ?? "?").join(", ")}`);
+    return;
+  }
+
+  // Consentimiento permanente y acotado. Por persona Y por repo: "confio en Sam" a
+  // secas seria una llave maestra a todas las maquinas donde trabajas.
+  if (cmd === "confiar") {
+    const c = Cfg.load();
+    const quien = (rest[0] ?? "").replace(/^@/, "");
+    const repo = flag(rest, "repo");
+    if (!quien || !repo) {
+      console.error("uso:  spoochie confiar @sam --repo <nombre-del-repo> [--quitar]");
+      console.error("Los spoochies de esa persona sobre ese repo entraran sin sacarte el dialogo.");
+      console.error("Lo que pide actuar se sigue reteniendo igual: la confianza no abre esa puerta.");
+      process.exit(2); return;
+    }
+    const { confiar } = await import("./confianza.ts");
+    const r = confiar(c, quien, repo, has(rest, "quitar"));
+    if (!r.ok) { console.error(r.error); process.exit(1); return; }
+    Cfg.save(c);
+    console.log(r.repos.length
+      ? `Los spoochies de ${quien} sobre ${r.repos.join(", ")} entran sin preguntarte. Cada uno lo dice en el hilo cuando pasa.`
+      : `${quien} vuelve a pasar por el dialogo en todos los repos.`);
     return;
   }
 
