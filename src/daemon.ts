@@ -19,6 +19,7 @@ import { latir, LATIDO_MS } from "./arranque.ts";
 import * as Ap from "./aparte.ts";
 import * as Dlg from "./dialogo.ts";
 import * as Cfg from "./config.ts";
+import * as Conf from "./confianza.ts";
 import { deliver } from "./inbox.ts";
 import { judge } from "./guardian.ts";
 import { publishTranscript, rutaTranscript } from "./transcript.ts";
@@ -552,6 +553,14 @@ async function assign(t: T.Thread): Promise<string | null> {
   if (!pick) return null;
   t.to = { ...t.to, sessionId: pick.sessionId, name: pick.name, cwd: pick.cwd, human: Cfg.load().human ?? t.to.human };
   T.save(t);
+  // Consentimiento permanente y acotado: esta persona, este repo. Sin dialogo, pero
+  // no en silencio: queda dicho en el hilo, que es donde la persona lo ve luego.
+  if (Conf.entraSolo(Cfg.load(), { slackUser: t.from.slackUser, npub: t.nostr?.otro }, pick.cwd)) {
+    log("assign", t.id, "-> aceptado solo (confianza en", Conf.nombreRepo(pick.cwd) + ")");
+    if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, `:key: aceptado sin preguntar: tienes puesto que los spoochies de ${t.from.human ?? t.from.name} sobre *${Conf.nombreRepo(pick.cwd)}* entran solos. Quitalo con \`spoochie confiar ${t.from.human ?? t.from.name} --repo ${Conf.nombreRepo(pick.cwd)} --quitar\`.`);
+    await onSlackAccept(t, "por consentimiento permanente");
+    return pick.sessionId;
+  }
   if (Dlg.modoAviso() === "dialogo") {
     if (!dialogos.has(t.id)) avisarConDialogo(t, pick);
     log("assign", t.id, "-> dialogo, repo de", pick.name);
@@ -683,7 +692,12 @@ async function vigilar(t: T.Thread, m: T.Msg): Promise<boolean> {
   }
   if (v.verdict !== "dentro") {
     T.save(t);
-    if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, v.verdict === "sin vigilar" ? `:grey_question: ${v.why}.` : `:warning: el vigilante lo ve *${v.verdict}* del asunto: ${v.why}`);
+    // Con un contacto de nivel alto la etiqueta de "fuera del asunto" no se publica: es
+    // ruido cuando ya sabes con quien hablas, y el ruido acaba en que nadie lee los
+    // avisos que si importan. La retencion de lo que pide actuar (arriba) no depende
+    // de la confianza y no va a depender: ver confianza.ts.
+    const callado = Conf.nivelDe(Cfg.load(), { slackUser: quien.slackUser, npub: t.nostr?.otro }) === "alto" && v.verdict !== "sin vigilar";
+    if (!callado && puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, v.verdict === "sin vigilar" ? `:grey_question: ${v.why}.` : `:warning: el vigilante lo ve *${v.verdict}* del asunto: ${v.why}`);
   }
   return true;
 }

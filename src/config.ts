@@ -23,7 +23,16 @@ export type Config = {
   borrarAlCerrar?: boolean;
   /** Quien te invito, y a quien has invitado. "@edu" se resuelve aqui antes de
    *  preguntar a Slack, que para buscar por nombre exige users:read. */
-  contacts?: Record<string, { id: string; name: string; pk?: string; npub?: string; relays?: string[] }>;
+  contacts?: Record<string, {
+    id: string; name: string; pk?: string; npub?: string; relays?: string[];
+    /** Nivel de confianza. "alto" calla las etiquetas de "fuera del asunto", que son
+     *  ruido cuando ya sabes con quien hablas. Nunca abre la retencion de lo que pide
+     *  actuar: ver confianza.ts. */
+    nivel?: "alto" | "normal";
+    /** Consentimiento permanente y acotado: nombres de repo cuyos spoochies de esta
+     *  persona entran sin sacar el dialogo. Por persona Y por repo, nunca global. */
+    auto?: string[];
+  }>;
   /** Invitaciones sin canjear, por nonce: a quien se invito y cuando. Un hola por Nostr
    *  solo entra con uno de estos (claves.ts). Caducan a los 30 dias. */
   invitaciones?: Record<string, { id?: string; name?: string; at: number }>;
