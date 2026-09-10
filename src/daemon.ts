@@ -596,7 +596,7 @@ function elegir(t: T.Thread): { pick: SessionRecord | null; otras: number } {
 
 /** Los dialogos de aviso abiertos, por spoochie: uno por spoochie, y se cierran solos
  *  si el tunel se acepta desde Slack o se cierra. */
-const dialogos = new Map<string, import("node:child_process").ChildProcess>();
+const dialogos = new Map<string, { cerrar: () => void }>();
 
 /** Asigna el spoochie a la sesion que le toca y avisa a la persona. En macOS el aviso
  *  es un dialogo del sistema y la sesion no ve nada: solo presta su directorio para el
@@ -648,10 +648,10 @@ async function assign(t: T.Thread): Promise<string | null> {
  * sin leer se te dice (`avisarDeLoNoLeido`).
  */
 function avisarConDialogo(t: T.Thread, pick: SessionRecord) {
-  const { child, respuesta } = Dlg.preguntar(t);
-  dialogos.set(t.id, child);
-  void respuesta.then(async r => {
-    if (dialogos.get(t.id) === child) dialogos.delete(t.id);
+  const aviso = Dlg.preguntar(t);
+  dialogos.set(t.id, aviso);
+  void aviso.respuesta.then(async r => {
+    if (dialogos.get(t.id) === aviso) dialogos.delete(t.id);
     const fresco = T.load(t.id);
     log("aviso", t.id, "dialogo:", r ?? "sin respuesta");
     // Mientras el dialogo estaba abierto pudo aceptarse en Slack o caducar: manda el estado.
@@ -664,7 +664,7 @@ function avisarConDialogo(t: T.Thread, pick: SessionRecord) {
 
 function cerrarDialogo(id: string) {
   const d = dialogos.get(id);
-  if (d) { dialogos.delete(id); try { d.kill(); } catch {} }
+  if (d) { dialogos.delete(id); try { d.cerrar(); } catch {} }
 }
 
 /** Aceptar escribiendo en el hilo de Slack. Hace lo mismo que `spoochie accept`. */

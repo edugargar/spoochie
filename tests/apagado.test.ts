@@ -37,16 +37,25 @@ test("las tres cosas que SI nacen encendidas son controles, no funciones", async
   expect(cfg).toContain("const DEFAULTS: Config = { guardian: true");
 });
 
-test("el script de capturas no dispara sin que se lo pidan", async () => {
-  // Captura la pantalla entera, asi que mete en un PNG lo que tenga detras quien lo
-  // corra. En una herramienta cuyo argumento entero es que las cosas no se escapan, eso
-  // no puede pasar por defecto. Medido: el primer intento capturo el dialogo del permiso
-  // de Accesibilidad, y el segundo el escritorio con las ventanas que hubiera abiertas.
+test("el script de capturas recorta la ventana, y lo que si es pantalla entera va detras de una bandera", async () => {
+  // Medido dos veces: capturar la pantalla entera se llevo primero el dialogo del
+  // permiso de Accesibilidad y luego el escritorio de quien lo corria, con las ventanas
+  // que tuviera abiertas. En una herramienta cuyo argumento entero es que las cosas no
+  // se escapan, eso no puede pasar por defecto.
   const s = await Bun.file(new URL("../scripts/capturas.ts", import.meta.url)).text();
+  // El aviso ya no necesita la pantalla: se planta donde le decimos y se recorta su
+  // rectangulo exacto, con marco cero para que no entre ni una tira de lo de detras.
+  expect(s).toContain("SPOOCHIE_VENTANA_POS");
+  expect(s).toContain("MARCO = 0");
+  expect(s).toContain('spawnSync("screencapture", ["-x", "-R"');
+  // La ventana del aparte es una Terminal y no se puede plantar: esa si es pantalla
+  // entera, va detras de la bandera, y al terminar recuerda mirar el PNG.
   expect(s).toContain('if (!process.argv.includes("--pantalla-entera"))');
-  expect(s).toContain("process.exit(2)");
-  // Y al terminar recuerda mirarlas antes de ensenarlas.
-  expect(s).toContain("MIRA LAS DOS IMAGENES antes de ensenarselas a nadie");
+  expect(s).toContain("MIRA 2-aparte.png antes de ensenarselo a nadie");
+  // Y el unico `screencapture` sin region esta dentro de esa rama.
+  const [antes, detras] = s.split('if (!process.argv.includes("--pantalla-entera"))');
+  expect(antes).not.toContain('screencapture", ["-x", entera]');
+  expect(detras).toContain('screencapture", ["-x", entera]');
 });
 
 test("no se lanza ningun aparte antes de que la persona acepte", async () => {

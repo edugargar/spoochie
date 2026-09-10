@@ -2,32 +2,36 @@
 /**
  * Capturas de la UI de verdad.
  *
- * "Los tests pasan" no es una prueba de que algo se ve bien. El dialogo del sistema y la
- * ventana del Claude aparte son las dos cosas que ve una persona, y no habia una sola
- * imagen de ninguna de las dos en ningun sitio: se revisaban abriendolas a mano y
- * mirando, o no se revisaban.
+ * "Los tests pasan" no es una prueba de que algo se ve bien. El aviso y la ventana del
+ * Claude aparte son las dos cosas que ve una persona, y no habia una sola imagen de
+ * ninguna de las dos en ningun sitio: se revisaban abriendolas a mano y mirando, o no se
+ * revisaban.
  *
- *   bun scripts/capturas.ts --pantalla-entera [--dir <destino>]
+ *   bun scripts/capturas.ts [--dir <destino>] [--pantalla-entera]
  *
  * Solo macOS, porque es donde existen las dos.
  *
- * EL AVISO, que es la parte importante. Esto captura la PANTALLA ENTERA y recorta al
- * centro. No captura la ventana: para eso hacen falta sus coordenadas, y pedirlas pasa
- * por System Events, que dispara el permiso de Accesibilidad de macOS y ademas deja el
- * dialogo del permiso en medio de la propia captura. Medido: el primer intento capturo
- * ese dialogo, y el segundo capturo el escritorio de quien lo corria, con las ventanas
- * que tuviera abiertas.
+ * EL AVISO se captura solo. La ventana se planta en un sitio conocido con
+ * SPOOCHIE_VENTANA_POS, dice su alto por stdout, y `screencapture -R` recorta ese
+ * rectangulo. En el PNG no cabe nada mas que la ventana.
  *
- * O sea que este script mete en un PNG lo que tengas en pantalla. En una herramienta
- * cuyo argumento entero es que las cosas no se escapan, eso no puede pasar por defecto:
- * hay que pedirlo con `--pantalla-entera`, y al terminar se recuerda mirar las imagenes
- * antes de ensenarselas a nadie.
+ * Antes no era asi, y por eso esta escrito: capturar una ventana por su id exige el
+ * permiso de Accesibilidad de macOS, asi que la primera version capturaba la pantalla
+ * entera y recortaba al centro. Medido dos veces: el primer intento se llevo el dialogo
+ * del propio permiso, y el segundo el escritorio de quien lo corria, con las ventanas
+ * que tuviera abiertas. En una herramienta cuyo argumento entero es que las cosas no se
+ * escapan, eso no podia quedarse.
+ *
+ * LA VENTANA DEL APARTE sigue siendo una Terminal, que no se puede plantar donde
+ * queramos, asi que esa si es pantalla entera recortada al centro. Va detras de
+ * `--pantalla-entera` y con el aviso de mirar el PNG antes de ensenarlo.
  */
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { guionOsascript } from "../src/dialogo.ts";
+import { guionVentana } from "../src/dialogo.ts";
+import { ANCHO } from "../src/ventana.ts";
 import { primerTurno } from "../src/aparte.ts";
 
 const arg = (n: string) => { const i = process.argv.indexOf(`--${n}`); return i >= 0 ? process.argv[i + 1] : undefined; };
@@ -35,17 +39,8 @@ const DIR = arg("dir") ?? join(process.cwd(), "capturas");
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 if (process.platform !== "darwin") {
-  console.error("las capturas son de la UI de macOS: el dialogo y la ventana del aparte solo existen ahi");
+  console.error("las capturas son de la UI de macOS: el aviso y la ventana del aparte solo existen ahi");
   process.exit(1);
-}
-if (!process.argv.includes("--pantalla-entera")) {
-  console.error("Esto captura la PANTALLA ENTERA y recorta al centro, porque capturar solo la");
-  console.error("ventana exige el permiso de Accesibilidad de macOS (y el dialogo del permiso");
-  console.error("sale en la propia captura). Lo que tengas abierto detras acaba en el PNG.");
-  console.error("");
-  console.error("Cierra lo que no quieras que salga y vuelve con:");
-  console.error("  bun scripts/capturas.ts --pantalla-entera [--dir <destino>]");
-  process.exit(2);
 }
 mkdirSync(DIR, { recursive: true });
 
@@ -61,32 +56,49 @@ const HILO: any = {
   messages: [{ at: Date.now(), from: "slack:U1", author: "claude", kind: "text", text: "Al guardar me sale un 500 sin traza. En main funciona. Es cosa de tu rama o mia?" }],
 };
 
-async function capturar(nombre: string, alto: number, ancho: number) {
-  const entera = join(tmpdir(), `sp-cap-${nombre}.png`);
-  spawnSync("screencapture", ["-x", entera]);
-  const destino = join(DIR, `${nombre}.png`);
-  const r = spawnSync("sips", ["-c", String(alto), String(ancho), entera, "--out", destino], { stdio: "ignore" });
-  if (r.status !== 0 || !existsSync(destino)) { console.error(`  no pude recortar ${nombre}`); return null; }
-  return destino;
-}
-
 console.log(`capturas en ${DIR}\n`);
 
-// 1. El aviso: el dialogo del sistema, tal cual lo ve quien recibe un spoochie.
+// 1. El aviso, recortado a su propio rectangulo.
 {
-  const p = spawn("osascript", ["-e", guionOsascript(HILO, 60)], { stdio: "ignore" });
-  await sleep(3000);
-  const f = await capturar("1-aviso", 1000, 1400);
+  // MARCO = 0: el recorte es el rectangulo exacto de la ventana. Con margen se ve la
+  // sombra, que queda mejor, pero tambien se ve una tira de lo que haya detras, y con
+  // 8 pt esa tira ya traia texto legible de otra aplicacion. La sombra no es el diseno.
+  const X = 200, Y = 160, MARCO = 0;
+  // La posicion la lee `guionVentana` de este proceso, no del hijo: el guion sale ya
+  // escrito con las coordenadas dentro. Ponerla solo en el env del spawn dejaba la
+  // ventana centrada, y el recorte cogia lo que hubiera en esa esquina.
+  process.env.SPOOCHIE_VENTANA_POS = `${X},${Y}`;
+  const p = spawn("osascript", ["-l", "JavaScript", "-e", guionVentana(HILO)], { stdio: ["ignore", "pipe", "pipe"] });
+  let salida = "";
+  p.stdout.on("data", d => { salida += d.toString(); });
+  p.stderr.on("data", d => { salida += d.toString(); });
+  // El alto lo dice la propia ventana cuando ya esta pintada.
+  let alto = 0;
+  for (let i = 0; i < 60 && !alto; i++) {
+    await sleep(100);
+    alto = Number(salida.match(/alto:(\d+(?:\.\d+)?)/)?.[1] ?? 0);
+  }
+  if (!alto) {
+    console.error(`  1-aviso        FALLO: la ventana no arranco${salida ? `: ${salida.trim().split("\n")[0]}` : ""}`);
+  } else {
+    await sleep(600); // que termine de aparecer y de aplicar el cristal
+    const destino = join(DIR, "1-aviso.png");
+    const r = spawnSync("screencapture", ["-x", "-R", `${X - MARCO},${Y - MARCO},${ANCHO + MARCO * 2},${Math.ceil(alto) + MARCO * 2}`, destino]);
+    console.log(r.status === 0 && existsSync(destino) ? `  1-aviso        la ventana del aviso, ${ANCHO}x${Math.round(alto)}` : "  1-aviso        FALLO al recortar");
+  }
   p.kill();
-  spawnSync("pkill", ["osascript"]);
-  console.log(f ? `  1-aviso        el dialogo con los tres botones` : "  1-aviso        FALLO");
-  await sleep(1000);
+  await sleep(500);
 }
 
 // 2. La ventana del aparte: una Terminal con el primer turno dentro. No se lanza un
 // Claude de verdad (costaria dinero y tardaria); se pinta lo que ve la persona al
 // abrirse la ventana, que es lo que hay que revisar.
-{
+if (!process.argv.includes("--pantalla-entera")) {
+  console.log(`  2-aparte       saltada. Es una Terminal, y una Terminal no se puede plantar donde`);
+  console.log(`                 queramos: hay que capturar la pantalla entera y recortar al centro,`);
+  console.log(`                 asi que lo que tengas detras acaba en el PNG. Cierra lo que no`);
+  console.log(`                 quieras que salga y vuelve con --pantalla-entera.`);
+} else {
   const guion = join(tmpdir(), "sp-cap-aparte.command");
   const turno = primerTurno(HILO, "S", "spoochie", process.cwd(), process.cwd());
   writeFileSync(guion, [
@@ -103,12 +115,14 @@ console.log(`capturas en ${DIR}\n`);
   ].join("\n"), { mode: 0o700 });
   spawnSync("open", ["-a", "Terminal", guion]);
   await sleep(4000);
-  const f = await capturar("2-aparte", 1100, 1500);
-  console.log(f ? `  2-aparte       la ventana con el primer turno` : "  2-aparte       FALLO");
-  await sleep(1000);
+  const entera = join(tmpdir(), "sp-cap-aparte.png");
+  spawnSync("screencapture", ["-x", entera]);
+  const destino = join(DIR, "2-aparte.png");
+  const r = spawnSync("sips", ["-c", "1100", "1500", entera, "--out", destino], { stdio: "ignore" });
+  console.log(r.status === 0 && existsSync(destino) ? `  2-aparte       la ventana con el primer turno` : "  2-aparte       FALLO");
+  console.log(`\n  MIRA 2-aparte.png antes de ensenarselo a nadie: es de la pantalla entera.`);
+  await sleep(500);
 }
 
-console.log(`\nMIRA LAS DOS IMAGENES antes de ensenarselas a nadie: son de la pantalla entera`);
-console.log(`recortada al centro, asi que puede haber salido algo que tenias detras.`);
 console.log(`\nEl transcript no se captura aqui: es un HTML que se publica como Artifact y`);
 console.log(`se mira en el navegador. \`spoochie transcript <id>\` deja la ruta.`);
