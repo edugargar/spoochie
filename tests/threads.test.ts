@@ -196,3 +196,16 @@ test("purgar deja el sobre y se lleva los mensajes, el spool y el transcript", a
   expect(existsSync(spool)).toBe(false);
   expect(existsSync(transcript)).toBe(false);
 });
+
+test("--seguir hereda solo lo que sobrevive al borrado al cerrar", async () => {
+  const fuente = await Bun.file(new URL("../src/daemon.ts", import.meta.url)).text();
+  const f = fuente.slice(fuente.indexOf("// `--seguir <id>`"), fuente.indexOf("const t: T.Thread = {"));
+  // Del hilo viejo se cogen cuatro cosas, y ninguna es el texto: el texto se borro a
+  // proposito al cerrar y no vuelve por la puerta de atras.
+  expect(f).toContain("subject: viejo.subject");
+  expect(f).toContain("closedAt: viejo.closedAt");
+  expect(f).toContain("closeReason: viejo.closeReason");
+  expect(f).not.toContain("viejo.messages");
+  // Y no se puede continuar el spoochie de otro.
+  expect(f).toContain("no es tuyo");
+});
