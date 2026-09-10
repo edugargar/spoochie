@@ -87,6 +87,14 @@ export function ajustesAparte(cli = comandoCli()): Record<string, unknown> {
 
 /** Las banderas con las que arranca el Claude aparte, iguales en ventana y en fondo.
  *
+ *  Van en la linea de comando y por tanto se ven en `ps`. Se penso moverlas a un
+ *  fichero de ajustes a 0700 y se DESCARTA: dentro no hay ningun secreto. La lista de
+ *  herramientas es una politica, no una credencial, y esta ademas publicada en este
+ *  repo; lo unico que revela es la ruta del binario, que cualquier proceso del mismo
+ *  usuario ya puede leer del disco. Y el control de verdad no es esta lista sino el
+ *  portero, que mira los argumentos: esconder el mapa no serviria de nada si el mapa
+ *  no abre ninguna puerta.
+ *
  *  Estaban escritas dos veces y ya habian divergido: la ventana usaba `modoPermisos()`
  *  y el fondo tenia `"default"` a mano, asi que el mismo mensaje se juzgaba distinto
  *  segun donde corriera el aparte, y el modo sin pantalla era ademas el que no puede
