@@ -137,6 +137,19 @@ async function main() {
   // ejecutable con `daemon`. Importarlo lo arranca.
   if (cmd === "daemon") { await import("./daemon.ts"); return; }
 
+  // El hook PreToolUse del Claude aparte. Lee el evento por stdin y contesta con la
+  // decision. No toca el demonio ni el registro: es una funcion pura con papeles, y
+  // tiene que contestar aunque todo lo demas este roto, porque si no contesta la
+  // herramienta se ejecuta.
+  if (cmd === "portero") {
+    const { portero } = await import("./portero.ts");
+    const { comandoCli } = await import("./aparte.ts");
+    let entrada: unknown = null;
+    try { entrada = JSON.parse(await new Response(Bun.stdin.stream()).text()); } catch {}
+    console.log(JSON.stringify(portero(entrada, comandoCli())));
+    return;
+  }
+
   if (cmd === "register") {
     // Con el hook, el evento llega por stdin. A mano desde una terminal no llega nada
     // y leer stdin se quedaba colgado para siempre: el env de la sesion ya trae lo
