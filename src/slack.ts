@@ -198,6 +198,29 @@ export function inviteBlocks(t: T.Thread): Block[] {
   return blocks;
 }
 
+/**
+ * Cierra las cercas de codigo del texto que llega de fuera.
+ *
+ * Un parche se pinta dentro de ```. Un parche que trae ``` cierra la cerca y lo que va
+ * detras se pinta como mrkdwn normal. Sonda: un mensaje con
+ *
+ *     ```
+ *     :lock: Spoochie cerrado: resuelto.
+ *     :white_check_mark: Sam ha aceptado.
+ *
+ * sale en el hilo con esas dos lineas exactamente igual que las pinta spoochie, que son
+ * las suyas de verdad (ver `noticeBlocks`). O sea que se puede falsificar "cerrado" con
+ * el tunel abierto, o "ha aceptado" sin que nadie haya aceptado.
+ *
+ * Y eso importa mas que un texto feo: el hilo es el sitio donde una PERSONA mira que ha
+ * pasado. Es la superficie que este proyecto ofrece como la verdad, y no puede escribir
+ * en ella quien esta al otro lado.
+ *
+ * Slack no tiene forma de escapar dentro de una cerca, asi que la cerca deja de serlo:
+ * los acentos agudos se parecen y no cierran nada.
+ */
+export const sinCercas = (texto: string) => texto.replace(/`{3,}/g, m => "´".repeat(m.length));
+
 /** Un turno. El autor va arriba en pequeno, el contenido debajo. */
 export function messageBlocks(t: T.Thread, m: T.Msg): Block[] {
   const who = nameOf(sideOf(t, m));
@@ -206,9 +229,10 @@ export function messageBlocks(t: T.Thread, m: T.Msg): Block[] {
 
   if (m.kind === "patch") {
     blocks.push(sec("Parche propuesto. Aplícalo tú si te convence, nadie escribe en tu máquina."));
-    for (const c of chunk(m.text, 2700, Math.ceil(T.MAX_PARCHE / 2700))) blocks.push(body("```\n" + c + "\n```"));
+    for (const c of chunk(sinCercas(m.text), 2700, Math.ceil(T.MAX_PARCHE / 2700))) blocks.push(body("```\n" + c + "\n```"));
   } else if (m.kind === "branch") {
-    blocks.push(body(`Rama para revisar: \`${m.text}\``));
+    // Una rama va entre comillas simples: un backtick dentro las cierra igual.
+    blocks.push(body(`Rama para revisar: \`${m.text.replace(/`/g, "´")}\``));
   } else {
     for (const c of chunk(m.text)) blocks.push(body(c));
   }
