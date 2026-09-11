@@ -332,3 +332,24 @@ test("el contexto que llega de fuera tiene forma, numero y tamano", () => {
   expect(T.contextoDeFuera(undefined)).toEqual({});
   expect(T.contextoDeFuera({ files: [] })).toEqual({});
 });
+
+/**
+ * Una misma persona no te llena el estado con spoochies sin contestar.
+ *
+ * Medido: veinticinco sobres seguidos de un contacto daban veinticinco hilos en disco y
+ * veinticinco avisos a la vez. Hace falta su cuenta, o sea la de alguien que ya esta en
+ * tu agenda, que es exactamente el atacante que mas caro sale.
+ */
+test("se cuentan los pendientes por persona, y solo los pendientes", () => {
+  const base = (id: string, from: string, state: T.Thread["state"]) =>
+    T.save(thread({ id, state, from: { sessionId: from, name: "Ana", cwd: "(otra)" } }));
+  for (let i = 0; i < T.MAX_PENDIENTES_POR_PERSONA; i++) base(`pa${i}`, "slack:U_FLOOD", "pending");
+  expect(T.pendientesDe("slack:U_FLOOD")).toBe(T.MAX_PENDIENTES_POR_PERSONA);
+  expect(T.cabeOtroDe("slack:U_FLOOD")).toBe(false);
+  // Lo abierto y lo cerrado no cuenta: lo que se acota es la cola de decisiones tuyas.
+  base("pa-abierto", "slack:U_FLOOD", "open");
+  base("pa-cerrado", "slack:U_FLOOD", "closed");
+  expect(T.pendientesDe("slack:U_FLOOD")).toBe(T.MAX_PENDIENTES_POR_PERSONA);
+  // Y el limite es por persona, no global: otra puede abrir el suyo.
+  expect(T.cabeOtroDe("slack:U_OTRA")).toBe(true);
+});
