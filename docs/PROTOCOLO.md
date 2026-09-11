@@ -87,6 +87,10 @@ an id with no pinned key is still delivered **as a message**, labelled unsigned,
 a person reads it and sees the label. As an `accept` or a `close` it is dropped and said
 in the thread.
 
+A version 1 signature is not enough either: it covers neither the timestamp nor the
+recipient, so one stays valid forever and in any thread. That costs no compatibility,
+because 0.9.8 signed only invitations and messages, never an accept or a close.
+
 That breaks accept and close over Slack with machines older than 0.9.9, which send them
 unsigned. The fallbacks are unchanged: accept in the notification or by writing in the
 thread, and a tunnel dies on its own after 10 minutes of silence.
@@ -108,6 +112,24 @@ have no owner there.
 6. `pk` equals the key pinned for `from`. First key ever seen for an id **that is already
    in your contacts** is pinned, SSH-style. An id that is not in your contacts is
    rejected: nobody invited them and they invited nobody.
+
+## What the receiver does not take from the envelope
+
+Three fields ride outside the signature and are read by a person or fed to the side
+Claude, so the receiver does not take them at face value:
+
+- **The display name.** `fromName` is not signed, so a correctly signed envelope could be
+  shown under any name, and that name is the first thing the notification says. It comes
+  from your own address book instead; the envelope's name is the last resort, for an id
+  that is somehow not in it.
+- **The subject.** One line, 200 characters.
+- **The context.** Branch on one line of 80, `sha` only when it really is hex, and twelve
+  file names of 120 characters with no line breaks. The file names are printed into the
+  side Claude's first turn, so an unbounded one writes whatever it likes there.
+
+The same goes for a close reason coming from the other machine: one line, 120
+characters, no brackets, because it is said inside the receiving session and a close is a
+notice, which the guardian never reads.
 
 ## Trust and keys
 
