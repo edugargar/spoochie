@@ -273,7 +273,7 @@ export class NostrBridge {
       from: { sessionId: `nostr:${a.de}`, name: nombre, cwd: "(otra maquina)", human: nombre, slackUser: contacto.id.startsWith("nostr:") ? undefined : contacto.id },
       to: { sessionId: `nostr:${this.pk}`, name: "yo", cwd: "(esta maquina)", slackUser: Cfg.load().slack?.userId },
       state: "pending", createdAt: now, lastActivityAt: now,
-      context: (a.sobre.context as T.Thread["context"]) ?? {},
+      context: T.contextoDeFuera(a.sobre.context),
       transporte: "nostr",
       nostr: { otro: a.de, relays: a.sobre.relays ?? contacto.relays ?? RELAYS_POR_DEFECTO, enviados: [] },
       messages: [],
