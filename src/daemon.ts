@@ -855,7 +855,10 @@ function arrancarNostr() {
 }
 
 /** El otro lado cerro: se cierra aqui sin volver a avisarle, y se borra igual. */
+/** El cierre del otro lado. El motivo es texto suyo y acaba dicho dentro de esta
+ *  sesion, asi que entra acotado: ver `motivoDeFuera`. */
 async function onRemoteClose(t: T.Thread, motivo: string) {
+  motivo = T.motivoDeFuera(motivo);
   const fresco = T.load(t.id) ?? t;
   if (fresco.state === "closed") return;
   await closeThread(fresco, motivo, undefined, true);

@@ -392,3 +392,28 @@ export function urlDeTranscript(url: unknown): { ok: true; url: string } | { ok:
   }
   return { ok: true, url: limpia };
 }
+
+/**
+ * El motivo de cierre que llega de la otra maquina.
+ *
+ * Un cierre es un aviso, y los avisos no pasan por el vigilante: no hacen nada, solo se
+ * dicen. Pero el motivo si se dice, y se dice dentro de la sesion de quien recibe
+ * ("[spoochie x] cerrado (<motivo>)") y en el hilo. O sea que era texto de fuera, sin
+ * limite y sin vigilar, entrando en un Claude con acceso a la maquina. La misma puerta
+ * que se cerro con `kindOfMsg`, por otro lado.
+ *
+ * No se vigila (un cierre tiene que poder cerrarse aunque el vigilante este caido): se
+ * acota. Una linea, corta, y sin los corchetes con los que spoochie enmarca sus propias
+ * lineas, para que un motivo no pueda parecer una instruccion del sistema.
+ */
+export const MAX_MOTIVO = 120;
+
+export function motivoDeFuera(motivo: unknown): string {
+  const limpio = String(motivo ?? "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/[\[\]]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!limpio) return "cerrado por el otro lado";
+  return limpio.length > MAX_MOTIVO ? limpio.slice(0, MAX_MOTIVO - 1) + "…" : limpio;
+}
