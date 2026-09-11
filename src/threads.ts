@@ -470,3 +470,24 @@ export function contextoDeFuera(ctx: unknown): Thread["context"] {
   }
   return out;
 }
+
+/**
+ * Cuantos spoochies sin contestar te puede tener abiertos una misma persona.
+ *
+ * Medido: veinticinco sobres seguidos de un contacto dan veinticinco hilos en disco y
+ * veinticinco avisos. La cola del demonio arregla lo de los avisos; esto arregla lo otro,
+ * que es que una cuenta robada te llene el estado y la lista de `spoochie list`.
+ *
+ * Cinco es de sobra: nadie tiene seis preguntas tuyas sin contestar a la vez. Los que
+ * sobran no se materializan, y los que hay caducan solos a las 4 h, asi que la cosa se
+ * desatasca sola sin que nadie tenga que limpiar nada.
+ */
+export const MAX_PENDIENTES_POR_PERSONA = 5;
+
+export function pendientesDe(sessionId: string): number {
+  return all().filter(t => t.state === "pending" && t.from.sessionId === sessionId).length;
+}
+
+export function cabeOtroDe(sessionId: string): boolean {
+  return pendientesDe(sessionId) < MAX_PENDIENTES_POR_PERSONA;
+}

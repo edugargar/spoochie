@@ -264,6 +264,12 @@ export class NostrBridge {
   /** Un spoochie que me llega de otra maquina: queda pendiente hasta que mi humano acepte. */
   private async materializar(a: Abierto, contacto: { id: string; name: string; relays?: string[] }) {
     if (T.load(a.sobre.id) || T.yaVisto(a.sobre.id)) return;
+    // Un contacto no te llena el estado con spoochies que no has contestado: ver
+    // `cabeOtroDe`. Los que ya hay caducan solos a las 4 h.
+    if (!T.cabeOtroDe(`nostr:${a.de}`)) {
+      this.cb.log("nostr", a.sobre.id, `${contacto.name} ya tiene ${T.MAX_PENDIENTES_POR_PERSONA} spoochies tuyos sin contestar; este no entra`);
+      return;
+    }
     const now = Date.now();
     const nombre = T.nombreParaEnsenar(contacto.name, a.sobre.fromName, contacto.id);
     const t: T.Thread = {

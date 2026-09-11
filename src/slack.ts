@@ -905,6 +905,12 @@ export class SlackBridge {
       }
       // Un spoochie que esta maquina ya conocio no vuelve, aunque se borre el estado.
       if (T.yaVisto(env.id)) continue;
+      // Y una misma persona no te llena el estado con spoochies sin contestar.
+      if (!T.cabeOtroDe(`slack:${env.from}`)) {
+        known.add(env.id);
+        await this.avisoEn(ch, msg.thread_ts ?? msg.ts, `:hourglass: ya tienes ${T.MAX_PENDIENTES_POR_PERSONA} spoochies de ${env.fromName ?? env.from} sin contestar. Este no entra; contesta o deja caducar alguno.`);
+        continue;
+      }
       // El aviso del DM puede apuntar al hilo de verdad (un grupo o un canal).
       await this.materialize(env, env.thread?.channel ?? ch, env.thread?.ts ?? msg.thread_ts ?? msg.ts, bodyFromBlocks(msg.blocks));
     }

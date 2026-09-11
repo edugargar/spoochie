@@ -604,6 +604,48 @@ function elegir(t: T.Thread): { pick: SessionRecord | null; otras: number } {
  *  si el tunel se acepta desde Slack o se cierra. */
 const dialogos = new Map<string, { cerrar: () => void }>();
 
+/**
+ * La cola de avisos. Uno en pantalla, y punto.
+ *
+ * Cada spoochie pendiente sacaba su ventana en cuanto llegaba. Medido con veinticinco
+ * sobres seguidos de un mismo contacto: veinticinco hilos y veinticinco ventanas a la
+ * vez, todas flotando en el centro y todas robando el foco con
+ * `activateIgnoringOtherApps`. La maquina queda inservible hasta que las quitas.
+ *
+ * Y lo peor no es eso. La forma rapida de quitar una pila de ventanas modales es
+ * machacar Return, y el Return de esta ventana es "Que pase". O sea que la avalancha
+ * convierte el boton de aceptar en la salida de emergencia. Hace falta la cuenta de
+ * alguien que ya esta en tu agenda, que es exactamente el atacante que mas caro sale.
+ *
+ * Con la cola, la vigesimo quinta ventana no existe hasta que has contestado a la
+ * primera, y cada una se lee con la cabeza en su sitio.
+ */
+const enCola: { id: string; sessionId: string }[] = [];
+
+function encolarAviso(t: T.Thread, pick: SessionRecord) {
+  if (dialogos.has(t.id) || enCola.some(x => x.id === t.id)) return;
+  if (dialogos.size > 0) {
+    enCola.push({ id: t.id, sessionId: pick.sessionId });
+    log("aviso", t.id, `en cola (${enCola.length} esperando)`);
+    return;
+  }
+  avisarConDialogo(t, pick);
+}
+
+/** El siguiente de la cola, si sigue teniendo sentido preguntarlo. */
+function siguienteAviso() {
+  while (enCola.length && dialogos.size === 0) {
+    const x = enCola.shift()!;
+    const t = T.load(x.id);
+    // Mientras esperaba pudo aceptarse en Slack, rechazarse o caducar.
+    if (!t || t.state !== "pending") continue;
+    const s = sessById(x.sessionId) ?? sessById(t.to.sessionId);
+    if (!s) continue;
+    avisarConDialogo(t, s);
+    return;
+  }
+}
+
 /** Asigna el spoochie a la sesion que le toca y avisa a la persona. En macOS el aviso
  *  es un dialogo del sistema y la sesion no ve nada: solo presta su directorio para el
  *  Claude aparte. Sin escritorio, la invitacion entra en esa sesion como antes. */
@@ -627,7 +669,7 @@ async function assign(t: T.Thread): Promise<string | null> {
     return pick.sessionId;
   }
   if (Dlg.modoAviso() === "dialogo") {
-    if (!dialogos.has(t.id)) avisarConDialogo(t, pick);
+    encolarAviso(t, pick);
     log("assign", t.id, "-> dialogo, repo de", pick.name);
     return pick.sessionId;
   }
@@ -658,6 +700,8 @@ function avisarConDialogo(t: T.Thread, pick: SessionRecord) {
   dialogos.set(t.id, aviso);
   void aviso.respuesta.then(async r => {
     if (dialogos.get(t.id) === aviso) dialogos.delete(t.id);
+    // Pase lo que pase con este, el siguiente de la cola ya puede salir.
+    setTimeout(siguienteAviso, 0).unref?.();
     const fresco = T.load(t.id);
     log("aviso", t.id, "dialogo:", r ?? "sin respuesta");
     // Mientras el dialogo estaba abierto pudo aceptarse en Slack o caducar: manda el estado.
@@ -669,8 +713,10 @@ function avisarConDialogo(t: T.Thread, pick: SessionRecord) {
 }
 
 function cerrarDialogo(id: string) {
+  const i = enCola.findIndex(x => x.id === id);
+  if (i >= 0) enCola.splice(i, 1);
   const d = dialogos.get(id);
-  if (d) { dialogos.delete(id); try { d.cerrar(); } catch {} }
+  if (d) { dialogos.delete(id); try { d.cerrar(); } catch {} setTimeout(siguienteAviso, 0).unref?.(); }
 }
 
 /** Aceptar escribiendo en el hilo de Slack. Hace lo mismo que `spoochie accept`. */

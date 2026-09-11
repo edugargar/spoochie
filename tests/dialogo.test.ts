@@ -155,3 +155,59 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aparte-rec
   // Y la sesion de trabajo no ha recibido NADA en todo el proceso.
   expect(S.got).toEqual([]);
 }, plazo(30_000));
+
+/**
+ * Uno en pantalla, y punto.
+ *
+ * Cada spoochie pendiente sacaba su ventana en cuanto llegaba. Medido con veinticinco
+ * sobres seguidos de un mismo contacto: veinticinco ventanas a la vez, todas flotando en
+ * el centro y todas robando el foco. Y lo peor no es que la maquina quede inservible: la
+ * forma rapida de quitar una pila de ventanas modales es machacar Return, y el Return de
+ * esta ventana es "Que pase". La avalancha convierte el boton de aceptar en la salida de
+ * emergencia, y hace falta la cuenta de alguien que ya esta en tu agenda.
+ *
+ * Aqui el "dialogo" es un programa que apunta que ha salido y se queda esperando, que es
+ * lo que hace el de verdad mientras nadie pulsa.
+ */
+test("con varios spoochies a la vez solo se abre un aviso; el resto espera turno", async () => {
+  const bin2 = mkdtempSync(join(tmpdir(), "sp-cola-bin-"));
+  const HOME2 = mkdtempSync(join(tmpdir(), "sp-cola-"));
+  const REPO2 = mkdtempSync(join(tmpdir(), "repo-cola-"));
+  writeFileSync(join(bin2, "dialogo"), "#!/bin/sh\necho aviso >> \"$SPOOCHIE_HOME/avisos.txt\"\nsleep 120\n");
+  chmodSync(join(bin2, "dialogo"), 0o755);
+  mkdirSync(join(HOME2, "sessions"), { recursive: true, mode: 0o700 });
+  mkdirSync(join(HOME2, "threads"), { recursive: true, mode: 0o700 });
+  writeFileSync(join(HOME2, "config.json"), JSON.stringify({ guardian: false, transcript: false, aparte: false, human: "Edu", slack: { userId: "U_ME" } }), { mode: 0o600 });
+  const caja = fakeInbox("cola");
+  writeFileSync(join(HOME2, "sessions", "S.json"),
+    JSON.stringify({ sessionId: "S", name: "trabajo", cwd: REPO2, socket: caja.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
+
+  const sobre = (id: string) => ({
+    id, subject: "asunto " + id, state: "pending", createdAt: Date.now(), lastActivityAt: Date.now(),
+    from: { sessionId: "slack:U_ANA", name: "Ana", cwd: "(otra maquina)", human: "Ana", slackUser: "U_ANA" },
+    to: { sessionId: "slack:U_ME", name: "yo", cwd: "(esta maquina)", slackUser: "U_ME" },
+    context: {}, messages: [{ at: Date.now(), from: "slack:U_ANA", author: "claude", kind: "text", text: "pregunta " + id }],
+  });
+  for (let i = 0; i < 6; i++) writeFileSync(join(HOME2, "threads", "c" + i + ".json"), JSON.stringify(sobre("c" + i)));
+
+  const d2 = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
+    env: { ...process.env, PATH: bin2 + ":" + process.env.PATH, SPOOCHIE_HOME: HOME2, SPOOCHIE_VENTANA: "fondo", SPOOCHIE_AVISO: join(bin2, "dialogo") }, stdio: "ignore",
+  });
+  try {
+    for (let i = 0; i < 60 && !existsSync(join(HOME2, "daemon.sock")); i++) await sleep(100);
+    await new Promise<void>((res, rej) => {
+      const c = net.createConnection({ path: join(HOME2, "daemon.sock") });
+      c.on("error", rej);
+      c.on("connect", () => c.write(JSON.stringify({ op: "claim", sessionId: "S" }) + "\n"));
+      c.on("data", () => { c.destroy(); res(); });
+    });
+    const cuenta = () => leer(join(HOME2, "avisos.txt")).trim().split("\n").filter(Boolean).length;
+    expect(await hasta(() => cuenta() >= 1)).toBe(true);
+    // Y sigue siendo uno: los otros cinco esperan a que este se conteste.
+    await sleep(1500);
+    expect(cuenta()).toBe(1);
+  } finally {
+    d2.kill("SIGKILL");
+    caja.server.close();
+  }
+}, plazo(30_000));
