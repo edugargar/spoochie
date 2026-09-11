@@ -65,6 +65,10 @@ export type DatosSobre = {
   app?: string;
   subject?: string;
   thread?: { channel: string; ts: string };
+  /** Si el turno es texto, parche o rama. Viajaba fuera de la firma, y decide si el
+   *  vigilante mira el mensaje: `kind !== "text"` se lo salta entero. O sea que mover
+   *  una palabra que nadie firmaba apagaba el vigilante para ese mensaje. */
+  kindOfMsg?: string;
 };
 
 /** Cuanto vale una firma. Un sobre de hace mas de un dia no es un mensaje que llega
@@ -79,11 +83,17 @@ const datosV1 = (id: string, kind: string, from: string, text: string) =>
   Buffer.from(`${id}\n${kind}\n${from}\n${hash(text)}`);
 
 /** La v2: un array en JSON, con el orden fijo y todos los campos presentes aunque esten
- *  vacios, para que dos sobres distintos no puedan producir los mismos bytes. */
+ *  vacios, para que dos sobres distintos no puedan producir los mismos bytes.
+ *
+ *  `kindOfMsg` entra aqui porque decide si el vigilante mira el mensaje: el vigilante se
+ *  salta todo lo que no sea "text", asi que esa palabra, que no firmaba nadie, valia por
+ *  el vigilante entero. Se puede anadir sin romper a nadie porque la v2 no ha salido en
+ *  ninguna version publicada: la ultima es la 0.9.8 y firma con la v1. */
 const datosV2 = (d: DatosSobre, text: string) =>
   Buffer.from(JSON.stringify([
     2, d.id, d.kind, d.from, d.to ?? "", d.ts ?? 0, d.app ?? "", d.subject ?? "",
     d.thread ? `${d.thread.channel}/${d.thread.ts}` : "",
+    d.kindOfMsg ?? "",
     hash(text),
   ]));
 

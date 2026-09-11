@@ -58,3 +58,27 @@ test("si el vigilante no contesta, el mensaje se retiene: no se cae hacia dejar 
   // Y con un reintento antes, porque la mayoria de los fallos son de tiempo, no del modelo.
   expect(salida).toContain("const dos = await unaPasada");
 });
+
+/**
+ * Lo que el vigilante no lee no lo vigila.
+ *
+ * El prompt llevaba `text.slice(0, 4000)` y `MAX_MENSAJE` son 25.000: veintiun mil
+ * caracteres de cada mensaje no los miraba nadie, mientras a la sesion le llegaba el
+ * mensaje entero. O sea, cuatro mil caracteres de relleno y detras lo que sea. Y el
+ * limite de 25.000 lo cumple quien envia desde la CLI; a un peer hostil no lo ata nadie.
+ *
+ * Este test no llama al modelo: mira lo unico que el modelo puede ver, que es el prompt.
+ */
+test("el vigilante ve el mensaje entero, y lo que no le cabe no entra", async () => {
+  const fuente = await Bun.file(new URL("../src/guardian.ts", import.meta.url)).text();
+  // El mensaje va entero al prompt: ni un slice por el camino.
+  // Solo la linea del prompt: el comentario de arriba cita el slice viejo a proposito.
+  const prompt = fuente.slice(fuente.indexOf("const PROMPT"), fuente.indexOf("export async function judge"));
+  expect(prompt).toContain("MENSAJE: ${text}");
+  expect(prompt).not.toContain(".slice(");
+
+  // Y lo que pasa del limite se retiene, no se entrega a medio juzgar.
+  const v = await judge("el boton", "x".repeat(25_001));
+  expect(v.peligro).toBe(true);
+  expect(v.why).toContain("se retiene");
+});

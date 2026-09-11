@@ -751,7 +751,13 @@ async function onSlackMessage(t: T.Thread, m: T.Msg) {
  *  Un mensaje que pide actuar se queda en el hilo, marcado, hasta que el humano
  *  receptor lo suelte; uno fuera de tema entra con su etiqueta y un aviso en Slack. */
 async function vigilar(t: T.Thread, m: T.Msg): Promise<boolean> {
-  if (!Cfg.load().guardian || m.kind !== "text" || m.author === "spoochie") return true;
+  // Se miran los turnos de la otra persona, sean del tipo que sean. Ponia
+  // `m.kind !== "text"`, asi que un parche o una rama no pasaban por el vigilante: quien
+  // enviaba elegia si queria vigilante con solo escribir `spoochie patch` en vez de
+  // `spoochie say`. Y el vigilante existe justo porque el que envia no tiene por que ser
+  // de fiar. El propio prompt ya distingue: proponer un parche para que lo revise una
+  // persona no es peligro; lo que se busca dentro de el son instrucciones al asistente.
+  if (!Cfg.load().guardian || m.author === "spoochie") return true;
   const v = await judge(t.subject, m.text);
   m.offTopic = { verdict: v.verdict, why: v.why };
   const quien = T.otherSide(t, T.mySide(t, sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId).sessionId);

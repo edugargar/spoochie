@@ -112,3 +112,25 @@ test("un sobre bien firmado de un id que no esta en tu agenda no fija ninguna cl
   expect(verificarSobre(sobre({ from: "U_INTRUSO" }), "x")).toBe("desconocida");
   expect(Cfg.contactById(Cfg.load(), "U_INTRUSO")).toBeNull();
 });
+
+/**
+ * `kindOfMsg` viajaba fuera de la firma, y decide si el vigilante mira el mensaje: se
+ * saltaba todo lo que no fuera "text". O sea que mover una palabra que nadie firmaba
+ * apagaba el vigilante para ese mensaje, sin tocar el texto ni romper la firma.
+ *
+ * Entra en la v2 sin romper a nadie: la v2 no ha salido en ninguna version publicada (la
+ * ultima es la 0.9.8 y firma con la v1).
+ */
+test("mover kindOfMsg invalida la firma", () => {
+  const k = nuevasClaves();
+  const c = Cfg.load();
+  c.slack = { userId: "U_ME" } as any;
+  Cfg.addContact(c, { id: "U_KOM", name: "Ana", pk: k.pub } as any);
+  Cfg.save(c);
+  const env: any = { id: "kom", kind: "msg", from: "U_KOM", to: "U_ME", ts: Math.floor(Date.now() / 1000), sv: 2, app: "0.9.9", pk: k.pub, kindOfMsg: "text" };
+  env.sig = firmar(k.priv, env, "mira esto");
+  expect(verificarSobre(env, "mira esto")).toBe("ok");
+  expect(verificarSobre({ ...env, kindOfMsg: "patch" }, "mira esto")).toBe("mala");
+  // Y quitarlo del todo tampoco cuela: se firma "" y "text" no es "".
+  expect(verificarSobre({ ...env, kindOfMsg: undefined }, "mira esto")).toBe("mala");
+});
