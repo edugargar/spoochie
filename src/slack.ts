@@ -910,10 +910,14 @@ export class SlackBridge {
    *  a la sesion local que encaje, o al registrarse la siguiente. */
   private async materialize(env: Envelope, channel: string, ts: string, cuerpo = "") {
     const now = Date.now();
+    // El nombre sale de tu agenda, no del sobre: `fromName` no esta en la firma, asi que
+    // un sobre firmado por una persona podia ensenarse con el nombre de otra, y ese
+    // nombre es lo primero que se lee en el aviso. Ver `nombreParaEnsenar`.
+    const nombre = T.nombreParaEnsenar(Cfg.contactById(Cfg.load(), env.from)?.name, env.fromName, env.from);
     const t: T.Thread = {
       id: env.id,
-      subject: env.subject ?? "(sin asunto)",
-      from: { sessionId: `slack:${env.from}`, name: env.fromName ?? "remoto", cwd: "(otra maquina)", human: env.fromName, slackUser: env.from },
+      subject: T.asuntoDeFuera(env.subject),
+      from: { sessionId: `slack:${env.from}`, name: nombre, cwd: "(otra maquina)", human: nombre, slackUser: env.from },
       to: { sessionId: `slack:${this.me}`, name: "yo", cwd: "(esta maquina)", slackUser: this.me },
       state: "pending",
       createdAt: now,

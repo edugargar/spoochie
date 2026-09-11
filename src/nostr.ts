@@ -265,10 +265,12 @@ export class NostrBridge {
   private async materializar(a: Abierto, contacto: { id: string; name: string; relays?: string[] }) {
     if (T.load(a.sobre.id) || T.yaVisto(a.sobre.id)) return;
     const now = Date.now();
+    const nombre = T.nombreParaEnsenar(contacto.name, a.sobre.fromName, contacto.id);
     const t: T.Thread = {
       id: a.sobre.id,
-      subject: a.sobre.subject ?? a.subject ?? "(sin asunto)",
-      from: { sessionId: `nostr:${a.de}`, name: a.sobre.fromName ?? contacto.name, cwd: "(otra maquina)", human: a.sobre.fromName ?? contacto.name, slackUser: contacto.id.startsWith("nostr:") ? undefined : contacto.id },
+      subject: T.asuntoDeFuera(a.sobre.subject ?? a.subject),
+      // El nombre sale de la agenda, no del sobre: ver `nombreParaEnsenar`.
+      from: { sessionId: `nostr:${a.de}`, name: nombre, cwd: "(otra maquina)", human: nombre, slackUser: contacto.id.startsWith("nostr:") ? undefined : contacto.id },
       to: { sessionId: `nostr:${this.pk}`, name: "yo", cwd: "(esta maquina)", slackUser: Cfg.load().slack?.userId },
       state: "pending", createdAt: now, lastActivityAt: now,
       context: (a.sobre.context as T.Thread["context"]) ?? {},
