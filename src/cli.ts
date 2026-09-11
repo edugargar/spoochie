@@ -8,7 +8,7 @@ import { userInfo } from "node:os";
 import { DAEMON_SOCK, DAEMON_LOG, ensureDirs } from "./paths.ts";
 import { register, liveSessions, unregister, type SessionRecord } from "./registry.ts";
 import * as Cfg from "./config.ts";
-import { MAX_MENSAJE, MAX_PARCHE } from "./threads.ts";
+import { MAX_MENSAJE, MAX_PARCHE, urlDeTranscript } from "./threads.ts";
 import { TRANSCRIPTS_DIR } from "./transcript.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -764,7 +764,14 @@ async function main() {
     case "transcript": {
       const id = rest[0];
       const url = flag(rest, "url");
-      if (url) { out(await rpc({ op: "transcript-url", id, url, sessionId: whoAmI().sessionId })); break; }
+      if (url) {
+        // Se comprueba aqui tambien, no solo en el demonio: el error se lee mejor donde
+        // se escribio el comando, y el que lo escribe suele ser un Claude.
+        const v = urlDeTranscript(url);
+        if (!v.ok) { console.error(`spoochie transcript --url: ${v.error}`); process.exit(1); }
+        out(await rpc({ op: "transcript-url", id, url: v.url, sessionId: whoAmI().sessionId }));
+        break;
+      }
       const p = join(TRANSCRIPTS_DIR, `${id}.html`);
       if (!existsSync(p)) { console.error(`no hay transcript para ${id} (activa con: spoochie config --transcript on)`); process.exit(1); }
       console.log(p);

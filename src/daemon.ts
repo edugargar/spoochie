@@ -551,7 +551,13 @@ async function handle(req: Req): Promise<any> {
     case "transcript-url": {
       const t = T.load(req.id);
       if (!t) return { ok: false, error: `spoochie ${req.id} no existe` };
-      t.transcriptUrl = req.url;
+      // Esta URL acaba publicada en el hilo de la otra persona. El aparte tiene
+      // `spoochie transcript` en su lista blanca, asi que sin esto era una salida de
+      // datos desde una maquina cuyo Claude es de solo lectura.
+      const v = T.urlDeTranscript(req.url);
+      if (!v.ok) return { ok: false, error: v.error };
+      req.url = v.url;
+      t.transcriptUrl = v.url;
       t.transcriptOwner = req.sessionId ?? t.transcriptOwner;
       t.transcriptStale = 0;
       T.save(t);
@@ -969,35 +975,6 @@ async function tick() {
   if (slack) { try { await slack.poll(); } catch (e) { log("slack-poll-error", String(e)); } }
 }
 
-/**
- * Lo que un contacto dejo aparcado en el spool de un hilo que nunca llego a existir.
- *
- * Los ficheros viajan a trozos y los reles no ordenan, asi que un trozo puede llegar
- * antes que la invitacion y tiene que esperar en el spool. Hasta aqui bien. El problema
- * es lo que pasa cuando esa invitacion no llega nunca: `tick` recorre los hilos, y de un
- * hilo que no existe no se ocupa nadie. Medido: un contacto manda un fichero con un id
- * inventado y se queda en ~/.claude/spoochie/files/<id>/ para siempre, sin que aparezca
- * en ningun sitio donde alguien lo vea.
- *
- * Y ademas contradice la frase que sostiene el resto: hasta que aceptas no pasa nada. Un
- * fichero de otra persona en tu disco antes de que te pregunten es que si pasa algo.
- *
- * Se le da lo mismo que a un spoochie sin aceptar: cuatro horas. Un directorio con hilo
- * vivo no se toca; de eso se encarga `purgar` al cerrar.
- */
-function barrerSpoolHuerfano() {
-  if (!existsSync(SPOOL)) return;
-  const ahora = Date.now();
-  for (const id of readdirSync(SPOOL)) {
-    if (T.load(id)) continue;
-    const dir = join(SPOOL, id);
-    try {
-      if (ahora - statSync(dir).mtimeMs < T.PENDING_TTL_MS) continue;
-      rmSync(dir, { recursive: true, force: true });
-      log("spool-huerfano", id, "borrado: 4 h sin hilo que lo reclame");
-    } catch {}
-  }
-}
 
 function main() {
   ensureDirs();
