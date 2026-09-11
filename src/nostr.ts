@@ -26,7 +26,7 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import * as Cfg from "./config.ts";
 import * as T from "./threads.ts";
 import { PROTOCOLO, leerVersion } from "./protocolo.ts";
-import { ROOT, ensureDirs } from "./paths.ts";
+import { ROOT, ensureDirs, escribirAtomico } from "./paths.ts";
 import { MAX_BYTES, SPOOL } from "./files.ts";
 import { VERSION } from "./version.ts";
 
@@ -202,7 +202,7 @@ export class NostrBridge {
 
   private guardarVistos() {
     ensureDirs();
-    try { writeFileSync(VISTOS, JSON.stringify([...this.vistos].slice(-5000)), { mode: 0o600 }); } catch {}
+    try { escribirAtomico(VISTOS, JSON.stringify([...this.vistos].slice(-5000))); } catch {}
   }
 
   /** Escucha lo que llega para mi. Se vuelve a suscribir sola si el rele corta. */
@@ -324,7 +324,7 @@ export class NostrBridge {
     writeFileSync(destino, bytes, { mode: 0o600 });
     const listos = join(SPOOL, a.sobre.id, LISTOS);
     const cola: string[] = existsSync(listos) ? JSON.parse(readFileSync(listos, "utf8")) : [];
-    writeFileSync(listos, JSON.stringify([...cola, destino]), { mode: 0o600 });
+    escribirAtomico(listos, JSON.stringify([...cola, destino]));
     if (t) await this.entregarListos(t);
   }
 

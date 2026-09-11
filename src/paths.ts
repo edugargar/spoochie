@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { mkdirSync, existsSync, renameSync, statSync, chmodSync } from "node:fs";
+import { mkdirSync, existsSync, renameSync, statSync, chmodSync, writeFileSync, unlinkSync } from "node:fs";
 
 /** SPOOCHIE_HOME aisla todo el estado. Los tests lo usan: os.homedir() en Bun no
  *  respeta $HOME, asi que sin esto un test escribe en tu ~/.claude de verdad. */
@@ -74,4 +74,28 @@ export function entornoLimpio(extra: Record<string, string | undefined> = {}, ba
   }
   for (const [k, v] of Object.entries(extra)) if (v !== undefined) env[k] = v;
   return env;
+}
+
+/**
+ * Escribir un fichero de estado sin dejarlo a medias.
+ *
+ * `writeFileSync` trunca y luego escribe, asi que un proceso que muere en medio (un
+ * SIGKILL, un apagon, el OOM) deja el fichero cortado. Medido con la config: cortada a
+ * la mitad, `load` devolvia la config por defecto sin decir nada y el siguiente `save`
+ * la escribia encima, o sea que se perdian las tres claves y la agenda entera en
+ * silencio. El mismo `writeFileSync` esta en los hilos, en la cola de salida y en las
+ * listas de vistos.
+ *
+ * Se escribe al lado y se renombra. El rename es atomico dentro del mismo disco: quien
+ * lea ve el fichero viejo entero o el nuevo entero, nunca la mitad de ninguno.
+ */
+export function escribirAtomico(ruta: string, texto: string, mode = 0o600) {
+  const temp = `${ruta}.nuevo`;
+  writeFileSync(temp, texto, { mode });
+  try {
+    renameSync(temp, ruta);
+  } catch (e) {
+    try { unlinkSync(temp); } catch {}
+    throw e;
+  }
 }

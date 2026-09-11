@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { THREADS_DIR, ensureDirs } from "./paths.ts";
+import { THREADS_DIR, ensureDirs, escribirAtomico } from "./paths.ts";
 
 /** Un spoochie pendiente de que el humano receptor acepte aguanta esto. */
 export const PENDING_TTL_MS = 4 * 60 * 60 * 1000;
@@ -107,14 +107,14 @@ export function marcarVisto(id: string) {
   if (l.includes(id)) return;
   l.push(id);
   // No crece sin fin: con los ultimos mil basta y sobra para una ventana de 4h.
-  writeFileSync(VISTOS, JSON.stringify(l.slice(-1000)), { mode: 0o600 });
+  escribirAtomico(VISTOS, JSON.stringify(l.slice(-1000)));
 }
 
 export function newId() { return randomBytes(2).toString("hex"); }
 
 export function save(t: Thread) {
   ensureDirs();
-  writeFileSync(file(t.id), JSON.stringify(t, null, 2), { mode: 0o600 });
+  escribirAtomico(file(t.id), JSON.stringify(t, null, 2));
   marcarVisto(t.id);
 }
 

@@ -16,7 +16,7 @@
  */
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import * as T from "./threads.ts";
-import { OUTBOX_FILE, ensureDirs } from "./paths.ts";
+import { OUTBOX_FILE, ensureDirs, escribirAtomico } from "./paths.ts";
 
 export const UNION_MS = 2_500;
 export const REINTENTO_MS = 60_000;
@@ -32,7 +32,7 @@ function guardar() {
   ensureDirs();
   const datos = [...outbox].map(([key, c]) => ({ key, msgs: c.msgs, fallos: c.fallos }));
   try {
-    if (datos.length) writeFileSync(OUTBOX_FILE, JSON.stringify(datos), { mode: 0o600 });
+    if (datos.length) escribirAtomico(OUTBOX_FILE, JSON.stringify(datos));
     else if (existsSync(OUTBOX_FILE)) unlinkSync(OUTBOX_FILE);
   } catch {}
 }
