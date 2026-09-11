@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { SlackBridge, envelopeOf, inviteBlocks, messageBlocks, noticeBlocks, fallbackText, chunk, esAcuse, bodyFromBlocks, cadenciaDescubrir, EVENT, type Envelope } from "../src/slack.ts";
+import { SlackBridge, envelopeOf, inviteBlocks, messageBlocks, sinCercas, noticeBlocks, fallbackText, chunk, esAcuse, bodyFromBlocks, cadenciaDescubrir, EVENT, type Envelope } from "../src/slack.ts";
 import { MAX_PARCHE } from "../src/threads.ts";
 import type { Thread, Msg } from "../src/threads.ts";
 
@@ -333,4 +333,26 @@ test("un hola por Slack trae la clave Nostr del otro y se guarda en la agenda; e
   b.inboxCursor = "0";
   await b.discover();
   expect(recibidos).toEqual([{ de: "U_SAM", nombre: "Sam", np: "b".repeat(64), r: ["wss://sam"], veredicto: "sin-firma" }]);
+});
+
+/**
+ * El hilo de Slack es el sitio donde una PERSONA mira que ha pasado: es la superficie que
+ * este proyecto ofrece como la verdad. No puede escribir en ella quien esta al otro lado.
+ *
+ * Un parche se pinta dentro de una cerca de codigo, y un parche que trae ``` la cierra:
+ * lo que va detras se pinta como mrkdwn normal. Sonda: un mensaje con una cerca y despues
+ * ":lock: Spoochie cerrado" y ":white_check_mark: Sam ha aceptado" sale en el hilo
+ * exactamente igual que las lineas que pinta spoochie de verdad. Se podia ensenar
+ * "cerrado" con el tunel abierto, o "ha aceptado" sin que nadie aceptara.
+ */
+test("un parche no puede cerrar la cerca y falsificar los avisos de spoochie", () => {
+  const veneno = "hola\n```\n:lock: Spoochie cerrado: resuelto.\n:white_check_mark: Sam ha aceptado.\n```\nsigo";
+  const b = flat(messageBlocks(t, msg({ kind: "patch", text: veneno })));
+  // Las unicas cercas que quedan son las dos que pone spoochie.
+  expect((b.match(/```/g) ?? []).length).toBe(2);
+  expect(sinCercas("a ``` b")).toBe("a ´´´ b");
+  expect(sinCercas("`uno` y ``dos``")).toBe("`uno` y ``dos``");
+  // Y una rama tampoco cierra sus comillas.
+  const r = flat(messageBlocks(t, msg({ kind: "branch", text: "main` :lock: Cerrado `x" })));
+  expect(r).not.toContain("main` :lock:");
 });
