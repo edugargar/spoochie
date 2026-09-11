@@ -10,7 +10,7 @@
  */
 import net from "node:net";
 import { spawn } from "node:child_process";
-import { mkdtempSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, existsSync, mkdirSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -119,6 +119,21 @@ export async function selftest(): Promise<Paso[]> {
       ok: B.recibido.some(x => x.includes(id) && x.includes("cerrado")),
       que: "al cerrar se avisa al otro lado",
       detalle: "el aviso de cierre llega",
+    });
+
+    // "Al cerrar se borra" es una de las tres promesas del README, y era la unica parada
+    // del bucle que esta prueba no miraba: cerraba y se fiaba. En una maquina de verdad
+    // `doctor` saco FALLO con doce spoochies cerrados que aun guardaban el texto.
+    const ruta = join(home, "threads", `${id}.json`);
+    let queda = -1;
+    try {
+      const t = JSON.parse(readFileSync(ruta, "utf8"));
+      queda = (t.messages ?? []).filter((m: { text?: string }) => (m.text ?? "").length > 0).length;
+    } catch { queda = 0; }
+    pasos.push({
+      ok: queda === 0,
+      que: "al cerrar se borra lo que se dijo",
+      detalle: queda === 0 ? "no queda texto en disco" : `QUEDAN ${queda} mensaje(s) con texto en ${ruta}`,
     });
   } catch (e) {
     pasos.push({ ok: false, que: "la prueba se rompio", detalle: String(e) });
