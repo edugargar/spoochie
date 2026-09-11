@@ -66,9 +66,21 @@ export function leerInvitacion(blob: string): Invitacion | null {
     if (typeof j.u === "string" && /^[UW][A-Z0-9]{6,}$/.test(j.u)) inv.u = j.u;
     // Como se llama quien se da de alta, para que no firme con el usuario de su Mac.
     if (typeof j.n === "string" && j.n.trim()) inv.n = j.n.trim().slice(0, 60);
+    // El nonce. Se quedaba fuera: `leerInvitacion` no lo copiaba, asi que `join` mandaba
+    // el hola con `k` a undefined y del otro lado `canjearInvitacion` devolvia null. O
+    // sea que el hola de alguien nuevo siempre caia en "sin invitacion valida y clave
+    // desconocida", y el alta por Nostr no funcionaba: habia que anadir a mano con
+    // --npub, que es el camino de repuesto, no el normal. Las dos mitades tenian test y
+    // la costura entre ellas no.
+    if (typeof j.k === "string" && /^[A-Za-z0-9_-]{16,64}$/.test(j.k)) inv.k = j.k;
     if (j.i && typeof j.i.id === "string" && typeof j.i.name === "string") {
-      inv.i = { id: j.i.id, name: j.i.name };
-      if (typeof j.i.pk === "string") inv.i.pk = j.i.pk;
+      // El nombre acaba en la agenda, en los avisos y en el titular del aviso. Sin
+      // limite, quien invita elige cuanto ocupa en la pantalla de quien acepta.
+      inv.i = { id: j.i.id.slice(0, 64), name: j.i.name.trim().slice(0, 60) };
+      // La clave ed25519 va en base64 de un SPKI: son 44 caracteres. Una cadena
+      // cualquiera se fijaba igual, y a partir de ahi todo sobre firmado de esa persona
+      // daba "mala" sin que nadie supiera por que.
+      if (typeof j.i.pk === "string" && /^[A-Za-z0-9+/]{40,100}={0,2}$/.test(j.i.pk)) inv.i.pk = j.i.pk;
       if (conNostr) inv.i.np = j.i.np;
       if (Array.isArray(j.i.r)) inv.i.r = j.i.r.filter((x: unknown) => typeof x === "string" && /^wss?:\/\//.test(x)).slice(0, 8);
     }

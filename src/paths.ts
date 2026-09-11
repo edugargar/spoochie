@@ -1,6 +1,6 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { mkdirSync, existsSync, renameSync } from "node:fs";
+import { mkdirSync, existsSync, renameSync, statSync, chmodSync } from "node:fs";
 
 /** SPOOCHIE_HOME aisla todo el estado. Los tests lo usan: os.homedir() en Bun no
  *  respeta $HOME, asi que sin esto un test escribe en tu ~/.claude de verdad. */
@@ -22,8 +22,23 @@ export const DAEMON_LOCK = join(ROOT, "daemon.pid");
 export const DAEMON_LOG = join(ROOT, "daemon.log");
 export const OUTBOX_FILE = join(ROOT, "outbox.json");
 
+/**
+ * Los directorios del estado, y sus permisos.
+ *
+ * El `mode` de `mkdirSync` solo vale cuando el directorio se crea. Uno que ya existiera
+ * abierto (creado por una version anterior, o con un umask raro, o aflojado por un
+ * backup) se quedaba abierto para siempre: dentro estan la config con las tres claves,
+ * el socket del demonio por el que se abre un tunel sin preguntar, los hilos y el spool.
+ * `spoochie doctor` lo decia, pero doctor se ejecuta cuando ya hay algo roto.
+ *
+ * Asi que se comprueba y se cierra en cada arranque. Es el directorio de la persona y
+ * ponerlo a 700 no le quita nada a nadie.
+ */
 export function ensureDirs() {
-  for (const d of [ROOT, SESSIONS_DIR, THREADS_DIR]) mkdirSync(d, { recursive: true, mode: 0o700 });
+  for (const d of [ROOT, SESSIONS_DIR, THREADS_DIR]) {
+    mkdirSync(d, { recursive: true, mode: 0o700 });
+    try { if ((statSync(d).mode & 0o077) !== 0) chmodSync(d, 0o700); } catch {}
+  }
 }
 
 /**
