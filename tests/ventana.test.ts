@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, existsSync, writeFileSync, chmodSync, readFileS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { scriptVentana } from "../src/aparte.ts";
-import { hasta } from "./espera.ts";
+import { hasta, plazo } from "./espera.ts";
 
 /**
  * El Claude aparte en una ventana nueva. Aqui no hay iTerm: SPOOCHIE_VENTANA apunta a un
@@ -150,4 +150,4 @@ sleep 60
   const fin = await rpc({ op: "session-end", sessionId: sid });
   expect(fin.closed).toEqual([open.id]);
   expect(await hasta(() => A.got.some(x => x.includes("se cerro la ventana del Claude aparte")))).toBe(true);
-}, 40_000);
+}, plazo(40_000));

@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, existsSync, writeFileSync, chmodSync, readFileS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { textoDialogo, partesDialogo, guionOsascript, guionVentana } from "../src/dialogo.ts";
-import { hasta } from "./espera.ts";
+import { hasta, plazo } from "./espera.ts";
 
 /**
  * El aviso fuera de la terminal. Aqui el "dialogo" es un programa que recibe el texto y
@@ -154,4 +154,4 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aparte-rec
 
   // Y la sesion de trabajo no ha recibido NADA en todo el proceso.
   expect(S.got).toEqual([]);
-}, 30_000);
+}, plazo(30_000));

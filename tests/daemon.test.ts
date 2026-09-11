@@ -8,6 +8,7 @@ import { register } from "../src/registry.ts";
 import * as Cfg from "../src/config.ts";
 import * as T from "../src/threads.ts";
 import { DAEMON_SOCK } from "../src/paths.ts";
+import { plazo } from "./espera.ts";
 
 /** Un buzon falso: hace de sesion de Claude y apunta lo que le entregan. */
 function fakeInbox(name: string) {
@@ -107,7 +108,7 @@ test("ciclo completo: abrir, puerta de aprobacion, hablar y cerrar", async () =>
   expect((await rpc({ op: "close", sessionId: "A", id, reason: "resuelto" })).ok).toBe(true);
   expect(await llega(B, x => x.includes("cerrado (resuelto)"))).toBe(true);
   expect((await rpc({ op: "say", sessionId: "A", id, text: "una mas" })).ok).toBe(false);
-}, 30_000);
+}, plazo(30_000));
 
 test("cerrar la pantalla cierra tus spoochies vivos", async () => {
   const open = await rpc({ op: "open", sessionId: "A", to: "repo-b", subject: "otro", body: "hola" });
@@ -117,7 +118,7 @@ test("cerrar la pantalla cierra tus spoochies vivos", async () => {
   // Por id, no por "el ultimo mensaje": con varios hilos vivos el orden de los
   // avisos no esta garantizado y la asercion se volvia intermitente.
   expect(B.got.some(x => x.includes(open.id) && x.includes("la otra sesion se cerro"))).toBe(true);
-}, 20_000);
+}, plazo(20_000));
 
 test("un spoochie remoto no se lo lleva la primera sesion que arranque", async () => {
   const { repoMatches } = await import("../src/match.ts");
@@ -148,7 +149,7 @@ test("varios mensajes seguidos del mismo lado salen como uno", async () => {
   expect(B.got.length).toBe(antes + 2);
   expect(await llega(B, x => x.includes("segunda parte"))).toBe(true);
   await rpc({ op: "close", sessionId: "A", id: open.id, reason: "fin" });
-}, 20_000);
+}, plazo(20_000));
 
 test("un mensaje que pasa del limite se rechaza antes de salir, no se corta", async () => {
   const { MAX_MENSAJE } = await import("../src/threads.ts");
@@ -169,7 +170,7 @@ test("al cerrar, la conversacion se borra en local y queda el sobre", async () =
   expect(JSON.stringify(t)).not.toContain("esto no debe quedar");
   // El cierre llego a B igual, antes del borrado.
   expect(await llega(B, x => x.includes(`[spoochie ${open.id} | borrable] cerrado (fin)`))).toBe(true);
-}, 20_000);
+}, plazo(20_000));
 
 test("un envio local dice entregado solo si el buzon lo acepto", async () => {
   const open = await rpc({ op: "open", sessionId: "A", to: "repo-b", subject: "hecho", body: "hola" });
@@ -178,7 +179,7 @@ test("un envio local dice entregado solo si el buzon lo acepto", async () => {
   expect(r.delivered).toBe(true);
   expect(await llega(B, x => x.includes("esto tiene que llegar de verdad"))).toBe(true);
   await rpc({ op: "close", sessionId: "A", id: open.id, reason: "fin" });
-}, 20_000);
+}, plazo(20_000));
 
 test("un mensaje vacio no sale", async () => {
   const open = await rpc({ op: "open", sessionId: "A", to: "repo-b", subject: "vacio", body: "hola" });
@@ -188,7 +189,7 @@ test("un mensaje vacio no sale", async () => {
   expect(r.ok).toBe(false);
   expect(B.got.length).toBe(antes);
   await rpc({ op: "close", sessionId: "A", id: open.id, reason: "fin" });
-}, 20_000);
+}, plazo(20_000));
 
 test("con varias sesiones y ninguna que encaje, la invitacion entera entra en UNA: la mas activa", async () => {
   const { utimesSync } = await import("node:fs");

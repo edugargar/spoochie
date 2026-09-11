@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, existsSync, writeFileSync, chmodSync, readFileS
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { herramientasPermitidas, primerTurno } from "../src/aparte.ts";
-import { hasta } from "./espera.ts";
+import { hasta, plazo } from "./espera.ts";
 
 /**
  * El Claude aparte de verdad es `claude -p`. Aqui hay uno falso en el PATH que apunta
@@ -125,7 +125,7 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aparte-rec
   // Cerrar avisa al aparte por el mismo camino.
   await rpc({ op: "close", sessionId: "PA", id: open.id, reason: "resuelto" });
   expect(await hasta(() => recibido().includes("cerrado (resuelto)"))).toBe(true);
-}, 30_000);
+}, plazo(30_000));
 
 test("el primer turno lleva quien es, como contestar y lo dicho hasta ahora", () => {
   const t: any = { id: "z9", subject: "el boton", from: { sessionId: "A", name: "a", cwd: "/a", human: "Ana" }, to: { sessionId: "ap-z9", name: "aparte", cwd: "/b", human: "Edu" }, context: {}, state: "open",

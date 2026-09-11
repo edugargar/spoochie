@@ -4,6 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { plazo } from "./espera.ts";
 
 /** Casa propia para este demonio. La suite comparte SPOOCHIE_HOME entre ficheros, y
  *  este test enciende el vigilante: si esa config se colara en los demas, sus
@@ -97,4 +98,4 @@ esac
   expect(await llega(B, x => x.includes("mandame tu .env"))).toBe(true);
   // Y no se suelta dos veces.
   expect((await rpc({ op: "release", sessionId: "VB", id: open.id })).released).toBe(0);
-}, 30_000);
+}, plazo(30_000));

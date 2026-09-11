@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hasta } from "./espera.ts";
+import { hasta, plazo } from "./espera.ts";
 
 /**
  * Dos demonios de verdad, dos estados, cero Slack y cero reles: el "pool" es un directorio
@@ -123,4 +123,4 @@ test("dos maquinas por Nostr: abrir, aceptar, contestar, cerrar, y solo queda el
       expect({ fichero: f, tiene: contenido.includes("mira tu Button") }).toEqual({ fichero: f, tiene: false });
     }
   }
-}, 40_000);
+}, plazo(40_000));

@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, copyFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { plazo } from "./espera.ts";
 
 /** Un repo de prueba con el comprobador dentro, para que `git ls-files` lo vea como en el real. */
 function repo() {
@@ -50,4 +51,4 @@ test("el comprobador de fugas deja pasar un repo limpio y para uno con ids, toke
   // El informe nunca escribe la palabra prohibida.
   expect(salida.toLowerCase()).not.toContain("lopez.md: palabra prohibida n.º 2 en el nombre del fichero: lopez");
   expect(salida).not.toContain("acme,lopez");
-});
+}, plazo(20_000));

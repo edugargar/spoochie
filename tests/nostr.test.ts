@@ -6,7 +6,7 @@ import { verifyEvent } from "nostr-tools";
 import { envolver, abrir, peticionBorrado, NostrBridge, poolDeFichero, misClaves, npub, pkDe, type Pool } from "../src/nostr.ts";
 import * as Cfg from "../src/config.ts";
 import * as T from "../src/threads.ts";
-import { hasta } from "./espera.ts";
+import { hasta, plazo } from "./espera.ts";
 
 const claves = () => misClaves({ guardian: false, transcript: false } as any);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -192,7 +192,7 @@ test("un fichero va a trozos cifrados y el otro lado lo recompone en su spool, l
   await sleep(50);
   expect(existsSync(join(SPOOL, "nf2", ".partes", "f9"))).toBe(false);
   B.cerrar();
-});
+}, plazo(20_000));
 
 test("un sobre que llega despues de cerrar no resucita el hilo ni deja ficheros en el spool", async () => {
   const { SPOOL } = await import("../src/files.ts");

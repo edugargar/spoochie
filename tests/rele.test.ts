@@ -1,6 +1,6 @@
 import { expect, test, afterAll } from "bun:test";
 import { releDePruebas } from "./rele.ts";
-import { hasta } from "./espera.ts";
+import { hasta, plazo } from "./espera.ts";
 
 /**
  * El transporte de verdad, contra un rele de verdad.
@@ -107,7 +107,7 @@ test("si el rele se cae y vuelve, el puente se resuscribe solo y lo de despues l
   await Promise.all(N.poolReal().publish([rele.url], dos.wrap).map(p => p.catch(() => {})));
   expect(await hasta(() => holas.includes("despues"), 15000)).toBe(true);
   puente.cerrar();
-}, 60000);
+}, plazo(60000));
 
 test("una suscripcion de SimplePool a pelo no revive sola: por eso el puente la revive", async () => {
   const N = await import("../src/nostr.ts");
@@ -130,7 +130,7 @@ test("una suscripcion de SimplePool a pelo no revive sola: por eso el puente la 
   expect(propio.clientes()).toBe(0);
   expect(cerradas).toBeGreaterThan(0);
   sub.close(); propio.cerrar();
-}, 30000);
+}, plazo(30000));
 
 test("el mismo sobre dos veces se entrega una: los reles repiten y no ordenan", async () => {
   const N = await import("../src/nostr.ts");
@@ -156,7 +156,7 @@ test("el mismo sobre dos veces se entrega una: los reles repiten y no ordenan", 
   expect(rele.eventos()).toBeGreaterThanOrEqual(2);
   expect(holas.filter(h => h === "repetido")).toHaveLength(1);
   puente.cerrar();
-}, 20000);
+}, plazo(20000));
 
 test("dos sobres que llegan al reves siguen entregandose los dos", async () => {
   const N = await import("../src/nostr.ts");
@@ -180,4 +180,4 @@ test("dos sobres que llegan al reves siguen entregandose los dos", async () => {
 
   expect(await hasta(() => holas.includes("primero") && holas.includes("segundo"))).toBe(true);
   puente.cerrar();
-}, 20000);
+}, plazo(20000));

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { guionVentana, piezas, recortar, posicionPedida, ANCHO, BOTONES } from "../src/ventana.ts";
+import { plazo } from "./espera.ts";
 
 const hilo = (extra: any = {}): any => ({
   id: "v1", subject: "el guardado revienta",
@@ -100,4 +101,4 @@ test.if(process.platform === "darwin")("y macOS lo entiende: JXA lo lee entero s
   const r = spawnSync("osascript", ["-l", "JavaScript", "-e", g + `console.log("montada:" + alto);`], { encoding: "utf8" });
   expect(r.stdout + r.stderr).toContain("montada:");
   expect(r.status).toBe(0);
-}, 20_000);
+}, plazo(20_000));

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { selftest } from "../src/selftest.ts";
+import { plazo } from "./espera.ts";
 
 /**
  * Un paso en verde porque nunca llego a ejecutarse es peor que un fallo: te hace
@@ -18,4 +19,4 @@ test("con el demonio roto, ni un solo paso sale en verde", async () => {
   } finally {
     delete process.env.SPOOCHIE_DAEMON_CMD;
   }
-}, 30_000);
+}, plazo(30_000));

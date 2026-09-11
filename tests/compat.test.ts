@@ -4,7 +4,7 @@ import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hasta } from "./espera.ts";
+import { hasta, plazo } from "./espera.ts";
 
 /**
  * Una version anterior hablando con HEAD, en las dos direcciones.
@@ -94,7 +94,7 @@ test.if(hay)("la version anterior y HEAD se entienden en las dos direcciones", a
   expect((await rpc(NUEVA_HOME, { op: "accept", sessionId: "U_N", id: b.id, by: "Nueva", aqui: true })).ok).toBe(true);
   await rpc(NUEVA_HOME, { op: "say", sessionId: "U_N", id: b.id, text: "contesta HEAD" });
   expect(await hasta(() => V.got.some(x => x.includes("contesta HEAD")))).toBe(true);
-}, 90_000);
+}, plazo(90_000));
 
 test.if(!hay)("sin SPOOCHIE_VIEJA, la matriz de versiones no corre (y se dice)", () => {
   // Que no corra en silencio: un test que no existe y uno que no se ejecuta se parecen
