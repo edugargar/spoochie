@@ -231,3 +231,27 @@ test("preguntar a varios son N tuneles 1:1, no un canal", async () => {
   // Si uno falla, los demas siguen.
   expect(f).toContain("no se pudo abrir");
 });
+
+/**
+ * La URL del transcript acaba publicada en el hilo de la otra persona ("Transcript en
+ * vivo: ..."), y el Claude aparte tiene `spoochie transcript` en su lista blanca. El
+ * portero mira las banderas que abren ficheros, pero `--url` no abre ninguno: lleva el
+ * dato dentro. O sea que `--url https://donde-sea/?d=<lo-leido>` era una salida de datos
+ * desde una maquina cuyo Claude es de solo lectura. La misma forma que tenia Artifact:
+ * una funcion estrecha haciendo de puerta ancha.
+ */
+test("el transcript solo acepta la URL de un Artifact", () => {
+  const ok = (u: string) => T.urlDeTranscript(u).ok;
+  expect(ok("https://claude.ai/public/artifacts/7f2c")).toBe(true);
+  expect(ok("https://mi.claude.ai/x")).toBe(true);
+  // Ni otro sitio, ni sin TLS, ni un dominio que se le parezca.
+  expect(ok("https://evil.example/?d=AKIAIOSFODNN7EXAMPLE")).toBe(false);
+  expect(ok("http://claude.ai/x")).toBe(false);
+  expect(ok("https://claude.ai.evil.example/x")).toBe(false);
+  expect(ok("javascript:alert(1)")).toBe(false);
+  expect(ok("")).toBe(false);
+  // Y el motivo se dice, para no tener que adivinarlo.
+  const r = T.urlDeTranscript("https://evil.example/x");
+  expect(r.ok).toBe(false);
+  if (!r.ok) expect(r.error).toContain("evil.example");
+});
