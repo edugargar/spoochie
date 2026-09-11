@@ -417,3 +417,30 @@ export function motivoDeFuera(motivo: unknown): string {
   if (!limpio) return "cerrado por el otro lado";
   return limpio.length > MAX_MOTIVO ? limpio.slice(0, MAX_MOTIVO - 1) + "…" : limpio;
 }
+
+/**
+ * El nombre con el que se ensena a quien llama.
+ *
+ * `fromName` viaja en el sobre y NO esta en la firma: sonda, un sobre firmado por Ana
+ * sale como "Direccion de Seguridad" y el veredicto sigue siendo "ok". Ese nombre es lo
+ * primero que se lee en el aviso ("X llama."), o sea lo unico en lo que se apoya la
+ * persona para decidir si acepta.
+ *
+ * No se arregla firmando un campo mas: se arregla no preguntandoselo al sobre. A esa
+ * persona la invitaste tu o te invito ella, y le pusiste un nombre en tu agenda. Un
+ * sobre de un id que no esta en la agenda ya se descarta antes de llegar aqui, asi que
+ * el nombre del sobre solo queda como ultimo recurso.
+ */
+export const MAX_ASUNTO = 200;
+
+export function nombreParaEnsenar(enAgenda: string | undefined, enElSobre: string | undefined, id: string): string {
+  const limpia = (x: string | undefined) => (x ?? "").replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+  return limpia(enAgenda) || limpia(enElSobre) || id;
+}
+
+/** El asunto, acotado. Va al aviso, al hilo y al primer turno del aparte. */
+export function asuntoDeFuera(asunto: unknown): string {
+  const limpio = String(asunto ?? "").replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim();
+  if (!limpio) return "(sin asunto)";
+  return limpio.length > MAX_ASUNTO ? limpio.slice(0, MAX_ASUNTO - 1) + "…" : limpio;
+}
