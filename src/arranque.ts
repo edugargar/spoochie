@@ -57,26 +57,51 @@ export function edadLatido(): number | null {
 
 const plistPath = () => join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 
-function plistDeseado(): string {
-  const args = comandoDemonio().map(a => `      <string>${a}</string>`).join("\n");
-  const path = process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin";
+/** Un plist es XML. Una ruta con `&` (un directorio "copias & backups", sin ir mas
+ *  lejos) lo dejaba mal formado: launchd lo rechazaba, `launchctl` fallaba en silencio
+ *  y `instalarLaunchd` devolvia "instalado" igual. El sintoma era "no llega nada", que
+ *  es exactamente lo que este fichero existe para que no pase. Medido con `plutil
+ *  -lint`: "Encountered unknown ampersand-escape sequence". */
+const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * El PATH que se queda grabado en el LaunchAgent.
+ *
+ * Se metia `process.env.PATH` entero, o sea el PATH del shell desde el que alguien
+ * corrio `register` una vez. Eso puede traer un directorio temporal (un `bin` de un
+ * worktree, un nix shell, el `bin` de un test) y el agente lo usa en cada arranque de la
+ * maquina, para siempre. Un `bun` que aparezca ahi mas adelante lo ejecuta el demonio.
+ *
+ * Se queda lo estable: los directorios del sistema y el del `bun` que se va a usar.
+ */
+export function pathDelAgente(cmd = comandoDemonio(), base = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"): string {
+  const dirBun = cmd[0]?.startsWith("/") ? dirname(cmd[0]) : null;
+  const dirs = base.split(":");
+  if (dirBun && !dirs.includes(dirBun)) dirs.unshift(dirBun);
+  return dirs.join(":");
+}
+
+export function plistDeseado(): string {
+  const cmd = comandoDemonio();
+  const args = cmd.map(a => `      <string>${xml(a)}</string>`).join("\n");
+  const path = xml(pathDelAgente(cmd));
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!-- Lo escribe spoochie (register / join). Se reescribe solo si cambia la ruta del plugin. -->
 <plist version="1.0"><dict>
-  <key>Label</key><string>${LABEL}</string>
+  <key>Label</key><string>${xml(LABEL)}</string>
   <key>ProgramArguments</key>
   <array>
 ${args}
   </array>
   <key>EnvironmentVariables</key><dict>
     <key>PATH</key><string>${path}</string>
-    <key>HOME</key><string>${homedir()}</string>
+    <key>HOME</key><string>${xml(homedir())}</string>
   </dict>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
-  <key>StandardOutPath</key><string>${DAEMON_LOG}</string>
-  <key>StandardErrorPath</key><string>${DAEMON_LOG}</string>
+  <key>StandardOutPath</key><string>${xml(DAEMON_LOG)}</string>
+  <key>StandardErrorPath</key><string>${xml(DAEMON_LOG)}</string>
 </dict></plist>
 `;
 }
@@ -166,7 +191,13 @@ export function instalarLaunchd(): "instalado" | "actualizado" | "igual" | "no" 
   // candado puesto): si no, el nuevo muere al instante y launchd lo reintenta sin fin.
   if (habia !== null) launchctl(["bootout", `gui/${uid()}/${LABEL}`]);
   apagarDemonio();
-  launchctl(["bootstrap", `gui/${uid()}`, p]) || launchctl(["load", "-w", p]);
+  // Si launchd no lo coge, se dice. Antes se devolvia "instalado" pasara lo que pasara:
+  // el `||` se tragaba los dos fallos y quien lo corria leia que estaba puesto mientras
+  // el demonio no arrancaba en ningun reinicio.
+  if (!launchctl(["bootstrap", `gui/${uid()}`, p]) && !launchctl(["load", "-w", p])) {
+    console.error(`spoochie: launchd no ha aceptado ${p}. El demonio arranca igual desde el hook, pero no sobrevive a un reinicio. Mira: launchctl bootstrap gui/${uid()} ${p}`);
+    return "no";
+  }
   return habia === null ? "instalado" : "actualizado";
 }
 

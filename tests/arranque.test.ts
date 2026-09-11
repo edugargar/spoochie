@@ -66,3 +66,54 @@ test("un demonio suelto y mas viejo que el plugin se detecta y se apaga esperand
   expect(apagarDemonio()).toBe(false);
   expect(existsSync(DAEMON_LOCK)).toBe(true);
 });
+
+/**
+ * El plist es XML, y un plist mal formado lo rechaza launchd sin que nadie se entere.
+ *
+ * Las rutas se metian tal cual. Un directorio con `&` (uno llamado "copias & backups",
+ * sin ir mas lejos) dejaba el fichero invalido: medido con `plutil -lint`, "Encountered
+ * unknown ampersand-escape sequence". launchd no lo cargaba, `launchctl` fallaba en
+ * silencio porque el `||` se tragaba los dos intentos, e `instalarLaunchd` devolvia
+ * "instalado" igual. El sintoma era "no llega nada", que es exactamente lo que este
+ * fichero existe para que no pase.
+ */
+test.if(process.platform === "darwin")("el plist sigue siendo XML valido con rutas raras", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { writeFileSync, mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const antes = process.env.SPOOCHIE_DAEMON_CMD;
+  try {
+    // `SPOOCHIE_DAEMON_CMD` parte por espacios (es el gancho de los tests), asi que el
+    // directorio raro va sin ellos. Lo que se prueba es el escapado, no ese gancho.
+    process.env.SPOOCHIE_DAEMON_CMD = "/opt/copias&backups/bin/bun run <daemon>.ts";
+    const { plistDeseado } = await import("../src/arranque.ts");
+    const f = join(mkdtempSync(join(tmpdir(), "sp-plist-")), "p.plist");
+    const texto = plistDeseado();
+    writeFileSync(f, texto);
+    expect(texto).toContain("copias&amp;backups");
+    expect(texto).toContain("&lt;daemon&gt;");
+    const r = spawnSync("plutil", ["-lint", f], { encoding: "utf8" });
+    expect((r.stdout + r.stderr).trim()).toEndWith("OK");
+  } finally {
+    if (antes === undefined) delete process.env.SPOOCHIE_DAEMON_CMD; else process.env.SPOOCHIE_DAEMON_CMD = antes;
+  }
+});
+
+/**
+ * Lo que se graba en el agente se queda ahi para siempre.
+ *
+ * Se metia `process.env.PATH` entero: el PATH del shell desde el que alguien corrio
+ * `register` una vez. Puede traer el `bin` de un worktree, de un nix shell o de un test,
+ * y el agente lo usa en cada arranque de la maquina. Un `bun` que aparezca ahi despues
+ * lo ejecuta el demonio.
+ */
+test("el PATH del agente es el estable mas el del bun que se va a usar, no el del shell", async () => {
+  const { pathDelAgente } = await import("../src/arranque.ts");
+  const p = pathDelAgente(["/opt/homebrew/bin/bun", "run", "daemon.ts"]);
+  expect(p.split(":")[0]).toBe("/opt/homebrew/bin");
+  expect(p).toContain("/usr/bin");
+  // Nada temporal del shell de quien lo instalo.
+  expect(pathDelAgente(["/usr/bin/bun"], "/usr/bin:/bin")).toBe("/usr/bin:/bin");
+  expect(pathDelAgente(["bun", "run", "x"], "/usr/bin:/bin")).toBe("/usr/bin:/bin");
+});
