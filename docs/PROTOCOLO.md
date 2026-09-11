@@ -158,6 +158,14 @@ travel as 20 KB chunks, one envelope each.
 message body. Anyone holding the bot token can post as anyone, which is exactly why the
 signature exists.
 
+## Limits on how many, not just how big
+
+One person can hold at most **five** unanswered spoochies on your machine; further
+invitations are refused and said so. The receiver shows **one** notification at a time
+and queues the rest. Both exist because twenty-five envelopes in a row from one contact
+produced twenty-five threads and twenty-five modal windows at once, and the fast way out
+of a stack of modal windows is to hammer Return, which is the accept button.
+
 ## Limits
 
 A message is capped, a patch is capped, and a patch that does not fit is **refused when
