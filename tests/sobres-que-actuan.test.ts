@@ -139,3 +139,20 @@ test("y el close firmado de verdad si cierra", async () => {
   await b.pollThread(T.load("s5"));
   expect(hecho.cerrado).toBe("por Ana");
 });
+
+/**
+ * La firma v1 no vale para abrir ni cerrar.
+ *
+ * No firma ni la hora ni el destinatario, asi que un sobre suyo vale para siempre y en
+ * cualquier hilo. Y no rompe compatibilidad con nadie: comprobado en el arbol de la
+ * 0.9.8, `post` solo firmaba la invitacion y los mensajes, nunca un accept ni un close.
+ */
+test("una firma de la v1 no abre el tunel aunque sea valida", async () => {
+  const { firmarV1 } = await import("../src/firma.ts");
+  hilo("s6");
+  const env: any = { v: 1, id: "s6", kind: "accept", from: OTRO, fromName: "Ana", pk: claveOtro.pub };
+  env.sig = firmarV1(claveOtro.priv, "s6", "accept", OTRO, TEXTO);
+  const { b, hecho } = puente(sobre("s6", "accept", env));
+  await b.pollThread(T.load("s6"));
+  expect(hecho.aceptado).toBe(false);
+});

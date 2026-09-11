@@ -766,7 +766,12 @@ export class SlackBridge {
         // `accept` o un `close` no los lee nadie: abren el tunel o cierran y purgan el
         // hilo ellos solos. Sin firma no se hace nada, y se dice en el hilo.
         if (env.kind === "accept" || env.kind === "close") {
-          if (firma !== "ok" && firma !== "nueva" && firma !== "vieja") {
+          // "vieja" (firma v1) no vale para estos dos, y no rompe nada: comprobado en el
+          // arbol de la 0.9.8, `post` solo firmaba la invitacion y los mensajes, nunca un
+          // accept ni un close. O sea que aceptar la v1 aqui no da compatibilidad con
+          // nadie y si abre una puerta: la v1 no firma ni la hora ni el destinatario, asi
+          // que un sobre suyo vale para siempre y en cualquier hilo.
+          if (firma !== "ok" && firma !== "nueva") {
             await this.aviso(t, `:no_entry: ${env.kind === "accept" ? "una aceptacion" : "un cierre"} de ${env.fromName ?? env.from} venia sin firmar. Descartado: esto lo puede postear cualquiera que tenga el token del bot.`);
             continue;
           }
