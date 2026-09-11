@@ -922,7 +922,7 @@ export class SlackBridge {
       state: "pending",
       createdAt: now,
       lastActivityAt: now,
-      context: (env.context as T.Thread["context"]) ?? {},
+      context: T.contextoDeFuera(env.context),
       slack: { channel, ts },
       messages: [],
     };

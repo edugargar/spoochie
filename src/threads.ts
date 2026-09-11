@@ -444,3 +444,29 @@ export function asuntoDeFuera(asunto: unknown): string {
   if (!limpio) return "(sin asunto)";
   return limpio.length > MAX_ASUNTO ? limpio.slice(0, MAX_ASUNTO - 1) + "…" : limpio;
 }
+
+/**
+ * El contexto que llega en el sobre: rama, sha y ficheros tocados.
+ *
+ * Tampoco esta en la firma, y no se queda en un adorno del aviso: los nombres de fichero
+ * se pintan enteros en el primer turno del Claude aparte ("ficheros tocados: ..."). Un
+ * nombre con saltos de linea escribe ahi lo que quiera, y el aparte es el que lee el
+ * repo. docs/PROTOCOLO.md ya decia "hasta 12 nombres de fichero"; ahora lo dice tambien
+ * el codigo del que recibe, que es el unico sitio donde eso se puede garantizar.
+ */
+export const MAX_FICHEROS = 12;
+
+export function contextoDeFuera(ctx: unknown): Thread["context"] {
+  const c = (ctx ?? {}) as Record<string, unknown>;
+  const linea = (x: unknown, n: number) => String(x ?? "").replace(/[\r\n\t]+/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
+  const out: Thread["context"] = {};
+  const rama = linea(c.branch, 80);
+  if (rama) out.branch = rama;
+  // Un sha es hexadecimal. Cualquier otra cosa con ese nombre no es un sha.
+  if (typeof c.sha === "string" && /^[0-9a-f]{7,40}$/i.test(c.sha)) out.sha = c.sha;
+  if (Array.isArray(c.files)) {
+    const files = c.files.map(f => linea(f, 120)).filter(Boolean).slice(0, MAX_FICHEROS);
+    if (files.length) out.files = files;
+  }
+  return out;
+}
