@@ -63,12 +63,15 @@ JSON.stringify([
   app ?? "",
   subject ?? "",
   thread ? `${thread.channel}/${thread.ts}` : "",
+  kindOfMsg ?? "",
   sha256(canon(text)),        // hex
 ])
 ```
 
 A fixed order, every field present even when empty, so two different envelopes cannot
-produce the same bytes. `canon()` (`src/firma.ts`) undoes what Slack does to text in
+produce the same bytes. `kindOfMsg` is in there because it decides whether the guardian
+reads the message at all, so leaving it outside meant one unsigned word could switch the
+guardian off for that message. `canon()` (`src/firma.ts`) undoes what Slack does to text in
 transit: CRLF to LF, `&amp;`/`&lt;`/`&gt;` back to characters, `<url|label>` to `label`,
 trimmed. Without that, a signature made before posting would not verify after.
 
