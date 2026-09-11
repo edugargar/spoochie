@@ -36,3 +36,19 @@ test("y el presupuesto multiplica de verdad", () => {
   expect(plazo(1000)).toBe(1000 * LENTO);
   expect(LENTO).toBeGreaterThanOrEqual(1);
 });
+
+/**
+ * La guarda de arriba mira los plazos que un test DECLARA. El que no declara ninguno se
+ * quedaba con los 5 s de bun, que no los mueve SPOOCHIE_TEST_LENTO: medido,
+ * `copia.test.ts` fallando a los 5.037 ms con la maquina cargada. El plazo por defecto lo
+ * pone ahora `tests/setup.ts`, que es el preload de toda la suite.
+ */
+test("el plazo por defecto de la suite tambien pasa por el presupuesto", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const setup = readFileSync(join(import.meta.dir, "setup.ts"), "utf8");
+  expect(setup).toContain("setDefaultTimeout(plazo(");
+  // Y bien por encima de los 5 s de bun, que es donde caian los que lanzan procesos.
+  const base = Number(/setDefaultTimeout\(plazo\(([0-9_]+)\)\)/.exec(setup)?.[1].replace(/_/g, "") ?? 0);
+  expect(base).toBeGreaterThanOrEqual(20_000);
+});
