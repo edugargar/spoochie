@@ -99,3 +99,51 @@ test("cada promesa del README nombra el test que la prueba, y ese test existe", 
     expect(await Bun.file(new URL(`../${f}`, import.meta.url)).exists()).toBe(true);
   }
 });
+
+/**
+ * Un spoochie cerrado no guarda el texto, se cerrara cuando se cerrara.
+ *
+ * "Al cerrar se borra" es una de las tres promesas del README y la cumple quien cierra,
+ * pero una version anterior podia cerrar sin barrer. Medido en una maquina de verdad:
+ * `spoochie doctor` sacaba FALLO con doce spoochies cerrados que aun guardaban lo que se
+ * dijo, del 30 de agosto al 4 de septiembre, y no habia forma de arreglarlo. La regla no
+ * es "se borra si la version de aquel dia lo hacia": es que un cerrado no lo guarda.
+ */
+test("el demonio barre al arrancar los cerrados que todavia guardan texto", async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { spawn } = await import("node:child_process");
+  const { hasta } = await import("./espera.ts");
+
+  const casa = mkdtempSync(join(tmpdir(), "sp-barrido-"));
+  mkdirSync(join(casa, "threads"), { recursive: true, mode: 0o700 });
+  writeFileSync(join(casa, "config.json"), JSON.stringify({ guardian: false, transcript: false, aparte: false, human: "Edu" }), { mode: 0o600 });
+  const ruta = join(casa, "threads", "viejo.json");
+  writeFileSync(ruta, JSON.stringify({
+    id: "viejo", subject: "de antes", state: "closed", createdAt: 1, lastActivityAt: 1, closedAt: 1,
+    from: { sessionId: "slack:U_A", name: "Ana", cwd: "(otra)" },
+    to: { sessionId: "slack:U_B", name: "yo", cwd: "(esta)" },
+    context: {}, messages: [{ at: 1, from: "slack:U_A", author: "claude", kind: "text", text: "esto no deberia seguir aqui" }],
+  }));
+  // Y uno abierto, que no se toca: lo que se barre es lo cerrado.
+  const vivo = join(casa, "threads", "vivo.json");
+  writeFileSync(vivo, JSON.stringify({
+    id: "vivo", subject: "en curso", state: "open", createdAt: 1, lastActivityAt: Date.now(),
+    from: { sessionId: "slack:U_A", name: "Ana", cwd: "(otra)" },
+    to: { sessionId: "slack:U_B", name: "yo", cwd: "(esta)" },
+    context: {}, messages: [{ at: 1, from: "slack:U_A", author: "claude", kind: "text", text: "esto si sigue aqui" }],
+  }));
+
+  const d = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
+    env: { ...process.env, SPOOCHIE_HOME: casa, SPOOCHIE_AVISO: "terminal", SPOOCHIE_VENTANA: "fondo" }, stdio: "ignore",
+  });
+  try {
+    const conTexto = (f: string) => JSON.parse(readFileSync(f, "utf8")).messages.filter((m: { text?: string }) => m.text).length;
+    expect(await hasta(() => conTexto(ruta) === 0)).toBe(true);
+    expect(JSON.parse(readFileSync(ruta, "utf8")).borrado).toBeTruthy();
+    expect(conTexto(vivo)).toBe(1);
+  } finally {
+    d.kill("SIGKILL");
+  }
+});

@@ -1025,8 +1025,31 @@ async function tick() {
 }
 
 
+/**
+ * Spoochies cerrados que todavia guardan lo que se dijo.
+ *
+ * "Al cerrar se borra" es una de las tres promesas del README, y el que cierra es quien
+ * la cumple. Pero una version anterior podia cerrar sin barrer, y esos hilos se quedaron
+ * ahi: en una maquina de verdad, `spoochie doctor` sacaba FALLO con doce, del 30 de
+ * agosto al 4 de septiembre, sin ninguna forma de arreglarlo.
+ *
+ * La regla no es "se borra al cerrar si la version de aquel dia lo hacia": es que un
+ * spoochie cerrado no guarda el texto. Asi que se barren al arrancar, y con eso la
+ * maquina se pone al dia sola en el primer reinicio.
+ */
+function barrerCerradosConTexto() {
+  let n = 0;
+  for (const t of T.all()) {
+    if (t.state !== "closed" || !t.messages.some(m => (m.text ?? "").length > 0)) continue;
+    T.purgar(t, { spool: join(SPOOL, t.id), transcript: rutaTranscript(t.id) });
+    n++;
+  }
+  if (n) log("barrido", `${n} spoochie(s) cerrados guardaban texto de cuando se cerraban sin barrer; borrado`);
+}
+
 function main() {
   ensureDirs();
+  barrerCerradosConTexto();
   if (alreadyRunning()) { console.error("spoochied ya esta corriendo"); process.exit(0); }
   if (existsSync(DAEMON_SOCK)) unlinkSync(DAEMON_SOCK);
   writeFileSync(DAEMON_LOCK, String(process.pid));
