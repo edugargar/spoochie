@@ -4,7 +4,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hasta } from "./espera.ts";
+import { hasta, plazo } from "./espera.ts";
 
 /**
  * Un demonio que se reinicia con un spoochie vivo.
@@ -120,4 +120,4 @@ test("un demonio que se reinicia con un spoochie vivo lo recoge y la conversacio
   expect(await hasta(() => D.got.some(x => x.includes("confirmado, era eso")), 15000)).toBe(true);
 
   await paso("close", () => rpc(HOME_C, { op: "close", sessionId: "U_C", id: open.id, reason: "resuelto" }));
-}, 90_000);
+}, plazo(90_000));
