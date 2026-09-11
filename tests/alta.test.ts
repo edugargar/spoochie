@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { limpiarCadena, leerInvitacion } from "../src/alta.ts";
+import { nuevasClaves } from "../src/firma.ts";
+import { limpiarCadena, leerInvitacion, crearInvitacion, datosInvitacion } from "../src/alta.ts";
 
 // Una invitacion vale por las claves publicas de quien invita, no por ningun secreto.
 const YO = { id: "U0EDU001", name: "Edu", np: "a".repeat(64) };
@@ -97,4 +98,41 @@ test("una invitacion vieja con token dentro se lee, pero el token se tira y se d
   expect(leida?.u).toBe("U0SAM001");
   expect(leida?.traiaToken).toBe(true);
   expect(JSON.stringify(leida)).not.toContain("xoxb-");
+});
+
+/**
+ * La costura entre las dos mitades del alta.
+ *
+ * El nonce de un solo uso tenia sus tests (`claves.test.ts`) y la cadena tenia los suyos,
+ * pero nadie probaba el viaje entero: `leerInvitacion` no copiaba `k`, asi que `join`
+ * mandaba el hola con el nonce a undefined y del otro lado `canjearInvitacion` devolvia
+ * null. El hola de alguien nuevo caia siempre en "sin invitacion valida y clave
+ * desconocida" y el alta por Nostr no funcionaba: habia que anadir a mano con `--npub`,
+ * que es el camino de repuesto, no el normal.
+ */
+test("el nonce sobrevive el viaje entero: se apunta al invitar, viaja en la cadena y se canjea", async () => {
+  const { nuevaInvitacion, canjearInvitacion } = await import("../src/claves.ts");
+  const c: any = {};
+  const k = nuevaInvitacion(c, { id: "U_SAM", name: "Sam" }, 1000);
+
+  const blob = crearInvitacion(datosInvitacion({
+    team: "Equipo", dest: { id: "U_SAM", name: "Sam" },
+    yo: { id: "U_EDU", name: "Edu", np: "a".repeat(64), r: ["wss://uno"] }, k,
+  }));
+  const leida = leerInvitacion(blob);
+  expect(leida?.k).toBe(k);
+  // Y con ese nonce, quien invito reconoce a quien entra.
+  expect(canjearInvitacion(c, leida!.k, 2000)).toEqual({ id: "U_SAM", name: "Sam" });
+});
+
+test("lo que viene en la cadena tiene forma y tamano, o no entra", () => {
+  const base = (i: any) => leerInvitacion(crearInvitacion({ i: { np: "b".repeat(64), ...i } } as any));
+  // El nombre acaba en la agenda y en el titular del aviso: quien invita no elige cuanto ocupa.
+  expect(base({ id: "U1", name: "N".repeat(5000) })?.i?.name.length).toBe(60);
+  // La clave ed25519 es un SPKI en base64. Una cadena cualquiera se fijaba igual, y a
+  // partir de ahi todo sobre firmado de esa persona daba "mala" sin que nadie supiera por que.
+  expect(base({ id: "U1", name: "x", pk: "no soy una clave" })?.i?.pk).toBeUndefined();
+  expect(base({ id: "U1", name: "x", pk: nuevasClaves().pub })?.i?.pk).toBeString();
+  // Y un nonce que no tiene forma de nonce tampoco viaja.
+  expect(leerInvitacion(crearInvitacion({ k: "corto", i: { id: "U1", name: "x", np: "b".repeat(64) } } as any))?.k).toBeUndefined();
 });

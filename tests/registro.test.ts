@@ -34,3 +34,37 @@ test("el registro no guarda el texto de los mensajes: el borrado al cerrar sigue
   // Soltar y descartar salen del mismo sitio, segun lo que escribio la persona.
   expect(daemon).toContain('Aud.apuntar(orden === "suelta" ? "soltado" : "descartado"');
 });
+
+/**
+ * Un directorio de estado que ya existia abierto se quedaba abierto.
+ *
+ * El `mode` de `mkdirSync` solo se aplica al crear. Dentro de ese directorio estan la
+ * config con las tres claves, el socket del demonio (por el que cualquier proceso local
+ * abre un tunel sin preguntar), los hilos y el spool. `spoochie doctor` lo decia, pero
+ * doctor se ejecuta cuando ya hay algo roto, no cada dia.
+ */
+test("un directorio de estado con permisos abiertos se cierra al arrancar", async () => {
+  const { mkdtempSync, mkdirSync, chmodSync, statSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const base = mkdtempSync(join(tmpdir(), "sp-perms-"));
+  const casa = join(base, "estado");
+  mkdirSync(casa, { recursive: true });
+  chmodSync(casa, 0o755);
+  expect(statSync(casa).mode & 0o077).not.toBe(0);
+
+  const antes = process.env.SPOOCHIE_HOME;
+  try {
+    // `ROOT` se calcula al importar paths.ts, asi que el aislamiento va por un proceso
+    // aparte: es lo mismo que pasa de verdad, un arranque nuevo sobre un directorio viejo.
+    const r = Bun.spawnSync(["bun", "-e", 'const {ensureDirs}=await import("./src/paths.ts"); ensureDirs();'], {
+      cwd: join(import.meta.dir, ".."), env: { ...process.env, SPOOCHIE_HOME: casa },
+    });
+    expect(r.exitCode).toBe(0);
+    expect(statSync(casa).mode & 0o077).toBe(0);
+    expect(statSync(join(casa, "sessions")).mode & 0o077).toBe(0);
+    expect(statSync(join(casa, "threads")).mode & 0o077).toBe(0);
+  } finally {
+    if (antes === undefined) delete process.env.SPOOCHIE_HOME; else process.env.SPOOCHIE_HOME = antes;
+  }
+});
