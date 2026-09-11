@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { SESSIONS_DIR, ensureDirs } from "./paths.ts";
+import { SESSIONS_DIR, ensureDirs, escribirAtomico } from "./paths.ts";
 
 export type SessionRecord = {
   sessionId: string;
@@ -25,7 +25,7 @@ const file = (id: string) => join(SESSIONS_DIR, `${nombreSeguro(id)}.json`);
 
 export function register(rec: SessionRecord) {
   ensureDirs();
-  writeFileSync(file(rec.sessionId), JSON.stringify(rec, null, 2), { mode: 0o600 });
+  escribirAtomico(file(rec.sessionId), JSON.stringify(rec, null, 2));
 }
 
 export function unregister(sessionId: string) {

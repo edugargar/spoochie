@@ -1,6 +1,6 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, renameSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT, ensureDirs } from "./paths.ts";
+import { ROOT, ensureDirs, escribirAtomico } from "./paths.ts";
 import * as L from "./llavero.ts";
 
 export type Config = {
@@ -78,11 +78,53 @@ export type Config = {
 const FILE = join(ROOT, "config.json");
 const DEFAULTS: Config = { guardian: true, transcript: false, aparte: true };
 
+const COPIA = `${FILE}.bak`;
+
+/**
+ * Si el fichero existe pero no se pudo leer. Mientras esto sea true, `save` no escribe:
+ * aqui dentro estan tu clave de firma, tu clave Nostr, el token del bot y tu agenda
+ * entera, y guardar encima de algo que no entendemos los pierde para siempre.
+ */
+let rota = false;
+export const configIlegible = () => rota;
+
+function leerDe(ruta: string): Config | null {
+  try {
+    const texto = readFileSync(ruta, "utf8");
+    if (!texto.trim()) return null;
+    const j = JSON.parse(texto);
+    return j && typeof j === "object" ? { ...DEFAULTS, ...j } : null;
+  } catch { return null; }
+}
+
+/**
+ * Lee la config. Y si no puede, lo dice en vez de inventarse una vacia.
+ *
+ * `save` truncaba y escribia, asi que un proceso muerto a mitad (un SIGKILL, un apagon,
+ * el OOM) dejaba el fichero por la mitad. Sonda: con el fichero cortado a la mitad,
+ * `load` devolvia la config por defecto sin decir nada (clave de firma: no, agenda:
+ * vacia) y el siguiente `save` lo escribia encima. O sea que se perdian las tres claves
+ * y todos los contactos, en silencio y sin vuelta atras. Para eso no hace falta ningun
+ * atacante: basta reiniciar en mal momento.
+ *
+ * Ahora `save` escribe aparte y renombra (el rename es atomico en el mismo disco: o
+ * esta el viejo entero o el nuevo entero), deja una copia del anterior, y esto lee la
+ * copia si el bueno no se entiende.
+ */
 export function load(): Config {
   ensureDirs();
-  if (!existsSync(FILE)) return { ...DEFAULTS };
-  try { return rellenarDelLlavero({ ...DEFAULTS, ...JSON.parse(readFileSync(FILE, "utf8")) }); }
-  catch { return { ...DEFAULTS }; }
+  if (!existsSync(FILE)) { rota = false; return { ...DEFAULTS }; }
+  const c = leerDe(FILE);
+  if (c) { rota = false; return rellenarDelLlavero(c); }
+  const copia = leerDe(COPIA);
+  if (copia) {
+    rota = false;
+    console.error(`spoochie: ${FILE} no se entiende; sigo con la copia de seguridad (${COPIA}). Mira los dos antes de tocar nada.`);
+    return rellenarDelLlavero(copia);
+  }
+  rota = true;
+  console.error(`spoochie: ${FILE} no se entiende y no hay copia utilizable. NO voy a escribir encima: ahi estan tu clave de firma, tu clave Nostr, el token del bot y tu agenda. Guardalo a un lado y mira que tiene dentro.`);
+  return { ...DEFAULTS };
 }
 
 /**
@@ -177,8 +219,18 @@ export function contact(c: Config, needle: string): { id: string; name: string; 
 
 export function save(c: Config) {
   ensureDirs();
-  writeFileSync(FILE, JSON.stringify(enmascarar(c), null, 2), { mode: 0o600 });
+  // Con la config ilegible no se escribe: seria cambiar "no se leerla" por "no existe".
+  if (rota) { console.error("spoochie: no guardo nada mientras config.json no se entienda"); return; }
+  const texto = JSON.stringify(enmascarar(c), null, 2);
+  // La copia del anterior primero, y luego el nuevo de una pieza (`escribirAtomico`).
+  // Aqui dentro estan las tres claves y la agenda: si algo se tuerce, se quiere poder
+  // volver atras, no solo no quedarse a medias.
+  try { if (existsSync(FILE)) renameSync(FILE, COPIA); } catch {}
+  escribirAtomico(FILE, texto);
 }
+
+/** Para las pruebas: olvida que la config estaba rota. */
+export function olvidarRota() { rota = false; }
 
 /**
  * Vuelve a poner la senal en los secretos que viven en el llavero.

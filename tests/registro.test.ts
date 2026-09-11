@@ -68,3 +68,42 @@ test("un directorio de estado con permisos abiertos se cierra al arrancar", asyn
     if (antes === undefined) delete process.env.SPOOCHIE_HOME; else process.env.SPOOCHIE_HOME = antes;
   }
 });
+
+/**
+ * `writeFileSync` trunca y luego escribe: un proceso muerto en medio deja el fichero
+ * cortado. En la config eso costaba las tres claves y la agenda entera (ver
+ * config.test.ts); en un hilo, la conversacion. Se escribe al lado y se renombra, que en
+ * el mismo disco es atomico: quien lea ve el viejo entero o el nuevo entero.
+ */
+test("un fichero de estado se escribe entero o no se escribe", async () => {
+  const { escribirAtomico } = await import("../src/paths.ts");
+  const { readFileSync, existsSync, mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "sp-atom-"));
+  const f = join(dir, "estado.json");
+
+  escribirAtomico(f, '{"a":1}');
+  expect(JSON.parse(readFileSync(f, "utf8"))).toEqual({ a: 1 });
+  escribirAtomico(f, '{"a":2}');
+  expect(JSON.parse(readFileSync(f, "utf8"))).toEqual({ a: 2 });
+  // No se queda ningun temporal por el camino.
+  expect(existsSync(`${f}.nuevo`)).toBe(false);
+  // Y el modo sigue siendo solo para ti: dentro hay tokens de buzon y claves.
+  const { statSync } = await import("node:fs");
+  expect(statSync(f).mode & 0o077).toBe(0);
+});
+
+test("y ningun fichero de estado se escribe ya con writeFileSync a pelo", async () => {
+  // Si vuelve a aparecer uno, este test lo dice antes de que cueste una agenda.
+  const { readFileSync } = await import("node:fs");
+  const { join } = await import("node:path");
+  const sospechosos: string[] = [];
+  for (const f of ["config.ts", "threads.ts", "outbox.ts", "registry.ts"]) {
+    const fuente = readFileSync(join(import.meta.dir, "..", "src", f), "utf8");
+    for (const [i, l] of fuente.split("\n").entries()) {
+      if (/writeFileSync\(/.test(l) && !/\.nuevo|escribirAtomico/.test(l)) sospechosos.push(`${f}:${i + 1}`);
+    }
+  }
+  expect(sospechosos).toEqual([]);
+});
