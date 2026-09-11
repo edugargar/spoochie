@@ -1,4 +1,4 @@
-import { readFileSync, existsSync, renameSync } from "node:fs";
+import { readFileSync, existsSync, renameSync, openSync, closeSync, unlinkSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, ensureDirs, escribirAtomico } from "./paths.ts";
 import * as L from "./llavero.ts";
@@ -111,11 +111,15 @@ function leerDe(ruta: string): Config | null {
  * esta el viejo entero o el nuevo entero), deja una copia del anterior, y esto lee la
  * copia si el bueno no se entiende.
  */
+/** Lo que este proceso leyo la ultima vez, tal cual estaba en disco. Sirve para
+ *  distinguir "esto lo he borrado yo" de "esto no lo he visto nunca". Ver `save`. */
+let ultimoLeido: string | null = null;
+
 export function load(): Config {
   ensureDirs();
-  if (!existsSync(FILE)) { rota = false; return { ...DEFAULTS }; }
+  if (!existsSync(FILE)) { rota = false; ultimoLeido = null; return { ...DEFAULTS }; }
   const c = leerDe(FILE);
-  if (c) { rota = false; return rellenarDelLlavero(c); }
+  if (c) { rota = false; try { ultimoLeido = readFileSync(FILE, "utf8"); } catch { ultimoLeido = null; } return rellenarDelLlavero(c); }
   const copia = leerDe(COPIA);
   if (copia) {
     rota = false;
@@ -217,16 +221,75 @@ export function contact(c: Config, needle: string): { id: string; name: string; 
   return c.contacts?.[claveContacto(needle)] ?? null;
 }
 
+const CANDADO = `${FILE}.lock`;
+const CANDADO_VIEJO_MS = 5000;
+
+/** Un candado de fichero, corto y con caducidad. Si alguien se muere con el puesto, a
+ *  los 5 s deja de valer: un candado eterno seria peor que la carrera que evita. */
+function conCandado<T>(fn: () => T): T {
+  for (let i = 0; i < 100; i++) {
+    try {
+      closeSync(openSync(CANDADO, "wx"));
+      try { return fn(); } finally { try { unlinkSync(CANDADO); } catch {} }
+    } catch {
+      try { if (Date.now() - statSync(CANDADO).mtimeMs > CANDADO_VIEJO_MS) unlinkSync(CANDADO); } catch {}
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+    }
+  }
+  // Sin candado tras dos segundos: se escribe igual. Perder una actualizacion es malo;
+  // no guardar la clave que acabas de crear es peor.
+  return fn();
+}
+
+/**
+ * Guarda la config.
+ *
+ * Dos procesos hacen esto a la vez todo el rato: el demonio apunta un contacto en cada
+ * mensaje que entra (`tocarContacto`) y fija claves, y la CLI escribe en `join`,
+ * `contacts`, `confiar`, `rotar` y `olvidar`. Los dos hacen leer-cambiar-guardar sobre el
+ * fichero entero, asi que el ultimo en guardar borraba lo que hubiera hecho el otro.
+ * Sonda: A lee, B lee, A anade a Ana, B anade a Bea, y al final solo esta Bea. O sea que
+ * una clave recien fijada, o las tuyas recien creadas por `join`, desaparecen sin decir
+ * nada.
+ *
+ * Se arregla en dos pasos. El candado evita que dos escrituras se pisen. Y antes de
+ * escribir se mira si el fichero cambio desde que ESTE proceso lo leyo: lo que haya
+ * aparecido por el camino en la agenda o en las invitaciones se conserva. Comparar con
+ * lo leido, y no solo con lo que hay, es lo que distingue "esto lo he borrado yo" de
+ * "esto no lo he visto nunca": un `spoochie olvidar` sigue olvidando.
+ */
 export function save(c: Config) {
   ensureDirs();
   // Con la config ilegible no se escribe: seria cambiar "no se leerla" por "no existe".
   if (rota) { console.error("spoochie: no guardo nada mientras config.json no se entienda"); return; }
-  const texto = JSON.stringify(enmascarar(c), null, 2);
-  // La copia del anterior primero, y luego el nuevo de una pieza (`escribirAtomico`).
-  // Aqui dentro estan las tres claves y la agenda: si algo se tuerce, se quiere poder
-  // volver atras, no solo no quedarse a medias.
-  try { if (existsSync(FILE)) renameSync(FILE, COPIA); } catch {}
-  escribirAtomico(FILE, texto);
+  conCandado(() => {
+    const enDisco = existsSync(FILE) ? readFileSync(FILE, "utf8") : null;
+    if (enDisco !== null && enDisco !== ultimoLeido) recuperarLoDeOtros(c, enDisco);
+    const texto = JSON.stringify(enmascarar(c), null, 2);
+    // La copia del anterior primero, y luego el nuevo de una pieza (`escribirAtomico`).
+    // Aqui dentro estan las tres claves y la agenda: si algo se tuerce, se quiere poder
+    // volver atras, no solo no quedarse a medias.
+    try { if (existsSync(FILE)) renameSync(FILE, COPIA); } catch {}
+    escribirAtomico(FILE, texto);
+    ultimoLeido = texto;
+  });
+}
+
+/** Lo que otro proceso anadio mientras este tenia su copia en la mano. Solo lo que no
+ *  estaba cuando leimos: lo que si estaba y ya no esta, lo hemos borrado nosotros. */
+function recuperarLoDeOtros(c: Config, enDisco: string) {
+  let disco: any, leido: any;
+  try { disco = JSON.parse(enDisco); } catch { return; }
+  try { leido = ultimoLeido ? JSON.parse(ultimoLeido) : {}; } catch { leido = {}; }
+  for (const mapa of ["contacts", "invitaciones"] as const) {
+    const suyo = disco?.[mapa], visto = leido?.[mapa] ?? {};
+    if (!suyo || typeof suyo !== "object") continue;
+    for (const k of Object.keys(suyo)) {
+      if (k in visto) continue;                       // ya estaba: si falta, lo quitamos nosotros
+      const mio = (c as any)[mapa] ?? ((c as any)[mapa] = {});
+      if (!(k in mio)) mio[k] = suyo[k];
+    }
+  }
 }
 
 /** Para las pruebas: olvida que la config estaba rota. */

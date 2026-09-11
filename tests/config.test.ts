@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { plazo } from "./espera.ts";
 
 test("un nombre de contacto ya ocupado por otro id no se pisa: va con sufijo", async () => {
   const Cfg = await import("../src/config.ts");
@@ -62,4 +63,62 @@ test("una config a medias no se lleva por delante tus claves ni tu agenda", asyn
   writeFileSync(F, entero);
   Cfg.olvidarRota();
   expect(Cfg.load().human).toBe("Edu");
+});
+
+/**
+ * Dos procesos guardando la config a la vez.
+ *
+ * El demonio apunta un contacto en cada mensaje que entra (`tocarContacto`) y fija
+ * claves; la CLI escribe en `join`, `contacts`, `confiar`, `rotar` y `olvidar`. Los dos
+ * hacen leer-cambiar-guardar sobre el fichero entero, asi que el ultimo en guardar
+ * borraba lo del otro. Medido con dos procesos de verdad: antes quedaba uno solo de los
+ * dos contactos, o sea que una clave recien fijada (o las tuyas, recien creadas por
+ * `join`) desaparecian sin decir nada.
+ *
+ * Tienen que ser dos procesos: dentro de uno, los dos `load` comparten el mismo estado y
+ * la carrera no existe.
+ */
+test("dos procesos guardando a la vez no se borran el contacto del otro", async () => {
+  const { mkdtempSync, writeFileSync, readFileSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const casa = mkdtempSync(join(tmpdir(), "sp-carrera-"));
+  const raiz = join(import.meta.dir, "..");
+  const guion = join(casa, "uno.ts");
+  writeFileSync(guion, `
+const Cfg = await import(${JSON.stringify(join(raiz, "src", "config.ts"))});
+const c = Cfg.load();
+await new Promise(r => setTimeout(r, Number(process.env.ESPERA)));
+Cfg.addContact(c, { id: process.env.ID, name: process.env.NOMBRE, pk: "PK-" + process.env.NOMBRE });
+Cfg.save(c);
+`);
+  const env = { ...process.env, SPOOCHIE_HOME: casa };
+  Bun.spawnSync(["bun", "-e", `const C = await import(${JSON.stringify(join(raiz, "src", "config.ts"))}); const c = C.load(); c.human = "Edu"; C.save(c);`], { env, cwd: raiz });
+
+  // A lee, B lee, B guarda, A guarda encima: el caso que perdia a B.
+  const a = Bun.spawn(["bun", "run", guion], { env: { ...env, ID: "U_CA", NOMBRE: "Ana", ESPERA: "400" }, cwd: raiz });
+  const b = Bun.spawn(["bun", "run", guion], { env: { ...env, ID: "U_CB", NOMBRE: "Bea", ESPERA: "200" }, cwd: raiz });
+  await Promise.all([a.exited, b.exited]);
+
+  const fin = JSON.parse(readFileSync(join(casa, "config.json"), "utf8"));
+  expect(Object.keys(fin.contacts ?? {}).sort()).toEqual(["ana", "bea"]);
+  // Y ninguna de las dos claves se ha quedado por el camino.
+  expect(fin.contacts.ana.pk).toBe("PK-Ana");
+  expect(fin.contacts.bea.pk).toBe("PK-Bea");
+}, plazo(20_000));
+
+/**
+ * Lo que se conserva es lo que apareció mientras teniamos nuestra copia en la mano, no
+ * todo lo que haya en disco: si no, `spoochie olvidar` no olvidaria nunca.
+ */
+test("olvidar sigue olvidando aunque otro proceso haya escrito en medio", async () => {
+  const Cfg = await import("../src/config.ts");
+  const c = Cfg.load();
+  Cfg.addContact(c, { id: "U_OLV", name: "Olvidable", pk: "PK" } as any);
+  Cfg.save(c);
+
+  const d = Cfg.load();
+  delete d.contacts!["olvidable"];
+  Cfg.save(d);
+  expect(Cfg.contactById(Cfg.load(), "U_OLV")).toBeNull();
 });
