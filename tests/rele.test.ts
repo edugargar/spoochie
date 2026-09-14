@@ -181,3 +181,62 @@ test("dos sobres que llegan al reves siguen entregandose los dos", async () => {
   expect(await hasta(() => holas.includes("primero") && holas.includes("segundo"))).toBe(true);
   puente.cerrar();
 }, plazo(20000));
+
+/**
+ * Un rele que se cae mientras los otros siguen vivos.
+ *
+ * El test de arriba tira el UNICO rele, y ahi SimplePool si llama a onclose. Con varios
+ * no: nostr-tools 2.25.2 solo lo llama cuando han cerrado todos (pool.js,
+ * `closesReceived.length === groupedRequests.length`). Medido en una maquina de verdad
+ * el 14-09: el saludo de alguien recien dado de alta estaba solo en nos.lol, y el
+ * demonio, que llevaba horas escuchando tres reles, recibio lo de primal y nunca eso.
+ */
+test("si se cae uno de dos reles y vuelve, lo que se publica solo en ese llega igual", async () => {
+  const N = await import("../src/nostr.ts");
+  const ana = N.misClaves({} as any), bea = N.misClaves({} as any);
+  const cae = releDePruebas(), sigue = releDePruebas();
+  const holas: string[] = [];
+  const puente = new N.NostrBridge(bea.sk, bea.pk, [cae.url, sigue.url], {
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {},
+    onHola: async (_de, _s, nombre) => { holas.push(nombre); },
+    log: () => {},
+  });
+  puente.escuchar();
+  await sleep(400);
+
+  cae.tirar();
+  await sleep(500);
+  cae.levantar();
+  await sleep(7000);
+
+  const { wrap } = N.envolver(ana.sk, bea.pk, { v: 1, id: "hola", kind: "hola", fromName: "solo en el que cayo" }, "x");
+  await Promise.all(N.poolReal().publish([cae.url], wrap).map(p => p.catch(() => {})));
+  expect(await hasta(() => holas.includes("solo en el que cayo"), 15000)).toBe(true);
+  puente.cerrar(); cae.cerrar(); sigue.cerrar();
+}, plazo(60000));
+
+/**
+ * El rele que deja de mandar sin cortar. El socket sigue abierto, asi que no hay
+ * onclose que valga: la unica defensa es volver a pedir cada cierto tiempo. Los
+ * repetidos no cuestan nada, `vistos` los quita.
+ */
+test("si un rele olvida la suscripcion sin cortar, el puente la vuelve a pedir", async () => {
+  const N = await import("../src/nostr.ts");
+  const ana = N.misClaves({} as any), bea = N.misClaves({} as any);
+  const mudo = releDePruebas();
+  const holas: string[] = [];
+  const puente = new N.NostrBridge(bea.sk, bea.pk, [mudo.url], {
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {},
+    onHola: async (_de, _s, nombre) => { holas.push(nombre); },
+    log: () => {},
+  }, undefined, { refrescoMs: 1500 });
+  puente.escuchar();
+  await sleep(400);
+  mudo.olvidar();
+
+  const { wrap } = N.envolver(ana.sk, bea.pk, { v: 1, id: "hola", kind: "hola", fromName: "tras olvidar" }, "x");
+  await Promise.all(N.poolReal().publish([mudo.url], wrap));
+  expect(await hasta(() => holas.includes("tras olvidar"), 10000)).toBe(true);
+  expect(holas.filter(h => h === "tras olvidar")).toHaveLength(1);
+  puente.cerrar(); mudo.cerrar();
+}, plazo(30000));

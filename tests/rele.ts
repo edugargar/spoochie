@@ -46,6 +46,9 @@ export type Rele = {
   tirar: () => void;
   /** Lo levanta otra vez en el mismo puerto. */
   levantar: () => void;
+  /** Olvida las suscripciones sin cortar el socket: el rele que reinicia su proceso
+   *  detras de un proxy, o el que cierra un REQ sin decir CLOSED. */
+  olvidar: () => void;
   cerrar: () => void;
 };
 
@@ -113,6 +116,7 @@ export function releDePruebas(puerto = 0): Rele {
     clientes: () => clientes.size,
     tirar: () => { server?.stop(true); server = null; clientes.clear(); },
     levantar: () => { if (!server) arrancar(); },
+    olvidar: () => { for (const c of clientes.values()) c.subs.clear(); },
     cerrar: () => { server?.stop(true); server = null; },
   };
 }

@@ -135,6 +135,8 @@ export type Pool = {
   publish(relays: string[], ev: Event): Promise<unknown>[];
   subscribe(relays: string[], filtro: Record<string, unknown>, cb: { onevent(ev: Event): void; onclose?(razones: string[]): void }): { close(): void };
   cerrar?(): void;
+  /** Tira las conexiones y empieza con sockets nuevos. Ver `NostrBridge.refrescar`. */
+  reiniciar?(): void;
 };
 
 /** Un pool sobre un directorio compartido: cada publish es un fichero, cada suscripcion
@@ -167,11 +169,12 @@ export function poolDeFichero(dir: string): Pool {
 }
 
 export function poolReal(): Pool {
-  const pool = new SimplePool();
+  let pool = new SimplePool();
   return {
     publish: (relays, ev) => pool.publish(relays, ev),
     subscribe: (relays, filtro, cb) => pool.subscribe(relays, filtro as any, { onevent: cb.onevent, onclose: cb.onclose }),
     cerrar: () => pool.destroy(),
+    reiniciar: () => { const viejo = pool; pool = new SimplePool(); try { viejo.destroy(); } catch {} },
   };
 }
 
@@ -186,11 +189,18 @@ export type Callbacks = {
   log: (...a: unknown[]) => void;
 };
 
+/** Cada cuanto se tiran las conexiones y se vuelve a pedir todo. Lo que un rele no
+ *  mando en ese rato llega en la vuelta siguiente, porque el filtro pide dos dias. */
+export const REFRESCO_MS = 5 * 60_000;
+
 export class NostrBridge {
   private vistos = new Set<string>();
-  private sub: { close(): void } | null = null;
+  private subs = new Map<string, { close(): void }>();
+  private reloj: ReturnType<typeof setInterval> | null = null;
   private cerrado = false;
-  constructor(readonly sk: string, readonly pk: string, readonly relays: string[], private cb: Callbacks, private pool: Pool = poolReal()) {
+  private refrescoMs: number;
+  constructor(readonly sk: string, readonly pk: string, readonly relays: string[], private cb: Callbacks, private pool: Pool = poolReal(), opts: { refrescoMs?: number } = {}) {
+    this.refrescoMs = opts.refrescoMs ?? REFRESCO_MS;
     try { if (existsSync(VISTOS)) for (const id of JSON.parse(readFileSync(VISTOS, "utf8"))) this.vistos.add(id); } catch {}
   }
 
@@ -205,20 +215,61 @@ export class NostrBridge {
     try { escribirAtomico(VISTOS, JSON.stringify([...this.vistos].slice(-5000))); } catch {}
   }
 
-  /** Escucha lo que llega para mi. Se vuelve a suscribir sola si el rele corta. */
+  /**
+   * Escucha lo que llega para mi, con una suscripcion por rele.
+   *
+   * Una sola suscripcion a los tres no vale: SimplePool (nostr-tools 2.25.2) solo avisa
+   * con onclose cuando han cerrado TODOS, asi que un rele que se caia se quedaba sin
+   * escuchar para siempre mientras los otros siguieran vivos. Medido en una maquina de
+   * verdad: el saludo de un alta nueva vivia solo en nos.lol y el demonio nunca lo vio.
+   *
+   * Y el onclose no basta ni por rele: un socket medio muerto, o un rele que olvida el
+   * REQ, no cierra nunca. Por eso cada `refrescoMs` se tiran las conexiones y se pide
+   * todo otra vez; los repetidos los quita `vistos`.
+   */
   escuchar() {
     // Un puente cerrado no vuelve a escuchar. Sin esto, `cerrar()` disparaba el onclose
     // del rele, y a los 5 s el puente viejo se resuscribia al lado del nuevo: dos
     // puentes con dos listas de vistos, y cada sobre entregado dos veces a la sesion.
     if (this.cerrado) return;
-    const filtro = { kinds: [ENVOLTURA], "#p": [this.pk], since: ahora() - DOS_DIAS_S - 3600 };
-    this.sub = this.pool.subscribe(this.relays, filtro, {
-      onevent: ev => { void this.recibir(ev); },
-      onclose: () => { if (!this.cerrado) setTimeout(() => this.escuchar(), 5000).unref?.(); },
-    });
+    for (const url of this.relays) this.escucharRele(url);
+    if (!this.reloj) {
+      this.reloj = setInterval(() => this.refrescar(), this.refrescoMs);
+      this.reloj.unref?.();
+    }
   }
 
-  cerrar() { this.cerrado = true; this.sub?.close(); this.pool.cerrar?.(); }
+  private escucharRele(url: string) {
+    if (this.cerrado) return;
+    this.subs.get(url)?.close();
+    const filtro = { kinds: [ENVOLTURA], "#p": [this.pk], since: ahora() - DOS_DIAS_S - 3600 };
+    const yo = { close: () => {} };
+    this.subs.set(url, yo);
+    const sub = this.pool.subscribe([url], filtro, {
+      onevent: ev => { void this.recibir(ev); },
+      // Solo reintenta la suscripcion vigente: cerrar una vieja al refrescar tambien
+      // dispara su onclose, y sin esta comprobacion cada refresco duplicaba el rele.
+      onclose: () => { if (!this.cerrado && this.subs.get(url) === yo) setTimeout(() => { if (this.subs.get(url) === yo) this.escucharRele(url); }, 5000).unref?.(); },
+    });
+    yo.close = () => sub.close();
+  }
+
+  private refrescar() {
+    if (this.cerrado) return;
+    const viejas = [...this.subs.values()];
+    this.subs.clear();
+    for (const s of viejas) { try { s.close(); } catch {} }
+    this.pool.reiniciar?.();
+    for (const url of this.relays) this.escucharRele(url);
+  }
+
+  cerrar() {
+    this.cerrado = true;
+    if (this.reloj) clearInterval(this.reloj);
+    for (const s of this.subs.values()) { try { s.close(); } catch {} }
+    this.subs.clear();
+    this.pool.cerrar?.();
+  }
 
   private async recibir(ev: Event) {
     if (this.vistos.has(ev.id)) return;
