@@ -199,8 +199,10 @@ export class NostrBridge {
   private reloj: ReturnType<typeof setInterval> | null = null;
   private cerrado = false;
   private refrescoMs: number;
-  constructor(readonly sk: string, readonly pk: string, readonly relays: string[], private cb: Callbacks, private pool: Pool = poolReal(), opts: { refrescoMs?: number } = {}) {
+  private esperaPublicarMs: number;
+  constructor(readonly sk: string, readonly pk: string, readonly relays: string[], private cb: Callbacks, private pool: Pool = poolReal(), opts: { refrescoMs?: number; esperaPublicarMs?: number } = {}) {
     this.refrescoMs = opts.refrescoMs ?? REFRESCO_MS;
+    this.esperaPublicarMs = opts.esperaPublicarMs ?? 8000;
     try { if (existsSync(VISTOS)) for (const id of JSON.parse(readFileSync(VISTOS, "utf8"))) this.vistos.add(id); } catch {}
   }
 
@@ -449,9 +451,19 @@ export class NostrBridge {
     return n;
   }
 
-  /** El saludo del alta: le digo a quien me invito quien soy. */
+  /**
+   * El saludo del alta: le digo a quien me invito quien soy.
+   *
+   * Espera a todos los reles, no al primero. Quien llama es `join`, que cierra el pool
+   * nada mas volver, y con Promise.any los demas publish se cortaban: medido el 14-09,
+   * el saludo de un alta de verdad quedo en un solo rele de tres. Un rele que no
+   * contesta no cuelga el alta: a los `esperaPublicarMs` se deja de esperar.
+   */
   async hola(paraPk: string, relays: string[], nombre: string, slackId?: string, k?: string): Promise<boolean> {
     const { wrap } = envolver(this.sk, paraPk, { v: PROTOCOLO, id: "hola", kind: "hola", fromName: nombre, slack: slackId, relays: this.relays, k }, `${nombre} ya esta en spoochie`);
-    try { await Promise.any(this.pool.publish([...new Set([...relays, ...this.relays])], wrap)); return true; } catch { return false; }
+    let aceptados = 0;
+    const todos = this.pool.publish([...new Set([...relays, ...this.relays])], wrap).map(p => p.then(() => { aceptados++; }, () => {}));
+    await Promise.race([Promise.all(todos), new Promise(r => setTimeout(r, this.esperaPublicarMs).unref?.())]);
+    return aceptados > 0;
   }
 }
