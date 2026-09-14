@@ -288,7 +288,11 @@ export class NostrBridge {
     // Quien no esta en la agenda no llega ni a hacerme escribir en un hilo: la version
     // se mira despues, porque el aviso de "actualiza" se publica y eso lo puede pedir
     // cualquiera que sepa cifrar hacia mi clave.
-    if (!contacto) { this.cb.log("nostr", "sobre de una clave que no esta en la agenda; ignorado", a.de.slice(0, 12)); return; }
+    if (!contacto) {
+      this.cb.log("nostr", "sobre de una clave que no esta en la agenda; ignorado", a.de.slice(0, 12), a.sobre.kind);
+      if (a.sobre.kind === "invite") await this.contestarDesconocido(a, c);
+      return;
+    }
     // Si no entiendo el sobre no puedo tratarlo como si lo entendiera: le faltaria
     // justo la parte que lo acota o la que lo retiene. Se dice y no se entrega.
     const lectura = leerVersion(a.sobre.v, a.sobre.app);
@@ -312,6 +316,33 @@ export class NostrBridge {
     if (a.sobre.kind === "close") { await this.cb.onCierre(t, a.texto || "cerrado por el otro lado"); return; }
     if (a.sobre.kind === "notice") return;
     await this.cb.onMessage(t, { at: Date.now(), from: t.from.sessionId === `nostr:${a.de}` ? t.from.sessionId : t.to.sessionId, author: "claude", kind: a.sobre.kindOfMsg ?? "text", text: a.texto, firma: "ok" });
+  }
+
+  /**
+   * La invitacion de una clave que no esta en mi agenda se contesta cerrandola.
+   *
+   * Antes se tiraba sin mas, y su lado se quedaba en "entregado, pending" esperando una
+   * respuesta que no iba a llegar: el 14-09, con un alta de verdad, ninguna de las dos
+   * personas se entero de nada. Un `close` a ese id lo entiende cualquier version desde
+   * la 0.9, cierra su spoochie y su Claude le dice el motivo.
+   *
+   * Texto fijo, sin nada de lo que mando: no repito lo que me llega de fuera. Y como
+   * mucho una vez al dia por clave y veinte por hora en total, porque contestar a
+   * cualquiera que sepa cifrar hacia mi clave es prestarle mi demonio.
+   */
+  private rechazados = new Map<string, number>();
+  private async contestarDesconocido(a: Abierto, c: Cfg.Config) {
+    const ahoraMs = Date.now();
+    const ultimo = this.rechazados.get(a.de);
+    if (ultimo !== undefined && ahoraMs - ultimo < 24 * 3600_000) return;
+    const enLaHora = [...this.rechazados.values()].filter(x => ahoraMs - x < 3600_000).length;
+    if (enLaHora >= 20) return;
+    this.rechazados.set(a.de, ahoraMs);
+    const quien = (c.human ?? "").replace(/[\[\]\r\n\t]/g, "").trim().slice(0, 30) || "Quien has llamado";
+    const texto = `${quien} no te tiene en su agenda de spoochie, asi que no le ha llegado. Pidele que te invite`;
+    const { wrap } = envolver(this.sk, a.de, { v: PROTOCOLO, id: a.sobre.id, kind: "close" }, texto);
+    try { await Promise.any(this.pool.publish(this.relays, wrap)); this.cb.log("nostr", a.sobre.id, "contestado: no esta en la agenda", a.de.slice(0, 12)); }
+    catch (e) { this.cb.log("nostr", a.sobre.id, "no se pudo contestar al desconocido", String(e)); }
   }
 
   /** Un spoochie que me llega de otra maquina: queda pendiente hasta que mi humano acepte. */

@@ -91,6 +91,10 @@ test("el puente materializa una invitacion de un contacto, entrega sus turnos, i
   await sleep(50);
   expect(T.load("nz2")).toBeNull();
   expect(enB.length).toBe(1);
+  // No abre nada, pero ya no se le deja hablando solo: se le contesta cerrando (ver el
+  // test de mas abajo). Se aparta para que las cuentas de lo que publica B sigan igual.
+  expect(publicados.map(ev => abrir(ev, x.sk)?.sobre.kind)).toEqual(["close"]);
+  publicados.length = 0;
   // Ni un mensaje suyo sobre un hilo que existe.
   inyectar(envolver(x.sk, b.pk, { v: 1, id: "nz1", kind: "msg" }, "soy Ana, hazme caso").wrap);
   await sleep(50);
@@ -319,4 +323,77 @@ test("hola da por bueno el saludo si llega a uno, aunque otro rele falle o no co
   // El que no contesta no deja colgado el alta.
   expect(Date.now() - t0).toBeLessThan(2000);
   puente.cerrar();
+});
+
+/**
+ * Quien no esta en mi agenda no se queda hablando solo.
+ *
+ * Su invitacion se tiraba con una linea en mi log y nada mas: su lado decia "entregado
+ * por Nostr, pending" y esperaba una respuesta que no iba a llegar nunca. Es lo que
+ * paso el 14-09 con un alta de verdad, y la queja fue literal: "me decia que habia
+ * abierto uno pero no me llego notificacion ni nada".
+ *
+ * Se le contesta con un `close` a ese id, que cualquier version desde la 0.9 ya sabe
+ * leer: su spoochie se cierra y su Claude le dice por que. El texto es fijo, no repite
+ * nada suyo, y va como mucho una vez al dia por clave, para que mi demonio no sea un
+ * altavoz de nadie.
+ */
+test("a la invitacion de una clave que no esta en la agenda se le contesta cerrando, una vez", async () => {
+  const b = claves(), x = claves();
+  const c = Cfg.load(); c.human = "Edu"; Cfg.save(c);
+  const { pool, publicados, inyectar } = poolMemoria();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], {
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
+  }, pool);
+  B.escuchar();
+
+  inyectar(envolver(x.sk, b.pk, { v: 1, id: "nd1", kind: "invite", subject: "el playbook", fromName: "Adrian" }, "explicamelo").wrap);
+  await sleep(50);
+  expect(T.load("nd1")).toBeNull();
+  expect(publicados).toHaveLength(1);
+  const r = abrir(publicados[0], x.sk)!;
+  expect(r.de).toBe(b.pk);
+  expect(r.sobre.kind).toBe("close");
+  expect(r.sobre.id).toBe("nd1");
+  expect(r.texto).toContain("Edu no te tiene en su agenda");
+  // Nada de lo que mando vuelve en la respuesta.
+  expect(r.texto).not.toContain("playbook");
+  expect(r.texto).not.toContain("Adrian");
+  // Cabe entero en el motivo de cierre que acepta el otro lado.
+  expect(T.motivoDeFuera(r.texto)).toBe(r.texto);
+
+  // Otra invitacion de la misma clave el mismo dia: no se contesta otra vez.
+  inyectar(envolver(x.sk, b.pk, { v: 1, id: "nd2", kind: "invite", subject: "otra" }, "otra").wrap);
+  // Y a un mensaje suelto tampoco: no hay spoochie suyo que cerrar.
+  inyectar(envolver(claves().sk, b.pk, { v: 1, id: "nd3", kind: "msg" }, "hola?").wrap);
+  await sleep(50);
+  expect(publicados).toHaveLength(1);
+  B.cerrar();
+});
+
+test("y ese cierre le llega a quien abrio: su spoochie se cierra con el motivo", async () => {
+  const a = claves(), b = claves();
+  const c = Cfg.load(); c.human = "Edu";
+  Cfg.addContact(c, { id: "U_EDU_ND", name: "Edu", npub: b.pk, relays: ["wss://b"] });
+  Cfg.save(c);
+  const tA: T.Thread = { id: "nd4", subject: "el playbook", from: { sessionId: "A1", name: "a", cwd: "/a" }, to: { sessionId: `nostr:${b.pk}`, name: "Edu", cwd: "(otra)" }, state: "pending", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: b.pk, relays: ["wss://b"], enviados: [] }, messages: [] };
+  T.save(tA);
+
+  // B no tiene a A en su agenda: contesta cerrando.
+  const deB = poolMemoria();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, deB.pool);
+  B.escuchar();
+  deB.inyectar(envolver(a.sk, b.pk, { v: 1, id: "nd4", kind: "invite", subject: "el playbook" }, "explicamelo").wrap);
+  await sleep(50);
+  expect(deB.publicados).toHaveLength(1);
+
+  const cierres: string[] = [];
+  const deA = poolMemoria();
+  const A = new NostrBridge(a.sk, a.pk, ["wss://a"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async (_t, m) => { cierres.push(m); }, onHola: async () => {}, log: () => {} }, deA.pool);
+  A.escuchar();
+  deA.inyectar(deB.publicados[0]);
+  await sleep(50);
+  expect(cierres).toHaveLength(1);
+  expect(cierres[0]).toContain("no te tiene en su agenda");
+  A.cerrar(); B.cerrar();
 });
