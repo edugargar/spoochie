@@ -276,3 +276,47 @@ test("un trozo mas grande que TROZO no toca el disco", async () => {
   await hasta(() => existsSync(join(SPOOL, "ncabe", "fc-y.bin")));
   expect(readFileSync(join(SPOOL, "ncabe", "fc-y.bin")).equals(cabe)).toBe(true);
 });
+
+/**
+ * El saludo del alta no se queda en un rele.
+ *
+ * `hola` volvia con Promise.any, al primer rele que aceptaba, y `join` destruye el pool
+ * justo despues: los otros publish se cortaban a medias. Medido en los reles de verdad
+ * el 14-09 con el alta de Adrian: damus nada, nos.lol el saludo, primal nada. Si el que
+ * lo tiene es justo el que el otro demonio no esta escuchando, el alta no llega nunca.
+ */
+test("hola espera a todos los reles antes de volver, no solo al primero", async () => {
+  const a = claves(), b = claves();
+  const publicados: string[] = [];
+  const pool: Pool = {
+    publish: () => [
+      Promise.resolve().then(() => { publicados.push("rapido"); }),
+      sleep(300).then(() => { publicados.push("lento"); }),
+    ],
+    subscribe: () => ({ close() {} }),
+  };
+  const puente = new NostrBridge(a.sk, a.pk, ["wss://rapido", "wss://lento"], {
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
+  }, pool);
+  expect(await puente.hola(b.pk, [], "Adrian")).toBe(true);
+  // Lo que hace `join` justo despues de hola: cerrar. Lo que no haya salido ya, no sale.
+  const alVolver = [...publicados];
+  puente.cerrar();
+  expect(alVolver.sort()).toEqual(["lento", "rapido"]);
+});
+
+test("hola da por bueno el saludo si llega a uno, aunque otro rele falle o no conteste", async () => {
+  const a = claves(), b = claves();
+  const pool: Pool = {
+    publish: () => [Promise.resolve(), Promise.reject(new Error("rele caido")), new Promise(() => {})],
+    subscribe: () => ({ close() {} }),
+  };
+  const puente = new NostrBridge(a.sk, a.pk, ["wss://a", "wss://b", "wss://c"], {
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
+  }, pool, { esperaPublicarMs: 200 });
+  const t0 = Date.now();
+  expect(await puente.hola(b.pk, [], "Adrian")).toBe(true);
+  // El que no contesta no deja colgado el alta.
+  expect(Date.now() - t0).toBeLessThan(2000);
+  puente.cerrar();
+});
