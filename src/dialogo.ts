@@ -148,6 +148,23 @@ export function preguntar(t: T.Thread, esperaSeg = 3600): Aviso {
   return { cerrar, respuesta };
 }
 
+/**
+ * Una notificacion del sistema, sin botones. Para lo que la persona tiene que saber
+ * pero no tiene que contestar ya.
+ *
+ * El texto va como argumento de `on run argv`, nunca pegado dentro del guion: parte de
+ * lo que se ensena lo dice un sobre de fuera, y con comillas en un nombre el guion
+ * seria suyo. Sin escritorio, o con SPOOCHIE_AVISO fijado (los tests), no hace nada.
+ */
+export function notificar(titulo: string, texto: string): boolean {
+  if (process.platform !== "darwin" || process.env.SPOOCHIE_AVISO) return false;
+  const guion = "on run argv\ndisplay notification (item 2 of argv) with title (item 1 of argv)\nend run";
+  const p = spawn("osascript", ["-e", guion, titulo, texto], { detached: true, stdio: "ignore" });
+  p.on("error", () => {});
+  p.unref();
+  return true;
+}
+
 /** Abre el hilo del spoochie en la app de Slack. */
 export function abrirEnSlack(teamId: string | null, channel: string, ts: string) {
   const url = teamId

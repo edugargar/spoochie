@@ -123,6 +123,7 @@ const USAGE = `spoochie - tunel entre sesiones de Claude Code de personas distin
   spoochie nostr [--relays wss://a,wss://b]      tu clave Nostr y tus reles
   spoochie contacts [--olvidar-clave <nombre>]   tu agenda con sus claves; olvidar una para reinvitar
   spoochie contacts --nivel <nombre> alto|normal  confianza alta: sin avisos de "fuera del asunto"
+  spoochie contacts --vincular <nombre|U0..> --npub <clave>   su clave Nostr a mano, cuando su alta no llego
   spoochie confiar @sam --repo <repo> [--quitar]  sus spoochies sobre ese repo entran sin dialogo
   spoochie --version
       aparte: los spoochies que llegan los atiende un Claude propio; tu sesion solo ve el aviso
@@ -502,6 +503,27 @@ async function main() {
 
   if (cmd === "contacts") {
     const c = Cfg.load();
+    // La salida cuando un alta no llega: un saludo de una 0.9.8 sin el nonce, o uno
+    // que se perdio por el camino. La clave la pega la persona, que es quien puede
+    // haberla comprobado con el otro; `spoochie doctor` ensena la que llego.
+    const vincular = flag(rest, "vincular");
+    if (vincular) {
+      const N = await import("./nostr.ts");
+      const { vincularClave } = await import("./claves.ts");
+      const Des = await import("./desconocidos.ts");
+      const quien = Cfg.contact(c, vincular.replace(/^@/, "")) ?? Cfg.contactById(c, vincular);
+      if (!quien) { console.error(`no tengo a nadie como ${vincular} en la agenda: invitale primero (spoochie invite --to <su id>)`); process.exit(1); return; }
+      const pk = N.pkDe(flag(rest, "npub") ?? "");
+      if (!pk) { console.error(`falta su clave: --npub npub1... o los 64 caracteres en hexadecimal (spoochie doctor ensena la que llego)`); process.exit(1); return; }
+      const v = vincularClave(c, { id: quien.id, name: quien.name, npub: pk, relays: N.RELAYS_POR_DEFECTO });
+      if (v === "conflicto") { console.error(`no la vinculo: o ${quien.name} ya tiene otra clave, o esa clave es de otro contacto. Si hay que cambiarla: spoochie contacts --olvidar-clave ${Cfg.claveContacto(quien.name)}`); process.exit(1); return; }
+      // Su invitacion ya no hace falta: dejarla viva es dejar un nonce que mete claves.
+      for (const [k, inv] of Object.entries(c.invitaciones ?? {})) if (inv.id === quien.id) delete c.invitaciones![k];
+      Cfg.save(c);
+      Des.olvidar(pk);
+      console.log(`${v === "igual" ? "Ya la tenia" : "Vinculada"}: ${quien.name} es la clave ${pk.slice(0, 8)}...${pk.slice(-4)}. Si no lo has hecho, comprueba con ${quien.name} que su \`spoochie nostr\` dice esa misma.`);
+      return;
+    }
     const olvidar = flag(rest, "olvidar-clave");
     if (olvidar) {
       const k = Cfg.claveContacto(olvidar);

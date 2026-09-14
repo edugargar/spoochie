@@ -11,6 +11,7 @@ import { ROOT, SESSIONS_DIR, THREADS_DIR, DAEMON_SOCK, DAEMON_LOCK, OUTBOX_FILE 
 import { liveSessions, permisosFlojos } from "./registry.ts";
 import * as Cfg from "./config.ts";
 import * as T from "./threads.ts";
+import * as Des from "./desconocidos.ts";
 import { whoIs } from "./slack.ts";
 
 export type Chequeo = { ok: boolean | "aviso"; que: string; detalle: string };
@@ -199,6 +200,23 @@ export function auditar(c: Cfg.Config, ahora = Date.now()): Chequeo[] {
       ok: "aviso",
       que: "invitaciones sin canjear",
       detalle: `${pendientes.length} viva(s) (${nombres}): cada una deja entrar una clave en tu agenda hasta que caduque a los 30 dias`,
+    });
+  }
+
+  // Quien ha intentado hablarme sin estar en la agenda. Todo lo que no es la clave lo
+  // dice el sobre, y asi se ensena. Si dice ser un contacto que aun no tiene clave
+  // Nostr, es casi seguro un alta que no llego, y la salida es vincularla a mano.
+  for (const d of Des.recientes(ahora)) {
+    const suyo = d.slack ? Cfg.contactById(c, d.slack) as { id: string; name: string; npub?: string } | null : null;
+    const cuando = new Date(d.ultima).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const que = d.kind === "hola" ? "se dio de alta y su clave no entro" : d.kind === "invite" ? "intento abrirte un spoochie" : `te mando un sobre (${d.kind})`;
+    const salida = suyo && !suyo.npub
+      ? `si es ${suyo.name}: spoochie contacts --vincular ${suyo.id} --npub ${d.pk}`
+      : "si le conoces, invitale: spoochie invite --to <su id>";
+    out.push({
+      ok: "aviso",
+      que: "fuera de tu agenda",
+      detalle: `${d.nombre ? `dice ser ${d.nombre}` : "sin nombre"}${d.slack ? ` (${d.slack})` : ""}, clave ${d.pk.slice(0, 12)}...: ${que}, ${d.veces} vez/veces, la ultima ${cuando}. ${salida}`,
     });
   }
 

@@ -18,6 +18,7 @@ import { VERSION } from "./version.ts";
 import { latir, LATIDO_MS } from "./arranque.ts";
 import * as Ap from "./aparte.ts";
 import * as Dlg from "./dialogo.ts";
+import * as Desconocidos from "./desconocidos.ts";
 import * as Cfg from "./config.ts";
 import * as Conf from "./confianza.ts";
 import * as Aud from "./auditoria.ts";
@@ -871,16 +872,35 @@ async function repartirClaveNostr() {
   }
 }
 
+/**
+ * Alguien fuera de la agenda ha intentado hablarme por Nostr. Se apunta siempre, y la
+ * primera vez en el dia de esa clave se dice con una notificacion: el 14-09 un alta de
+ * verdad se quedo en el log del demonio y nadie lo vio. El nombre es lo que dice el
+ * sobre, y asi se ensena, como dicho.
+ */
+function avisarDesconocido(de: string, x: { kind: string; fromName?: string; slack?: string; motivo?: string }) {
+  const primera = Desconocidos.apuntar({ pk: de, kind: x.kind, nombre: x.fromName, slack: x.slack, motivo: x.motivo });
+  if (!primera) return;
+  const nombre = Desconocidos.recientes().find(d => d.pk === de)?.nombre;
+  const que = x.kind === "hola" ? "se ha dado de alta, pero su clave no ha entrado en tu agenda" : "ha intentado abrirte un spoochie, y no esta en tu agenda";
+  Dlg.notificar("spoochie", `${nombre ? `Alguien que dice ser ${nombre}` : "Alguien"} ${que}. Mira spoochie doctor.`);
+}
+
 function arrancarNostr() {
   nostr?.cerrar();
   nostr = NostrBridge.fromConfig({
     onMessage: onSlackMessage, onRemoteAccept, onCierre: onRemoteClose, log,
+    onDesconocido: async (de, sobre) => { avisarDesconocido(de, { kind: sobre.kind, fromName: sobre.fromName, slack: sobre.slack }); },
     onHola: async (de, sobre, nombre) => {
       // Alguien a quien invite ya esta dentro. Solo con el nonce de mi invitacion, y se
       // vincula a lo que yo apunte al invitar, no a lo que diga el hola (claves.ts).
       const c = Cfg.load();
       const d = holaPorNostr(c, { de, nombre, k: sobre.k, relays: sobre.relays });
-      if (!d.ok) { log("nostr", "hola RECHAZADO de", nombre, de.slice(0, 12), d.motivo); return; }
+      if (!d.ok) {
+        log("nostr", "hola RECHAZADO de", nombre, de.slice(0, 12), d.motivo);
+        avisarDesconocido(de, { kind: "hola", fromName: nombre, slack: sobre.slack, motivo: d.motivo });
+        return;
+      }
       Cfg.save(c);
       log("nostr", "hola de", d.name, de.slice(0, 12), d.vinculo);
     },
