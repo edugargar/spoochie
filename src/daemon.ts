@@ -1127,6 +1127,9 @@ function main() {
   // y el lock que acababa de crear el nuevo: quedaba un demonio vivo al que nadie podia
   // llamar, y la CLI daba ENOENT contra un fichero que existia un instante antes.
   const bye = () => {
+    // El aviso es un osascript hijo y sobrevivia al demonio: quedaba en pantalla y su
+    // "Que pase" ya no llegaba a nadie. Visto en la prueba real del 01-10.
+    for (const d of dialogos.values()) d.cerrar();
     try { if (readFileSync(DAEMON_LOCK, "utf8").trim() === String(process.pid)) { unlinkSync(DAEMON_SOCK); unlinkSync(DAEMON_LOCK); } } catch {}
     process.exit(0);
   };
