@@ -95,6 +95,23 @@ export function posicionPedida(): { x: number; y: number } | null {
 }
 
 /**
+ * Pulsar un boton solo, sin que se vea. Existe para la prueba de punta a punta.
+ *
+ * La ventana se probaba con capturas y mirando el guion, nunca pulsando, y por eso el
+ * clic llego vacio a produccion (ver `button returned` abajo). Probarla pulsando con la
+ * ventana visible parpadea sobre el trabajo de quien corre los tests, asi que con esta
+ * variable la ventana sale transparente, sin icono en el Dock y sin tomar el foco, y un
+ * temporizador pulsa el boton con ese numero (1 rechazar, 2 Slack, 3 aceptar). Todo lo
+ * demas es la ventana de verdad: el mismo NSWindow, la misma accion, el mismo modal y la
+ * misma salida. Solo la lee el proceso que genera el guion, o sea el demonio de quien lo
+ * corre; nada que llegue por el tunel puede ponerla.
+ */
+export function clicPedido(): 1 | 2 | 3 | 0 {
+  const v = process.env.SPOOCHIE_VENTANA_CLIC;
+  return v === "1" ? 1 : v === "2" ? 2 : v === "3" ? 3 : 0;
+}
+
+/**
  * El programa JXA.
  *
  * Los datos van en un literal JSON al principio en vez de interpolados por el cuerpo:
@@ -106,6 +123,7 @@ export function guionVentana(t: T.Thread, icono: string | null): string {
     ...piezas(t),
     icono: icono ?? "",
     pos: posicionPedida(),
+    clic: clicPedido(),
     botones: [
       { titulo: BOTONES.rechazar, tag: 1, tecla: "" },
       { titulo: BOTONES.slack, tag: 2, tecla: "" },
@@ -120,7 +138,8 @@ export function guionVentana(t: T.Thread, icono: string | null): string {
   return `ObjC.import('Cocoa');
 var D = ${datos};
 var app = $.NSApplication.sharedApplication;
-app.setActivationPolicy(0);
+// 1 = accesorio: sin icono en el Dock y sin tomar el foco. Solo en la prueba (D.clic).
+app.setActivationPolicy(D.clic ? 1 : 0);
 
 // El destino de los botones. Cada uno lleva su tag y para el modal con ese numero.
 ObjC.registerSubclass({
@@ -213,11 +232,12 @@ if (D.icono) {
 }
 
 var x2 = W - PAD;
+var BTS = {};
 for (var i = D.botones.length - 1; i >= 0; i--) {
   var d = D.botones[i];
   var bt = $.NSButton.alloc.initWithFrame($.NSMakeRect(0, 0, 90, 28));
   bt.title = d.titulo; bt.bezelStyle = $.NSBezelStyleRounded; bt.tag = d.tag;
-  bt.target = destino; bt.action = $.NSSelectorFromString('pulsa:');
+  bt.target = destino; bt.action = $.NSSelectorFromString('pulsa:'); BTS[d.tag] = bt;
   if (d.tecla) bt.keyEquivalent = d.tecla;
   bt.sizeToFit;
   var w2 = Math.max(bt.frame.size.width + 22, 82);
@@ -234,7 +254,14 @@ if (D.pos) {
 } else {
   win.center;
 }
-app.activateIgnoringOtherApps(true);
+if (D.clic) {
+  win.alphaValue = 0; win.ignoresMouseEvents = true;
+  ObjC.registerSubclass({ name: 'SpClic', superclass: 'NSObject', methods: { 'tick:': { types: ['void', ['id']], implementation: function (x) { BTS[D.clic].performClick(null); } } } });
+  var tm = $.NSTimer.timerWithTimeIntervalTargetSelectorUserInfoRepeats(0.6, $.SpClic.alloc.init, 'tick:', null, false);
+  $.NSRunLoop.currentRunLoop.addTimerForMode(tm, $.NSRunLoopCommonModes);
+} else {
+  app.activateIgnoringOtherApps(true);
+}
 win.makeKeyAndOrderFront(null);
 // El alto sale calculado del texto, asi que solo se sabe aqui. Se dice en voz alta para
 // que el script de capturas recorte el rectangulo exacto de la ventana y nada mas.
