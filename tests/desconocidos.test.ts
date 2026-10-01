@@ -16,7 +16,9 @@ import { ROOT } from "../src/paths.ts";
  * quedaron en dos lineas del log del demonio. Edu no se entero de nada, y arreglarlo
  * fue leer los reles a mano y vincular la clave con `bun -e`.
  */
-const PK = "4b88e85c3224f79faf12b82c20db7feaa173eaaaf17482561cb2ed2d451ff9e2";
+// Las claves se generan aqui: una clave de verdad de alguien no se guarda en un test
+// (y el guardian de fugas, con razon, no deja subir 64 caracteres hexadecimales).
+const PK = misClaves({} as any).pk;
 const DIA = 24 * 3600_000;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 // Todos los tests de este fichero comparten SPOOCHIE_HOME: cada uno empieza de cero.
@@ -25,12 +27,12 @@ const deCero = () => writeFileSync(join(ROOT, "desconocidos.json"), "[]");
 test("apunta la clave y lo que dice el sobre, y solo la primera del dia pide avisar", () => {
   deCero();
   const t0 = Date.now() - 3 * DIA;
-  expect(Des.apuntar({ pk: PK, kind: "invite", nombre: "Adrián Martin", slack: "U08P2NZ4TC3" }, t0)).toBe(true);
+  expect(Des.apuntar({ pk: PK, kind: "invite", nombre: "Adrián Martin", slack: "U01234567" }, t0)).toBe(true);
   expect(Des.apuntar({ pk: PK, kind: "invite" }, t0 + 60_000)).toBe(false);
   const [d] = Des.recientes(t0 + 60_000);
   expect(d.pk).toBe(PK);
   expect(d.nombre).toBe("Adrián Martin");
-  expect(d.slack).toBe("U08P2NZ4TC3");
+  expect(d.slack).toBe("U01234567");
   expect(d.veces).toBe(2);
   // Al dia siguiente, otra vez merece avisar.
   expect(Des.apuntar({ pk: PK, kind: "invite" }, t0 + DIA + 1)).toBe(true);
@@ -75,13 +77,13 @@ test("doctor lo ensena, y si dice ser un contacto sin clave da el comando para v
   deCero();
   const t0 = Date.now();
   const pkAdri = "b".repeat(64), pkNadie = "c".repeat(64);
-  Des.apuntar({ pk: pkAdri, kind: "hola", nombre: "Adrián Martin", slack: "U08P2NZ4TC9" }, t0);
+  Des.apuntar({ pk: pkAdri, kind: "hola", nombre: "Adrián Martin", slack: "U01234568" }, t0);
   Des.apuntar({ pk: pkNadie, kind: "invite", nombre: "Mallory" }, t0);
-  const c: any = { contacts: { adri: { id: "U08P2NZ4TC9", name: "Adrián Martin" } } };
+  const c: any = { contacts: { adri: { id: "U01234568", name: "Adrián Martin" } } };
   const lineas = auditar(c, t0).filter(x => x.que === "fuera de tu agenda").map(x => x.detalle);
   const deAdri = lineas.find(l => l.includes(pkAdri.slice(0, 12)))!;
   expect(deAdri).toContain("dice ser Adrián Martin");
-  expect(deAdri).toContain(`spoochie contacts --vincular U08P2NZ4TC9 --npub ${pkAdri}`);
+  expect(deAdri).toContain(`spoochie contacts --vincular U01234568 --npub ${pkAdri}`);
   // A quien no dice ser nadie de la agenda no se le ofrece vincular: se le invita o nada.
   const deNadie = lineas.find(l => l.includes(pkNadie.slice(0, 12)))!;
   expect(deNadie).toContain("dice ser Mallory");
@@ -100,20 +102,20 @@ test("contacts --vincular pone su clave, gasta su invitacion y le quita de los d
   const pkOtro = misClaves({} as any).pk;
   writeFileSync(join(home, "config.json"), JSON.stringify({
     guardian: false, transcript: false, human: "Edu",
-    contacts: { "adriánmartin": { id: "U08P2NZ4TC3", name: "Adrián Martin" }, ana: { id: "U_ANA", name: "Ana", npub: pkOtro } },
-    invitaciones: { "kkkkkkkkkkkkkkkkkkkk": { id: "U08P2NZ4TC3", name: "Adrián Martin", at: Date.now() } },
+    contacts: { "adriánmartin": { id: "U01234567", name: "Adrián Martin" }, ana: { id: "U_ANA", name: "Ana", npub: pkOtro } },
+    invitaciones: { "kkkkkkkkkkkkkkkkkkkk": { id: "U01234567", name: "Adrián Martin", at: Date.now() } },
   }), { mode: 0o600 });
   writeFileSync(join(home, "desconocidos.json"), JSON.stringify([{ pk: PK, kind: "hola", primera: Date.now(), ultima: Date.now(), veces: 1 }]), { mode: 0o600 });
 
   // Sin clave, o con una que es de otro contacto, no.
-  expect(cli(home, "contacts", "--vincular", "U08P2NZ4TC3").code).not.toBe(0);
-  const robada = cli(home, "contacts", "--vincular", "U08P2NZ4TC3", "--npub", pkOtro);
+  expect(cli(home, "contacts", "--vincular", "U01234567").code).not.toBe(0);
+  const robada = cli(home, "contacts", "--vincular", "U01234567", "--npub", pkOtro);
   expect(robada.code).not.toBe(0);
   expect(robada.out).toContain("no la vinculo");
   // A quien no esta en la agenda, tampoco.
   expect(cli(home, "contacts", "--vincular", "@nadie", "--npub", PK).code).not.toBe(0);
 
-  const ok = cli(home, "contacts", "--vincular", "U08P2NZ4TC3", "--npub", npub(PK));
+  const ok = cli(home, "contacts", "--vincular", "U01234567", "--npub", npub(PK));
   expect(ok.code).toBe(0);
   expect(ok.out).toContain("Vinculada");
   const c = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
