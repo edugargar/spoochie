@@ -130,7 +130,9 @@ function ventanaClaude(nombre: string, home: string, repo: string, prompt: strin
     "",
   ].join("\n"));
   chmodSync(script, 0o700);
-  spawnSync("open", ["-a", "Terminal", script]);
+  // -g: sin ponerse delante. Al abrirse delante le robaba el teclado a quien estaba
+  // escribiendo, y una "p" suya entro en el comando de la ventana (pasada aa87215).
+  spawnSync("open", ["-g", "-a", "Terminal", script]);
   ventanas.push(nombre);
   void contestarConfianza(nombre);
 }
