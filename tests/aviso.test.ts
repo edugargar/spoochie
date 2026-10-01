@@ -110,7 +110,7 @@ test.if(process.platform === "darwin")("y macOS lo entiende: JXA lo lee entero s
  * boton. `runModalForWindow` devuelve el codigo como CADENA ("3"), el guion lo comparaba
  * con `===` contra el numero 3, y el nombre del boton salia vacio: la persona pulsaba
  * "Que pase", el demonio leia "button returned:" y lo registraba como "sin respuesta".
- * Javi abrio un spoochie, le salto el aviso a Edu, pulso aceptar y no paso nada.
+ * Una persona abrio un spoochie, a la otra le salto el aviso, pulso aceptar y no paso nada.
  *
  * Con SPOOCHIE_VENTANA_CLIC la ventana real sale transparente, sin Dock y sin foco, y un
  * temporizador pulsa el boton. Se lee lo que imprime, que es lo que lee el demonio.
@@ -133,7 +133,9 @@ async function correrYMirarElFoco(guion: string) {
   const delante = new Set<string>();
   let termino = false;
   void fin.then(() => { termino = true; });
-  while (!termino) { delante.add(ahoraEnPrimerPlano()); }
+  // Con un await por vuelta: sin el, el bucle no suelta el hilo, el `close` del hijo no
+  // llega nunca a `termino` y el test se colgaba hasta el plazo (60 s, tres veces).
+  while (!termino) { delante.add(ahoraEnPrimerPlano()); await new Promise(r => setTimeout(r, 20)); }
   return { salida, codigo: await fin, delante };
 }
 
