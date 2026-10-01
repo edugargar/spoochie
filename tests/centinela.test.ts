@@ -65,3 +65,15 @@ test("el aviso de lo no leido solo sale de un tunel que llego a abrirse", async 
   expect(f).toContain("sin respuesta tuya");
   expect(f).toContain("no abras otro spoochie por tu cuenta");
 });
+
+test("quien abre sabe que la respuesta le llega sola y no la espera en primer plano", () => {
+  // Prueba real del 01-10: un bucle de `spoochie show` + sleep en primer plano dejo la
+  // respuesta de Bea 4 min 28 s en el buzon sin poder entrar como turno.
+  const cli = readFileSync(new URL("../src/cli.ts", import.meta.url), "utf8");
+  const open = cli.slice(cli.indexOf('case "open": {'), cli.indexOf('case "take":'));
+  expect(open).toContain("console.log(`\\n${COMO_ESPERAR}`)");
+  expect(cli).toContain("Ahora termina tu turno. La respuesta te llegara sola");
+  const skill = readFileSync(new URL("../commands/spoochie.md", import.meta.url), "utf8");
+  expect(skill).toContain("Despues de abrir, termina tu turno.");
+  expect(skill).toContain("No la esperes con `spoochie show`, sleep, bucles ni Monitor");
+});
