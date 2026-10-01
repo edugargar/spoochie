@@ -69,13 +69,23 @@ const hilos = (home: string): any[] => {
 };
 const log = (home: string) => { try { return readFileSync(join(home, "daemon.log"), "utf8"); } catch { return ""; } };
 
-/** Todas las pantallas: el aviso sale en la que macOS quiera, no siempre en la principal. */
-function captura(nombre: string) {
-  const n = capturas.length + 1;
-  const pantallas = Number(spawnSync("sh", ["-c", "system_profiler SPDisplaysDataType | grep -c Resolution"], { encoding: "utf8" }).stdout.trim()) || 1;
-  const ps = Array.from({ length: pantallas }, (_, i) => join(LAB, `${n}-${nombre}${pantallas > 1 ? `-pantalla${i + 1}` : ""}.png`));
-  spawnSync("screencapture", ["-x", ...ps]);
-  for (const p of ps) if (existsSync(p)) capturas.push(p);
+/**
+ * Capturas de las ventanas de la prueba y de nada mas. La pantalla entera se lleva el
+ * Slack, el correo y lo que tenga abierto quien la corre (medido en la primera pasada):
+ * aqui se recorta el aviso por su rectangulo y cada Terminal por su id de ventana.
+ */
+function captura(nombre: string, que: { aviso?: number[]; terminales?: string[] }) {
+  const n = String(capturas.length + 1).padStart(2, "0");
+  const hacer = (sufijo: string, args: string[]) => {
+    const p = join(LAB, `${n}-${nombre}-${sufijo}.png`);
+    spawnSync("screencapture", ["-x", "-o", ...args, p]);
+    if (existsSync(p)) capturas.push(p);
+  };
+  if (que.aviso) hacer("aviso", ["-R", que.aviso.join(",")]);
+  for (const t of que.terminales ?? []) {
+    const id = spawnSync("swift", [SWIFT, "terminal", t], { encoding: "utf8" }).stdout.trim();
+    if (id) hacer(t, ["-l", id]);
+  }
 }
 
 /** Los avisos que hay en pantalla antes de empezar no son de esta prueba. */
@@ -129,11 +139,14 @@ function ventanaClaude(nombre: string, home: string, repo: string, prompt: strin
 function pestana(nombre: string, accion: "leer" | "escribir", texto = ""): string {
   let tty = "";
   try { tty = readFileSync(join(LAB, `${nombre}.tty`), "utf8").trim(); } catch { return ""; }
-  const hacer = accion === "leer" ? "return contents of t" : `do script ((ASCII character 27) & "${texto}") in t\nreturn ""`;
+  const hacer = accion === "leer" ? "return history of tb" : `do script ((ASCII character 27) & "${texto}") in tb\nreturn ""`;
+  // `t` es una referencia del bucle: "contents of t" devuelve la pestana, no su texto.
+  // Se desreferencia primero; leer con "contents of t" no vio nunca el dialogo.
   const r = spawnSync("osascript", ["-e", `tell application "Terminal"
 repeat with w in windows
 repeat with t in tabs of w
-if tty of t is "${tty}" then
+set tb to contents of t
+if tty of tb is "${tty}" then
 ${hacer}
 end if
 end repeat
@@ -171,7 +184,17 @@ function recoger() {
   // El aviso es un osascript hijo del demonio y le sobrevive: sin esto queda en pantalla.
   for (const p of avisos()) if (!avisosPrevios.has(p)) try { process.kill(p) } catch {}
   // El Claude aparte de Bea se lanza con --name spoochie-<id>.
-  for (const id of idsHilos) spawnSync("pkill", ["-f", `--name spoochie-${id}`]);
+  // Con "--": sin el, pkill tomaba el patron por una opcion y el aparte seguia vivo.
+  for (const id of idsHilos) spawnSync("pkill", ["-f", "--", `--name spoochie-${id}`]);
+  // Y las ventanas de Terminal de la prueba, ya sin proceso dentro.
+  spawnSync("osascript", ["-e", `tell application "Terminal"
+repeat with i from (count windows) to 1 by -1
+try
+set tb to selected tab of window i
+if history of tb contains "${LAB}" and not busy of tb then close window i
+end try
+end repeat
+end tell`]);
 }
 
 async function main() {
@@ -238,7 +261,7 @@ async function main() {
     const r = spawnSync("swift", [SWIFT, "buscar"], { encoding: "utf8" });
     return r.status === 0 ? r.stdout.trim().split(" ").map(Number) : null;
   }, 60_000, 1500);
-  captura("aviso");
+  captura("aviso", { aviso: aviso ?? undefined, terminales: ["sp-real-ana"] });
   paso(Boolean(aviso), "el aviso sale en la pantalla de Bea", aviso ? `en ${aviso.join(",")}` : "ninguna ventana de osascript de 440 de ancho");
   if (!aviso) throw new Error("sin aviso");
   const [x, y, w, h] = aviso;
@@ -263,7 +286,7 @@ async function main() {
 
   // 8. Bea contesta y la respuesta llega a la sesion de Ana: Ana escribe el numero.
   const recibido = await hasta(() => existsSync(RECIBIDO) && readFileSync(RECIBIDO, "utf8").trim(), 300_000, 2000);
-  captura("respuesta");
+  captura("respuesta", { terminales: ["sp-real-ana", `spoochie-${abierto.id}`] });
   paso(recibido === NUMERO, "la respuesta de Bea llega al Claude de Ana", `esperaba ${NUMERO}, Ana escribio ${recibido || "nada"}`);
 
   // 9. El cierre llega a los dos lados.
@@ -271,7 +294,7 @@ async function main() {
     const a = hilos(HOME_A).find(t => t.id === abierto.id), b = hilos(HOME_B).find(t => t.id === abierto.id);
     return (!a || a.state === "closed") && (!b || b.state === "closed");
   }, 120_000, 2000);
-  captura("final");
+  captura("final", { terminales: ["sp-real-ana", "sp-real-bea"] });
   paso(Boolean(cerrado), "el spoochie queda cerrado en los dos lados");
 
   const fallos = informe.filter(l => l.startsWith("FALLO")).length;
@@ -289,7 +312,7 @@ let codigo = 1;
 try { codigo = await main(); }
 catch (e: any) {
   paso(false, "la prueba se para", e.message);
-  captura("donde-se-paro");
+  captura("donde-se-paro", { terminales: ["sp-real-ana", "sp-real-bea", ...idsHilos.map(i => `spoochie-${i}`)] });
   console.log(`\nCapturas:\n${capturas.map(c => "  " + c).join("\n")}\nLogs: ${HOME_A}/daemon.log, ${HOME_B}/daemon.log`);
 }
 finally { recoger(); }
