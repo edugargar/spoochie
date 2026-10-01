@@ -9,6 +9,8 @@
  *
  *   - dos SPOOCHIE_HOME vacios, Ana y Bea, cada uno con su demonio arrancado con el entorno
  *     exacto que le daria launchd (el PATH y el HOME del plist, nada mas);
+ *   - Ana corre con Bun sobre el codigo; Bea con el binario compilado, como quien no
+ *     tiene Bun, y su PATH de launchd no lleva el directorio de bun;
  *   - reles Nostr publicos de verdad;
  *   - el alta por `/spoochie:join` dentro de un Claude de verdad en una ventana de Terminal;
  *   - Ana pide en lenguaje normal a su Claude que le pregunte algo a Bea;
@@ -81,21 +83,21 @@ const avisos = () => spawnSync("pgrep", ["-f", "ObjC.import\\('Cocoa'\\)"], { en
 const avisosPrevios = new Set(avisos());
 
 /** Lo que ejecuta el demonio y el entorno que le pone launchd, sacados del plist que
- *  instalaria `register` en esa maquina. Ni un directorio mas del PATH de esta shell. */
-function entornoLaunchd(home: string): { cmd: string[]; env: Record<string, string> } {
-  const r = spawnSync("bun", ["-e", `const a = await import(${JSON.stringify(join(ROOT, "src", "arranque.ts"))}); console.log(a.plistDeseado())`],
-    { encoding: "utf8", env: { ...process.env, SPOOCHIE_HOME: home } });
-  const plist = r.stdout;
-  const arr = plist.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/)?.[1] ?? "";
-  const cmd = [...arr.matchAll(/<string>([^<]*)<\/string>/g)].map(m => m[1]);
-  const PATH = plist.match(/<key>PATH<\/key><string>([^<]*)<\/string>/)?.[1] ?? "";
-  const HOME = plist.match(/<key>HOME<\/key><string>([^<]*)<\/string>/)?.[1] ?? "";
-  if (!cmd.length || !PATH) throw new Error(`no saco el demonio del plist:\n${plist}\n${r.stderr}`);
-  return { cmd, env: { PATH, HOME, SPOOCHIE_HOME: home } };
+ *  instalaria `register` en esa maquina. Ni un directorio mas del PATH de esta shell.
+ *  Con `binario`, el demonio es ese ejecutable compilado, como en quien no tiene Bun. */
+function entornoLaunchd(home: string, binario?: string): { cmd: string[]; env: Record<string, string> } {
+  const arr = JSON.stringify(join(ROOT, "src", "arranque.ts"));
+  const codigo = binario
+    ? `const a = await import(${arr}); console.log(JSON.stringify({ cmd: [${JSON.stringify(binario)}, "daemon"], PATH: a.pathDelAgente([${JSON.stringify(binario)}], undefined, a.encontrarClaude()) }))`
+    : `const a = await import(${arr}); const p = a.plistDeseado(); console.log(JSON.stringify({ cmd: [...p.match(/<key>ProgramArguments<\\/key>\\s*<array>([\\s\\S]*?)<\\/array>/)[1].matchAll(/<string>([^<]*)<\\/string>/g)].map(m => m[1]), PATH: p.match(/<key>PATH<\\/key><string>([^<]*)</)[1] }))`;
+  const r = spawnSync("bun", ["-e", codigo], { encoding: "utf8", env: { ...process.env, SPOOCHIE_HOME: home } });
+  let d: { cmd: string[]; PATH: string };
+  try { d = JSON.parse(r.stdout); } catch { throw new Error(`no saco el demonio del plist: ${r.stdout}${r.stderr}`); }
+  return { cmd: d.cmd, env: { PATH: d.PATH, HOME: process.env.HOME!, SPOOCHIE_HOME: home } };
 }
 
-function arrancarDemonio(home: string) {
-  const { cmd, env } = entornoLaunchd(home);
+function arrancarDemonio(home: string, binario?: string) {
+  const { cmd, env } = entornoLaunchd(home, binario);
   const d = spawn(cmd[0], cmd.slice(1), { env, stdio: ["ignore", "ignore", "ignore"], detached: true });
   d.unref();
   if (d.pid) pids.push(d.pid);
@@ -190,10 +192,19 @@ async function main() {
   mkdirSync(HOME_A, { recursive: true, mode: 0o700 }); mkdirSync(HOME_B, { recursive: true, mode: 0o700 });
   writeFileSync(join(HOME_A, "config.json"), JSON.stringify({ human: "Ana" }), { mode: 0o600 });
 
-  // 2. Los demonios, con el entorno de launchd. Antes que las sesiones: el hook los encuentra vivos.
-  const pathA = arrancarDemonio(HOME_A), pathB = arrancarDemonio(HOME_B);
+  // 2. Bea no tiene Bun: usa el binario compilado, como lo baja el hook de la release.
+  //    Se compila de este arbol, con el mismo comando que el workflow de release.
+  const version = json(join(ROOT, ".claude-plugin", "plugin.json")).version;
+  const binB = join(HOME_B, "bin", `spoochie-${version}`);
+  mkdirSync(join(HOME_B, "bin"), { recursive: true, mode: 0o700 });
+  const comp = spawnSync("bun", ["build", "--compile", join(ROOT, "src", "cli.ts"), "--outfile", binB], { encoding: "utf8" });
+  paso(comp.status === 0 && existsSync(binB), "el binario de Bea compila", comp.status === 0 ? `spoochie-${version}` : comp.stderr.trim().slice(-300));
+  if (!existsSync(binB)) throw new Error("sin binario");
+
+  // 3. Los demonios, con el entorno de launchd. Antes que las sesiones: el hook los encuentra vivos.
+  const pathA = arrancarDemonio(HOME_A), pathB = arrancarDemonio(HOME_B, binB);
   const vivos = await hasta(() => existsSync(join(HOME_A, "daemon.sock")) && existsSync(join(HOME_B, "daemon.sock")), 20_000, 300);
-  paso(Boolean(vivos), "los dos demonios arrancan con el PATH del plist", pathA === pathB ? pathB : `${pathA} | ${pathB}`);
+  paso(Boolean(vivos), "los dos demonios arrancan con el PATH del plist", `Ana ${pathA} · Bea ${pathB}`);
   if (!vivos) throw new Error("sin demonios");
 
   // 3. Ana invita a Bea, sin Slack: la linea que se manda a mano.
