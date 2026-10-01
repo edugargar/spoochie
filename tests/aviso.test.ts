@@ -102,3 +102,36 @@ test.if(process.platform === "darwin")("y macOS lo entiende: JXA lo lee entero s
   expect(r.stdout + r.stderr).toContain("montada:");
   expect(r.status).toBe(0);
 }, plazo(20_000));
+
+/**
+ * El clic de verdad.
+ *
+ * Hasta el 01-10 la ventana se probaba con capturas y mirando el guion, nunca pulsando un
+ * boton. `runModalForWindow` devuelve el codigo como CADENA ("3"), el guion lo comparaba
+ * con `===` contra el numero 3, y el nombre del boton salia vacio: la persona pulsaba
+ * "Que pase", el demonio leia "button returned:" y lo registraba como "sin respuesta".
+ * Javi abrio un spoochie, le salto el aviso a Edu, pulso aceptar y no paso nada.
+ *
+ * Aqui se abre la ventana real, con un temporizador que hace el clic, y se lee lo que
+ * imprime. Necesita pantalla: solo corre en un Mac con sesion grafica, y no en CI.
+ */
+const conPantalla = process.platform === "darwin" && !process.env.CI;
+for (const [titulo, tag, esperado] of [["Que pase", 3, "acepto"], ["Ahora no", 1, "rechazo"], ["Ver en Slack", 2, "slack"]] as const) {
+  test.if(conPantalla)(`pulsar "${titulo}" en la ventana real llega al demonio como ${esperado}`, async () => {
+    const { interpretar } = await import("../src/dialogo.ts");
+    let g = guionVentana(hilo({ id: `clic${tag}` }));
+    g = g.replace("var destino = $.SpDestino.alloc.init;", "var destino = $.SpDestino.alloc.init; var __bts = {};")
+      .replace("bt.tag = d.tag;", "bt.tag = d.tag; __bts[d.tag] = bt;")
+      .replace("var r = app.runModalForWindow(win);", `
+ObjC.registerSubclass({ name: 'SpTick', superclass: 'NSObject', methods: { 'tick:': { types: ['void', ['id']], implementation: function (x) { __bts[${tag}].performClick(null); } } } });
+var tk = $.SpTick.alloc.init;
+var tm = $.NSTimer.timerWithTimeIntervalTargetSelectorUserInfoRepeats(1.0, tk, 'tick:', null, false);
+$.NSRunLoop.currentRunLoop.addTimerForMode(tm, $.NSRunLoopCommonModes);
+var r = app.runModalForWindow(win);`);
+    // En una esquina, y solo un segundo: es la ventana de verdad.
+    const r = spawnSync("osascript", ["-l", "JavaScript", "-e", g], { encoding: "utf8", env: { ...process.env, SPOOCHIE_VENTANA_POS: "40,40" }, timeout: 20_000 });
+    const salida = `${r.stdout}${r.stderr}`;
+    expect(salida).toContain(`button returned:${titulo}`);
+    expect(interpretar(salida, r.status)).toBe(esperado);
+  }, plazo(30_000));
+}
