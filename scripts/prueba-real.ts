@@ -188,15 +188,26 @@ function recoger() {
   // El Claude aparte de Bea se lanza con --name spoochie-<id>.
   // Con "--": sin el, pkill tomaba el patron por una opcion y el aparte seguia vivo.
   for (const id of idsHilos) spawnSync("pkill", ["-f", "--", `--name spoochie-${id}`]);
-  // Y las ventanas de Terminal de la prueba, ya sin proceso dentro.
-  spawnSync("osascript", ["-e", `tell application "Terminal"
+  // Y las ventanas de Terminal de la prueba: la de Ana, la de Bea y la del aparte de cada
+  // spoochie. Cerrandolas justo tras matar sus procesos seguian "busy" y se quedaban:
+  // nueve pasadas dejaron la pantalla llena de "[Process completed]". Se espera a que
+  // los procesos acaben, y se cuentan las que quedan.
+  spawnSync("sleep", ["3"]);
+  const r = spawnSync("osascript", ["-e", `tell application "Terminal"
+set n to 0
 repeat with i from (count windows) to 1 by -1
 try
 set tb to selected tab of window i
-if history of tb contains "${LAB}" and not busy of tb then close window i
+set h to history of tb
+if (h contains "${LAB}") and not (busy of tb) then
+close window i
+set n to n + 1
+end if
 end try
 end repeat
-end tell`]);
+return n
+end tell`], { encoding: "utf8" });
+  console.log(`ventanas de Terminal de la prueba cerradas: ${r.stdout.trim() || 0}`);
 }
 
 async function main() {
