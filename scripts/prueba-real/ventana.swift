@@ -2,6 +2,7 @@
 //
 //   swift ventana.swift permiso         "si" si macOS deja a este proceso mandar clics
 //   swift ventana.swift buscar          imprime "x y ancho alto" del aviso, o nada
+//   swift ventana.swift terminal TEXTO   id de la ventana de Terminal con ese texto en el titulo
 //   swift ventana.swift pulsar X Y      mueve el raton a (X, Y) y hace un clic izquierdo
 //   swift ventana.swift teclas 125 36   pulsa esas teclas (codigos virtuales) donde este el foco
 //
@@ -24,6 +25,15 @@ if args.count >= 2 && args[1] == "buscar" {
           let ancho = b["Width"], let alto = b["Height"], ancho == 440 else { continue }
     print("\(Int(b["X"]!)) \(Int(b["Y"]!)) \(Int(ancho)) \(Int(alto))")
     exit(0)
+  }
+  exit(1)
+}
+// El id de la ventana de Terminal cuyo titulo contiene ese texto, para `screencapture -l`.
+// Asi la captura es esa ventana y nada mas: ni el Slack ni el correo de quien la corre.
+if args.count >= 3 && args[1] == "terminal" {
+  let lista = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
+  for w in lista where (w[kCGWindowOwnerName as String] as? String) == "Terminal" {
+    if let n = w[kCGWindowName as String] as? String, n.contains(args[2]), let id = w[kCGWindowNumber as String] as? Int { print(id); exit(0) }
   }
   exit(1)
 }
