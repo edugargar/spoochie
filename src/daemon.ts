@@ -797,6 +797,9 @@ async function onSlackMessage(t: T.Thread, m: T.Msg) {
   }
   if (local) {
     await send(local, conTranscript(t, mio, T.renderMessage(t, m, mio)));
+    // En cuanto entra, no al final: el transcript y el "pensando" tardaban 9 s y en la
+    // prueba real el log no decia nada de una respuesta que ya estaba en la sesion.
+    log("entrada", t.id, m.author, "en la sesion");
     // El otro lado ve que aqui se esta trabajando, en vez de 40 segundos en blanco.
     await puente(t)?.pensandoOn(t, T.mySide(t, mio).human ?? T.mySide(t, mio).name);
   }
