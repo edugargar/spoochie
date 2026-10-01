@@ -271,6 +271,11 @@ async function main() {
     const N = await import("./nostr.ts");
     const nk = N.misClaves(c);
     Cfg.save(c);
+    // La primera invitacion es la que crea la clave Nostr, y el demonio de esta maquina
+    // arranco antes, sin ella: sin avisarle no escucha, y el hola de quien entra se queda
+    // en los reles. Medido en la prueba real: 4 minutos sin la clave de Bea; tras el
+    // reload entro en 1 s.
+    if (existsSync(DAEMON_SOCK)) await rpc({ op: "slack-reload" }).catch(() => {});
     const yo = { id: c.slack?.userId ?? `nostr:${nk.pk}`, name: c.human ?? userInfo().username, pk: misClaves(c).pub, np: nk.pk, r: N.misReles(c) };
     // Sin Slack: una invitacion solo por Nostr, para mandar por donde sea. No hay DM
     // que enviar; se imprime y listo.
