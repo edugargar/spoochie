@@ -59,7 +59,7 @@ const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 export const BOTONES = V.BOTONES;
 
-function interpretar(salida: string, codigo: number | null): Respuesta {
+export function interpretar(salida: string, codigo: number | null): Respuesta {
   if (/gave up:true/.test(salida)) return null;
   if (salida.includes(`button returned:${BOTONES.aceptar}`) || /^\s*(Aceptar|Que pase)\s*$/m.test(salida)) return "acepto";
   if (salida.includes(`button returned:${BOTONES.slack}`) || /^\s*Ver en Slack\s*$/m.test(salida)) return "slack";

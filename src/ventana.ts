@@ -241,7 +241,9 @@ win.makeKeyAndOrderFront(null);
 console.log("alto:" + alto);
 var r = app.runModalForWindow(win);
 var nombre = "";
-for (var i = 0; i < D.botones.length; i++) if (D.botones[i].tag === r) nombre = D.botones[i].titulo;
+// runModalForWindow devuelve el codigo como CADENA ("3"), no como numero: con === ningun
+// boton casaba y salia "button returned:" vacio. Medido pulsando los tres.
+for (var i = 0; i < D.botones.length; i++) if (D.botones[i].tag === Number(r)) nombre = D.botones[i].titulo;
 console.log("button returned:" + nombre);
 `;
 }
