@@ -389,7 +389,7 @@ async function handle(req: Req): Promise<any> {
         encolar(t, m, async (tt, mm) => {
           const otro = T.otherSide(tt, req.sessionId);
           const ok = await sendToSide(tt, otro, T.renderMessage(tt, mm, otro.sessionId), mm);
-          log("salida", tt.id, ok ? "publicado en Slack" : "FALLO al publicar");
+          log("salida", tt.id, ok ? `publicado ${porDonde(tt)}` : "FALLO al publicar");
           avisarSalida(ok);
           if (ok) await puente(tt)?.pensandoOn(tt, otro.human ?? otro.name);
           if (!ok) {
@@ -600,6 +600,10 @@ function elegir(t: T.Thread): { pick: SessionRecord | null; otras: number } {
   if (porNombre.length) return { pick: porNombre[0], otras };
   return { pick: vivas[0], otras };
 }
+
+/** Por donde salio un sobre, para el log. Decia "publicado en Slack" tambien por Nostr, y
+ *  en la prueba real del 01-10 eso hizo buscar la respuesta en el sitio equivocado. */
+const porDonde = (t: T.Thread) => t.transporte === "nostr" ? "por Nostr" : "en Slack";
 
 /** Los dialogos de aviso abiertos, por spoochie: uno por spoochie, y se cierran solos
  *  si el tunel se acepta desde Slack o se cierra. */
@@ -1084,7 +1088,7 @@ function main() {
     const yo = sessById(tt.from.sessionId) ? tt.from : tt.to;
     const otro = T.otherSide(tt, yo.sessionId);
     const ok = await sendToSide(tt, otro, T.renderMessage(tt, mm, otro.sessionId), mm);
-    log("salida", tt.id, ok ? "publicado en Slack (reanudado)" : "FALLO al publicar (se reintenta)");
+    log("salida", tt.id, ok ? `publicado ${porDonde(tt)} (reanudado)` : "FALLO al publicar (se reintenta)");
     return ok;
   });
   if (reanudados) log("cola", "reanudados", reanudados);
