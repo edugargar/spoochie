@@ -13,6 +13,15 @@ import { TRANSCRIPTS_DIR } from "./transcript.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Lo que tiene que hacer quien abre mientras espera. Sin decirlo, el Claude que abria
+ * se inventaba una espera: en la prueba real del 01-10 uno hizo un bucle de 20 x
+ * `spoochie show` + sleep 15 en primer plano, y la respuesta de Bea, que el demonio
+ * entrego en su buzon en 8 s, no pudo entrar como turno hasta que el bucle acabo: 4 min
+ * 28 s de mas. Otro lo hizo en segundo plano y tardo 27 s. La respuesta llega sola.
+ */
+const COMO_ESPERAR = "Ahora termina tu turno. La respuesta te llegara sola, como un turno nuevo, en cuanto la otra persona conteste. No la esperes con `spoochie show`, sleep ni bucles: mientras un comando tuyo corre, no puede entrar.";
+
 function rpc(req: any, timeoutMs = 60_000): Promise<any> {
   return new Promise((resolve, reject) => {
     const c = net.createConnection({ path: DAEMON_SOCK });
@@ -676,6 +685,7 @@ async function main() {
         console.log(`y despues registra la URL para que aparezca en el hilo de Slack:`);
         console.log(`  spoochie transcript ${r.id} --url <url>`);
       }
+      if (r?.ok) console.log(`\n${COMO_ESPERAR}`);
       break;
     }
     case "take":

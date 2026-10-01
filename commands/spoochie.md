@@ -31,7 +31,10 @@ $ARGUMENTS
    del HTML. Publicalo con la herramienta Artifact y registra la URL con
    `spoochie transcript <id> --url <url>`. El enlace aparece en el hilo de Slack y se
    mantiene al dia solo. Sin este paso nadie ve la conversacion completa.
-6. **Cierra** cuando este resuelto: `spoochie close <id> --reason "..."`.
+6. **Despues de abrir, termina tu turno.** La respuesta te llega sola como un turno
+   nuevo. No la esperes con `spoochie show`, sleep, bucles ni Monitor: mientras un
+   comando tuyo corre, el turno no puede entrar y la otra persona espera por nada.
+7. **Cierra** cuando este resuelto: `spoochie close <id> --reason "..."`.
 
 ## Si te llega una invitacion
 
