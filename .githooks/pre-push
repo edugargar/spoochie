@@ -7,7 +7,9 @@ set -e
 # Y la prueba real: nada sale sin una conversacion de verdad entre dos personas
 # (scripts/prueba-real.ts), que deja un sello por commit. Los tests en verde no bastan:
 # el 01-10 lo estaban y la primera conversacion entre dos personas fallo entera.
-sellos="$(git rev-parse --path-format=absolute --git-common-dir)/spoochie-prueba-real"
+# Sin --path-format: el git de Apple no lo conoce y lo devuelve como texto, y el sello
+# se buscaba en "--path-format=absolute\n.git/...", o sea en ningun sitio.
+sellos="$(cd "$(git rev-parse --git-common-dir)" && pwd)/spoochie-prueba-real"
 lista="${SPOOCHIE_HOME:-$HOME/.claude/spoochie}/fugas-prohibidas.txt"
 [ -r "$lista" ] && FUGAS_PROHIBIDAS="$(cat "$lista")" && export FUGAS_PROHIBIDAS
 while read -r _local_ref local_sha _remote_ref remote_sha; do
