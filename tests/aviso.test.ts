@@ -113,9 +113,12 @@ test.if(process.platform === "darwin")("y macOS lo entiende: JXA lo lee entero s
  * Javi abrio un spoochie, le salto el aviso a Edu, pulso aceptar y no paso nada.
  *
  * Aqui se abre la ventana real, con un temporizador que hace el clic, y se lee lo que
- * imprime. Necesita pantalla: solo corre en un Mac con sesion grafica, y no en CI.
+ * imprime. Necesita pantalla y roba el foco: solo con SPOOCHIE_PRUEBA_PANTALLA=1.
  */
-const conPantalla = process.platform === "darwin" && !process.env.CI;
+// Solo a peticion (SPOOCHIE_PRUEBA_PANTALLA=1): la ventana roba el foco, y una suite que
+// parpadea sobre el trabajo de quien la corre no se corre. El camino del clic lo cubre
+// la prueba de punta a punta, que no se ve.
+const conPantalla = process.platform === "darwin" && !process.env.CI && process.env.SPOOCHIE_PRUEBA_PANTALLA === "1";
 for (const [titulo, tag, esperado] of [["Que pase", 3, "acepto"], ["Ahora no", 1, "rechazo"], ["Ver en Slack", 2, "slack"]] as const) {
   test.if(conPantalla)(`pulsar "${titulo}" en la ventana real llega al demonio como ${esperado}`, async () => {
     const { interpretar } = await import("../src/dialogo.ts");
