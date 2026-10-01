@@ -117,3 +117,51 @@ test("el PATH del agente es el estable mas el del bun que se va a usar, no el de
   expect(pathDelAgente(["/usr/bin/bun"], "/usr/bin:/bin")).toBe("/usr/bin:/bin");
   expect(pathDelAgente(["bun", "run", "x"], "/usr/bin:/bin")).toBe("/usr/bin:/bin");
 });
+
+/**
+ * El demonio tiene que poder encontrar `claude`.
+ *
+ * 0.9.9 dejo el PATH del LaunchAgent en "directorios del sistema y el de bun", y el
+ * instalador nativo de Claude Code pone `claude` en ~/.local/bin. Resultado, el 01-10 en
+ * la maquina de Edu: acepta un spoochie de Javi, se abre la ventana del aparte y dice
+ * `exec: claude: not found`; en segundo plano, `Executable not found in $PATH: "claude"`.
+ * Ningun spoochie aceptado se podia atender. Los tests no lo vieron porque usan un
+ * `claude` falso puesto en el PATH del propio test.
+ */
+test("el PATH del agente incluye el directorio donde vive claude, y nada mas de fuera del sistema", async () => {
+  const { pathDelAgente, encontrarClaude } = await import("../src/arranque.ts");
+  const { mkdtempSync, writeFileSync, chmodSync, mkdirSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const casa = mkdtempSync(join(tmpdir(), "sp-claude-"));
+  const bin = join(casa, ".local", "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(join(bin, "claude"), "#!/bin/sh\necho ok\n"); chmodSync(join(bin, "claude"), 0o755);
+  // Un directorio con un fichero `claude` que NO es ejecutable no cuenta.
+  const tieso = join(casa, "tieso"); mkdirSync(tieso);
+  writeFileSync(join(tieso, "claude"), "x");
+
+  expect(encontrarClaude([tieso, "/no/existe", bin])).toBe(bin);
+  expect(encontrarClaude([tieso, "/no/existe"])).toBeNull();
+
+  const path = pathDelAgente(["/usr/local/bin/bun", "run", "x"], undefined, bin);
+  expect(path.split(":")).toContain(bin);
+  // Y desde ese PATH, un shell de verdad lo encuentra.
+  const r = (await import("node:child_process")).spawnSync("/bin/sh", ["-c", "command -v claude"], { env: { PATH: path }, encoding: "utf8" });
+  expect(r.stdout.trim()).toBe(join(bin, "claude"));
+  // Sin claude a la vista, el PATH es el de antes: no se inventa ningun directorio.
+  expect(pathDelAgente(["/usr/local/bin/bun"], undefined, null)).toBe("/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin");
+});
+
+test("doctor falla si el PATH del demonio no encuentra claude, y dice como se arregla", async () => {
+  const { chequeoClaude } = await import("../src/doctor.ts");
+  const { encontrarClaude } = await import("../src/arranque.ts");
+  // Lo que tenia el plist de la 0.9.9 en la maquina de Edu.
+  const malo = chequeoClaude("/Users/x/.bun/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", () => null)!;
+  expect(malo.ok).toBe(false);
+  expect(malo.detalle).toContain("no esta en");
+  expect(malo.detalle).toContain("spoochie register");
+  expect(chequeoClaude("/a:/b", d => (d.includes("/b") ? "/b" : null))).toMatchObject({ ok: true, detalle: "/b/claude" });
+  // Sin LaunchAgent no hay PATH de demonio que mirar, y no se inventa un fallo.
+  expect(chequeoClaude(null, encontrarClaude)).toBeNull();
+});
