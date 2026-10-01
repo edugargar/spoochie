@@ -13,6 +13,25 @@ Tests isolate all state under a temporary `SPOOCHIE_HOME`; they never touch your
 `~/.claude/spoochie`. Two suites start real daemons (`tests/dos-maquinas*.test.ts`) and
 take a few seconds.
 
+## Before anything is pushed: a real conversation
+
+```sh
+bun scripts/prueba-real.ts
+```
+
+Green tests are not proof that two people can talk. They use fake inboxes, relays in a
+directory and a fake `claude`, and on 2026-10-01 they were green while the first real
+spoochie failed end to end: the accept click arrived empty and the daemon could not find
+`claude`. The real test uses none of that. Two empty `SPOOCHIE_HOME`s, each daemon started
+with the exact environment its LaunchAgent would give it, public Nostr relays, two real
+Claude sessions in Terminal windows, the join through `/spoochie:join`, a real mouse click
+on the notice, and a question whose answer only exists in the other person's repo. It
+passes only if that answer reaches the first person's Claude. It takes a few minutes and
+uses the screen, and leaves three screenshots.
+
+On success it writes a seal for `HEAD` under `.git/spoochie-prueba-real/`. The pre-push
+hook refuses any commit without one, and a dirty tree gets no seal.
+
 ## How changes land
 
 `main` is protected: no force pushes, no deletions, linear history, and every commit

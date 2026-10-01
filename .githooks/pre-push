@@ -4,10 +4,19 @@
 # La lista de palabras prohibidas vive fuera del repo, en ~/.claude/spoochie/fugas-prohibidas.txt
 # (una linea, separadas por comas). Si no existe, solo corren los patrones genericos.
 set -e
+# Y la prueba real: nada sale sin una conversacion de verdad entre dos personas
+# (scripts/prueba-real.ts), que deja un sello por commit. Los tests en verde no bastan:
+# el 01-10 lo estaban y la primera conversacion entre dos personas fallo entera.
+sellos="$(git rev-parse --path-format=absolute --git-common-dir)/spoochie-prueba-real"
 lista="${SPOOCHIE_HOME:-$HOME/.claude/spoochie}/fugas-prohibidas.txt"
 [ -r "$lista" ] && FUGAS_PROHIBIDAS="$(cat "$lista")" && export FUGAS_PROHIBIDAS
 while read -r _local_ref local_sha _remote_ref remote_sha; do
   [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
+  if [ ! -f "$sellos/$local_sha" ]; then
+    echo "pre-push: $(git log -1 --format='%h %s' "$local_sha") no tiene prueba real." >&2
+    echo "  Corre: bun scripts/prueba-real.ts   (dos Claude de verdad hablando; deja el sello si llega todo)" >&2
+    exit 1
+  fi
   if git cat-file -e "$remote_sha" 2>/dev/null; then desde="$remote_sha"; else desde=""; fi
   bun scripts/fugas.ts ${desde:+--desde "$desde"}
 done
