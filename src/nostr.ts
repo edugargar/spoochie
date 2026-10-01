@@ -186,6 +186,8 @@ export type Callbacks = {
   onCierre: (t: T.Thread, motivo: string) => Promise<void>;
   /** Alguien a quien invite ya esta dentro: me manda su clave y sus reles. */
   onHola: (de: string, sobre: Sobre, nombre: string) => Promise<void>;
+  /** Un sobre de una clave que no esta en la agenda. Ver desconocidos.ts. */
+  onDesconocido?: (de: string, sobre: Sobre) => Promise<void>;
   log: (...a: unknown[]) => void;
 };
 
@@ -291,6 +293,7 @@ export class NostrBridge {
     if (!contacto) {
       this.cb.log("nostr", "sobre de una clave que no esta en la agenda; ignorado", a.de.slice(0, 12), a.sobre.kind);
       if (a.sobre.kind === "invite") await this.contestarDesconocido(a, c);
+      await this.cb.onDesconocido?.(a.de, a.sobre);
       return;
     }
     // Si no entiendo el sobre no puedo tratarlo como si lo entendiera: le faltaria
