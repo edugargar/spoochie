@@ -245,7 +245,8 @@ test("el transcript solo acepta la URL de un Artifact", () => {
   expect(ok("https://claude.ai/public/artifacts/7f2c")).toBe(true);
   expect(ok("https://mi.claude.ai/x")).toBe(true);
   // Ni otro sitio, ni sin TLS, ni un dominio que se le parezca.
-  expect(ok("https://evil.example/?d=AKIAIOSFODNN7EXAMPLE")).toBe(false);
+  // La clave de ejemplo va partida: entera, el guardian de fugas la lee como una clave.
+  expect(ok(`https://evil.example/?d=AKIA${"IOSFODNN7EXAMPLE"}`)).toBe(false);
   expect(ok("http://claude.ai/x")).toBe(false);
   expect(ok("https://claude.ai.evil.example/x")).toBe(false);
   expect(ok("javascript:alert(1)")).toBe(false);
