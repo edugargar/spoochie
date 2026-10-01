@@ -52,8 +52,10 @@ export function herramientasPermitidas(cli = comandoCli(), conRtk = Boolean(Bun.
 }
 
 /** Lo que el Claude aparte no puede hacer ni aunque el modo de permisos lo dejara:
- *  las reglas de denegacion mandan sobre cualquier modo. */
-export const HERRAMIENTAS_PROHIBIDAS = ["Edit", "Write", "MultiEdit", "NotebookEdit", "Bash(git push:*)", "Bash(git commit:*)", "Bash(git checkout:*)", "Bash(git reset:*)", "Bash(rm:*)"];
+ *  las reglas de denegacion mandan sobre cualquier modo. Sin MultiEdit: Claude Code ya no
+ *  la tiene, y la regla salia como aviso en la ventana que mira la persona
+ *  ("matches no known tool", Claude Code 2.1.286, prueba real del 01-10). */
+export const HERRAMIENTAS_PROHIBIDAS = ["Edit", "Write", "NotebookEdit", "Bash(git push:*)", "Bash(git commit:*)", "Bash(git checkout:*)", "Bash(git reset:*)", "Bash(rm:*)"];
 
 /** Los ajustes con los que arranca el Claude aparte.
  *
