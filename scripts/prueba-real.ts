@@ -320,8 +320,12 @@ async function main() {
   if (sucio) { console.log("\nArbol sucio: no dejo sello. Commitea y repite."); return 1; }
   const dir = join(ROOT, git("rev-parse", "--git-common-dir"), "spoochie-prueba-real");
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, sha), [`${new Date().toISOString()} ${sha}`, ...informe, ...capturas].join("\n") + "\n");
-  console.log(`\nSello: ${join(dir, sha)}`);
+  // El sello va por arbol, no por commit: GitHub rehace los commits al fusionar con
+  // rebase, y el tag de la release cae en un commit con otro SHA y los mismos ficheros.
+  // Lo probado son los ficheros.
+  const arbol = git("rev-parse", `${sha}^{tree}`);
+  writeFileSync(join(dir, arbol), [`${new Date().toISOString()} commit ${sha} arbol ${arbol}`, ...informe, ...capturas].join("\n") + "\n");
+  console.log(`\nSello: ${join(dir, arbol)} (arbol de ${sha.slice(0, 7)})`);
   return 0;
 }
 

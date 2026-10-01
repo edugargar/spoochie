@@ -29,8 +29,10 @@ on the notice, and a question whose answer only exists in the other person's rep
 passes only if that answer reaches the first person's Claude. It takes a few minutes and
 uses the screen, and leaves three screenshots.
 
-On success it writes a seal for `HEAD` under `.git/spoochie-prueba-real/`. The pre-push
-hook refuses any commit without one, and a dirty tree gets no seal.
+On success it writes a seal for the tree of `HEAD` under `.git/spoochie-prueba-real/`. The
+pre-push hook refuses any commit or tag whose tree has no seal, and a dirty tree gets no
+seal. The seal is per tree, not per commit, because a rebase merge on GitHub rewrites the
+commit and keeps the files, and the files are what was tested.
 
 ## How changes land
 
