@@ -177,11 +177,10 @@ function recoger() {
 async function main() {
   if (process.platform !== "darwin") { console.error("la prueba real usa la pantalla de un Mac"); process.exit(2); }
   if (!CLAUDE) { console.error("no hay claude en el PATH"); process.exit(2); }
-  if (spawnSync("swift", [SWIFT, "permiso"], { encoding: "utf8" }).stdout.trim() !== "si") {
-    console.error("macOS no deja a este proceso pulsar el aviso. Dale permiso de Accesibilidad a la app de terminal");
-    console.error("desde la que corres esto (Ajustes > Privacidad y seguridad > Accesibilidad) y vuelve a lanzarla.");
-    process.exit(2);
-  }
+  // Sin permiso de Accesibilidad macOS tira el clic sintetico en silencio. Entonces
+  // pulsa una persona, que es lo mas real que hay, y el informe dice quien pulso.
+  const clicAMano = spawnSync("swift", [SWIFT, "permiso"], { encoding: "utf8" }).stdout.trim() !== "si";
+  if (clicAMano) console.log("Sin permiso de Accesibilidad: cuando salga el aviso, pulsa tu \"Que pase\".\n");
   const sha = git("rev-parse", "HEAD");
   const sucio = git("status", "--porcelain", "--untracked-files=no");
   console.log(`prueba real sobre ${sha.slice(0, 7)}${sucio ? " (arbol sucio: no habra sello)" : ""}, laboratorio en ${LAB}\n`);
@@ -243,13 +242,18 @@ async function main() {
   paso(Boolean(aviso), "el aviso sale en la pantalla de Bea", aviso ? `en ${aviso.join(",")}` : "ninguna ventana de osascript de 440 de ancho");
   if (!aviso) throw new Error("sin aviso");
   const [x, y, w, h] = aviso;
-  // Botones: 28 de alto, con el borde de abajo a MARGEN-8 = 18 del pie, el de aceptar pegado al margen derecho (26).
-  spawnSync("swift", [SWIFT, "pulsar", String(x + w - 26 - 40), String(y + h - 18 - 14)]);
+  if (clicAMano) {
+    spawnSync("osascript", ["-e", `display notification "Pulsa Que pase en el aviso de spoochie" with title "prueba real"`]);
+    process.stdout.write("\x07>>> Pulsa \"Que pase\" en el aviso de spoochie (tienes 3 minutos)\n");
+  } else {
+    // Botones: 28 de alto, con el borde de abajo a MARGEN-8 = 18 del pie, el de aceptar pegado al margen derecho (26).
+    spawnSync("swift", [SWIFT, "pulsar", String(x + w - 26 - 40), String(y + h - 18 - 14)]);
+  }
   const aceptado = await hasta(() => {
     const t = hilos(HOME_B).find(t => t.id === abierto.id);
     return t && t.state !== "pending" ? t : null;
-  }, 30_000, 500);
-  paso(Boolean(aceptado), "el clic llega al demonio como Que pase", aceptado ? `estado ${aceptado.state}` : (log(HOME_B).match(/.*sin respuesta.*|.*button returned.*/g)?.slice(-1)[0] ?? "sigue pending"));
+  }, clicAMano ? 180_000 : 30_000, 500);
+  paso(Boolean(aceptado), `el clic ${clicAMano ? "de una persona" : "de raton sintetico"} llega al demonio como Que pase`, aceptado ? `estado ${aceptado.state}` : (log(HOME_B).match(/.*sin respuesta.*|.*button returned.*/g)?.slice(-1)[0] ?? "sigue pending"));
   if (!aceptado) throw new Error("clic perdido");
 
   // 7. La ventana del Claude aparte de Bea arranca (aqui fallaba "claude: not found").
