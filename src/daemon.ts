@@ -962,7 +962,7 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string, remo
   // cerrado, o el spoochie murio de silencio mientras estabas en otra cosa. Se cierra,
   // se borra, y nadie te dice que habia una respuesta que no leiste. Esto no propone
   // nada ni reabre nada: dice que llego, de quien, cuando y donde esta el transcript.
-  await avisarDeLoNoLeido(t);
+  await avisarDeLoNoLeido(t, bySession);
   if (Cfg.load().borrarAlCerrar !== false) {
     // En local, ya: la conversacion vive en el Claude que la tuvo, no aqui.
     T.purgar(t, { spool: join(SPOOL, t.id), transcript: rutaTranscript(t.id) });
@@ -983,7 +983,7 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string, remo
  * Si al cerrar quedaba una respuesta del otro lado sin contestar, se dice una vez en la
  * sesion que presto el repo. Antes de purgar, porque despues ya no queda el texto.
  */
-async function avisarDeLoNoLeido(t: T.Thread) {
+async function avisarDeLoNoLeido(t: T.Thread, cerradoPor?: string) {
   // Solo de un tunel que llego a abrirse. Si lo rechazaste, recordarte el mensaje que
   // rechazaste es justo lo contrario de respetar la decision.
   if (!t.acceptedAt) return;
@@ -992,6 +992,10 @@ async function avisarDeLoNoLeido(t: T.Thread) {
   if (!ultimo) return;
   const mio = sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId;
   if (ultimo.from === mio) return;               // contestamos nosotros los ultimos
+  // Lo cerro esta misma sesion: el mensaje le entro como turno y cerrar fue su respuesta.
+  // En la prueba real del 01-10 Ana leyo el numero, lo apunto, cerro, y recibio "lo
+  // ultimo fue de Bea, sin respuesta tuya" con el mismo numero debajo.
+  if (cerradoPor === mio) return;
   const local = sessById(mio);
   if (!local) return;
   // Si lo atendio un aparte que sigue vivo, ya lo ha visto: no hace falta repetirlo.

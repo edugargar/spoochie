@@ -56,6 +56,9 @@ test("el aviso de lo no leido solo sale de un tunel que llego a abrirse", async 
   expect(f).toContain("if (!t.acceptedAt) return;");
   // Si contestamos nosotros los ultimos, no hay nada pendiente.
   expect(f).toContain("if (ultimo.from === mio) return;");
+  // Si lo cerraste tu, cerrar fue tu respuesta: lo has visto.
+  expect(f).toContain("if (cerradoPor === mio) return;");
+  expect(fuente).toContain("await avisarDeLoNoLeido(t, bySession);");
   // Si el aparte sigue vivo, ya lo ha visto.
   expect(f).toContain("if (ap && !ap.muerto");
   // Y lo que dice son hechos: quien, cuando, el texto y donde esta el hilo entero.
