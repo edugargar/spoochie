@@ -7,7 +7,7 @@
  * El hook sigue sirviendo de red: si no hay latido, arranca lo que haga falta.
  */
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync, openSync, unlinkSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync, openSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,17 +74,56 @@ const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
  *
  * Se queda lo estable: los directorios del sistema y el del `bun` que se va a usar.
  */
-export function pathDelAgente(cmd = comandoDemonio(), base = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"): string {
+export function pathDelAgente(cmd = comandoDemonio(), base = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", dirClaude: string | null = null): string {
   const dirBun = cmd[0]?.startsWith("/") ? dirname(cmd[0]) : null;
   const dirs = base.split(":");
   if (dirBun && !dirs.includes(dirBun)) dirs.unshift(dirBun);
+  // Y el de `claude`, que el demonio y la ventana del aparte lanzan por su nombre. Sin
+  // el, ningun spoochie aceptado se puede atender: ver `encontrarClaude`.
+  if (dirClaude && !dirs.includes(dirClaude)) dirs.unshift(dirClaude);
   return dirs.join(":");
+}
+
+/**
+ * El directorio donde esta `claude`, para grabarlo en el PATH del agente.
+ *
+ * 0.9.9 dejo el PATH del agente en "directorios del sistema y el de bun" y el
+ * instalador nativo de Claude Code pone `claude` en ~/.local/bin: el aparte no arrancaba
+ * ("claude: not found" en la ventana, `Executable not found in $PATH` en segundo plano) y
+ * nadie podia atender un spoochie aceptado. Se mira primero el PATH de quien corre
+ * `register`, que es una sesion de Claude Code y por tanto lo tiene, y despues los sitios
+ * donde lo deja cada instalador. Solo cuenta un fichero ejecutable llamado `claude`.
+ */
+export function encontrarClaude(dirs: string[] = [
+  ...(process.env.PATH ?? "").split(":"),
+  join(homedir(), ".local", "bin"), join(homedir(), ".claude", "local"), join(homedir(), ".npm-global", "bin"),
+  "/opt/homebrew/bin", "/usr/local/bin", join(homedir(), ".bun", "bin"),
+]): string | null {
+  for (const d of dirs) {
+    if (!d.startsWith("/")) continue;
+    try {
+      const f = join(d, "claude");
+      if (!statSync(f).isFile()) continue;
+      accessSync(f, constants.X_OK);
+      return d;
+    } catch {}
+  }
+  return null;
+}
+
+/** El PATH que tiene grabado el LaunchAgent instalado, o null si no hay (otro sistema,
+ *  o el demonio arranca desde un hook). Es el PATH con el que corre el demonio de verdad. */
+export function pathDelAgenteInstalado(): string | null {
+  try {
+    const m = readFileSync(plistPath(), "utf8").match(/<key>PATH<\/key><string>([^<]*)<\/string>/);
+    return m ? m[1].replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&") : null;
+  } catch { return null; }
 }
 
 export function plistDeseado(): string {
   const cmd = comandoDemonio();
   const args = cmd.map(a => `      <string>${xml(a)}</string>`).join("\n");
-  const path = xml(pathDelAgente(cmd));
+  const path = xml(pathDelAgente(cmd, undefined, encontrarClaude()));
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!-- Lo escribe spoochie (register / join). Se reescribe solo si cambia la ruta del plugin. -->
 <plist version="1.0"><dict>

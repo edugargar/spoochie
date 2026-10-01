@@ -140,7 +140,9 @@ export async function revisar(): Promise<Chequeo[]> {
     const { avisoNueva } = await import("./actualizacion.ts");
     const nueva = await avisoNueva();
     out.push({ ok: nueva ? "aviso" : true, que: "version", detalle: nueva ? `${VERSION}; ${nueva}` : `${VERSION}, la ultima publicada` });
-    const { versionLatido, edadLatido } = await import("./arranque.ts");
+    const { versionLatido, edadLatido, pathDelAgenteInstalado, encontrarClaude } = await import("./arranque.ts");
+    const c = chequeoClaude(pathDelAgenteInstalado(), encontrarClaude);
+    if (c) out.push(c);
     const late = versionLatido();
     const vivo = (edadLatido() ?? Infinity) < 90;
     if (vivo && late !== VERSION) out.push({
@@ -182,6 +184,20 @@ export async function revisar(): Promise<Chequeo[]> {
  * abrirse solo con el paso del tiempo, y ninguno da error por su cuenta.
  */
 /** Lo que dejo escrito el hook SessionStart la ultima vez que corrio. */
+/**
+ * El Claude aparte lo lanza el demonio por su nombre, con el PATH del demonio. Si ahi no
+ * esta `claude`, un spoochie se acepta y nadie lo atiende: el 01-10 fue exactamente eso
+ * y `doctor` decia que estaba todo bien, porque comprobaba que el demonio viviera y no
+ * que pudiera hacer lo unico para lo que vive.
+ */
+export function chequeoClaude(pathDelDemonio: string | null, encontrar: (dirs: string[]) => string | null): Chequeo | null {
+  if (!pathDelDemonio) return null;
+  const dir = encontrar(pathDelDemonio.split(":"));
+  return dir
+    ? { ok: true, que: "claude en el PATH del demonio", detalle: `${dir}/claude` }
+    : { ok: false, que: "claude en el PATH del demonio", detalle: `no esta en ${pathDelDemonio}: un spoochie aceptado no se puede atender. Abre una sesion de Claude Code (el hook lo arregla) o corre \`spoochie register\`` };
+}
+
 export function ultimoArranque(texto: string | null): Chequeo | null {
   if (!texto?.trim()) return null;
   const [cuando, estado, detalle] = texto.trim().split("\n")[0].split("\t");
