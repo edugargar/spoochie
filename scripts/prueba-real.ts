@@ -258,27 +258,35 @@ async function main() {
   paso(Boolean(llega), "el sobre llega al demonio de Bea");
   if (!llega) throw new Error("no llego");
 
-  // 6. El aviso en pantalla, y el clic de verdad en "Que pase" (el boton de la derecha).
+  // 6. El aviso en pantalla, y el clic en "Que pase" (el boton de la derecha). Una persona
+  //    rapida pulsa antes de que la busqueda (cada 1,5 s) vea la ventana: en la pasada
+  //    39dcb60 el demonio apunto "acepto" 1,8 s despues de pintarla y la prueba fallo
+  //    diciendo que no habia aviso. El log del demonio es la prueba de que salio.
+  const respondido = () => log(HOME_B).match(new RegExp(`aviso ${abierto.id} dialogo: (\\S+)`))?.[1] ?? null;
   const aviso = await hasta(() => {
+    if (respondido()) return "ya";
     const r = spawnSync("swift", [SWIFT, "buscar"], { encoding: "utf8" });
     return r.status === 0 ? r.stdout.trim().split(" ").map(Number) : null;
-  }, 60_000, 1500);
-  captura("aviso", { aviso: aviso ?? undefined, terminales: ["sp-real-ana"] });
-  paso(Boolean(aviso), "el aviso sale en la pantalla de Bea", aviso ? `en ${aviso.join(",")}` : "ninguna ventana de osascript de 440 de ancho");
+  }, 60_000, 500);
+  const rect = Array.isArray(aviso) ? aviso : undefined;
+  captura("aviso", { aviso: rect, terminales: ["sp-real-ana"] });
+  paso(Boolean(aviso), "el aviso sale en la pantalla de Bea", rect ? `en ${rect.join(",")}` : aviso === "ya" ? `pulsado antes de fotografiarlo: ${respondido()}` : "ninguna ventana de osascript de 440 de ancho");
   if (!aviso) throw new Error("sin aviso");
-  const [x, y, w, h] = aviso;
-  if (clicAMano) {
-    spawnSync("osascript", ["-e", `display notification "Pulsa Que pase en el aviso de spoochie" with title "prueba real"`]);
-    process.stdout.write("\x07>>> Pulsa \"Que pase\" en el aviso de spoochie (tienes 3 minutos)\n");
-  } else {
-    // Botones: 28 de alto, con el borde de abajo a MARGEN-8 = 18 del pie, el de aceptar pegado al margen derecho (26).
-    spawnSync("swift", [SWIFT, "pulsar", String(x + w - 26 - 40), String(y + h - 18 - 14)]);
+  if (rect && !respondido()) {
+    const [x, y, w, h] = rect;
+    if (clicAMano) {
+      spawnSync("osascript", ["-e", `display notification "Pulsa Que pase en el aviso de spoochie" with title "prueba real"`]);
+      process.stdout.write("\x07>>> Pulsa \"Que pase\" en el aviso de spoochie (tienes 3 minutos)\n");
+    } else {
+      // Botones: 28 de alto, con el borde de abajo a MARGEN-8 = 18 del pie, el de aceptar pegado al margen derecho (26).
+      spawnSync("swift", [SWIFT, "pulsar", String(x + w - 26 - 40), String(y + h - 18 - 14)]);
+    }
   }
   const aceptado = await hasta(() => {
     const t = hilos(HOME_B).find(t => t.id === abierto.id);
     return t && t.state !== "pending" ? t : null;
   }, clicAMano ? 180_000 : 30_000, 500);
-  paso(Boolean(aceptado), `el clic ${clicAMano ? "de una persona" : "de raton sintetico"} llega al demonio como Que pase`, aceptado ? `estado ${aceptado.state}` : (log(HOME_B).match(/.*sin respuesta.*|.*button returned.*/g)?.slice(-1)[0] ?? "sigue pending"));
+  paso(Boolean(aceptado) && respondido() === "acepto", `el clic ${clicAMano ? "de una persona" : "de raton sintetico"} llega al demonio como Que pase`, aceptado ? `estado ${aceptado.state}, el demonio leyo ${respondido()}` : (log(HOME_B).match(/.*sin respuesta.*|.*button returned.*/g)?.slice(-1)[0] ?? "sigue pending"));
   if (!aceptado) throw new Error("clic perdido");
 
   // 7. La ventana del Claude aparte de Bea arranca (aqui fallaba "claude: not found").
