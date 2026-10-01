@@ -29,7 +29,7 @@
  *   bun scripts/prueba-real.ts --dejar     no cierra nada al acabar, para mirar
  */
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, appendFileSync, chmodSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, appendFileSync, chmodSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
@@ -298,6 +298,13 @@ async function main() {
   const recibido = await hasta(() => existsSync(RECIBIDO) && readFileSync(RECIBIDO, "utf8").trim(), 300_000, 2000);
   captura("respuesta", { terminales: ["sp-real-ana", `spoochie-${abierto.id}`] });
   paso(recibido === NUMERO, "la respuesta de Bea llega al Claude de Ana", `esperaba ${NUMERO}, Ana escribio ${recibido || "nada"}`);
+  // Y la usa al poco de entrar en su buzon. En la pasada fa7c225 el demonio la entrego en
+  // 8 s y el Claude de Ana tardo 4 min 28 s en verla: estaba en un bucle de `show` en
+  // primer plano y el turno no podia entrar. Eso es un fallo aunque al final llegue.
+  const entro = log(HOME_A).match(new RegExp(`^(\\S+) entrada ${abierto.id} claude en la sesion`, "m"))?.[1];
+  const usado = existsSync(RECIBIDO) ? statSync(RECIBIDO).mtimeMs : 0;
+  const tardo = entro && usado ? Math.round((usado - Date.parse(entro)) / 1000) : null;
+  paso(tardo !== null && tardo <= 90, "el Claude de Ana la usa en cuanto entra", tardo === null ? "no se puede medir: falta la linea de entrada o el fichero" : `${tardo} s desde el buzon`);
 
   // 9. El cierre llega a los dos lados.
   const cerrado = await hasta(() => {
