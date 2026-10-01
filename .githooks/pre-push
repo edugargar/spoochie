@@ -5,7 +5,7 @@
 # (una linea, separadas por comas). Si no existe, solo corren los patrones genericos.
 set -e
 # Y la prueba real: nada sale sin una conversacion de verdad entre dos personas
-# (scripts/prueba-real.ts), que deja un sello por commit. Los tests en verde no bastan:
+# (scripts/prueba-real.ts), que deja un sello por arbol de ficheros. Los tests en verde no bastan:
 # el 01-10 lo estaban y la primera conversacion entre dos personas fallo entera.
 # Sin --path-format: el git de Apple no lo conoce y lo devuelve como texto, y el sello
 # se buscaba en "--path-format=absolute\n.git/...", o sea en ningun sitio.
@@ -14,7 +14,9 @@ lista="${SPOOCHIE_HOME:-$HOME/.claude/spoochie}/fugas-prohibidas.txt"
 [ -r "$lista" ] && FUGAS_PROHIBIDAS="$(cat "$lista")" && export FUGAS_PROHIBIDAS
 while read -r _local_ref local_sha _remote_ref remote_sha; do
   [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
-  if [ ! -f "$sellos/$local_sha" ]; then
+  # Por arbol: un rebase de GitHub cambia el SHA del commit pero no sus ficheros.
+  arbol=$(git rev-parse "$local_sha^{tree}")
+  if [ ! -f "$sellos/$arbol" ]; then
     echo "pre-push: $(git log -1 --format='%h %s' "$local_sha") no tiene prueba real." >&2
     echo "  Corre: bun scripts/prueba-real.ts   (dos Claude de verdad hablando; deja el sello si llega todo)" >&2
     exit 1
