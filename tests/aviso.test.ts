@@ -97,14 +97,14 @@ test.if(process.platform === "darwin")("y macOS lo entiende: JXA lo lee entero s
   // `osascript` con la ventana dentro se quedaria esperando a que alguien pulse. Se le
   // manda el guion partido justo antes de pintar: si lo que va delante tuviera un error
   // de sintaxis o una clase que este macOS no trae, saldria aqui.
-  const g = guionVentana(hilo(), null).split("app.activateIgnoringOtherApps")[0];
+  const g = guionVentana(hilo(), null).split("if (D.clic) {")[0];
   const r = spawnSync("osascript", ["-l", "JavaScript", "-e", g + `console.log("montada:" + alto);`], { encoding: "utf8" });
   expect(r.stdout + r.stderr).toContain("montada:");
   expect(r.status).toBe(0);
 }, plazo(20_000));
 
 /**
- * El clic de verdad.
+ * El clic de verdad, sin que se vea.
  *
  * Hasta el 01-10 la ventana se probaba con capturas y mirando el guion, nunca pulsando un
  * boton. `runModalForWindow` devuelve el codigo como CADENA ("3"), el guion lo comparaba
@@ -112,29 +112,54 @@ test.if(process.platform === "darwin")("y macOS lo entiende: JXA lo lee entero s
  * "Que pase", el demonio leia "button returned:" y lo registraba como "sin respuesta".
  * Javi abrio un spoochie, le salto el aviso a Edu, pulso aceptar y no paso nada.
  *
- * Aqui se abre la ventana real, con un temporizador que hace el clic, y se lee lo que
- * imprime. Necesita pantalla y roba el foco: solo con SPOOCHIE_PRUEBA_PANTALLA=1.
+ * Con SPOOCHIE_VENTANA_CLIC la ventana real sale transparente, sin Dock y sin foco, y un
+ * temporizador pulsa el boton. Se lee lo que imprime, que es lo que lee el demonio.
+ * Necesita AppKit: solo en un Mac con sesion grafica, y no en CI.
  */
-// Solo a peticion (SPOOCHIE_PRUEBA_PANTALLA=1): la ventana roba el foco, y una suite que
-// parpadea sobre el trabajo de quien la corre no se corre. El camino del clic lo cubre
-// la prueba de punta a punta, que no se ve.
-const conPantalla = process.platform === "darwin" && !process.env.CI && process.env.SPOOCHIE_PRUEBA_PANTALLA === "1";
-for (const [titulo, tag, esperado] of [["Que pase", 3, "acepto"], ["Ahora no", 1, "rechazo"], ["Ver en Slack", 2, "slack"]] as const) {
-  test.if(conPantalla)(`pulsar "${titulo}" en la ventana real llega al demonio como ${esperado}`, async () => {
-    const { interpretar } = await import("../src/dialogo.ts");
-    let g = guionVentana(hilo({ id: `clic${tag}` }));
-    g = g.replace("var destino = $.SpDestino.alloc.init;", "var destino = $.SpDestino.alloc.init; var __bts = {};")
-      .replace("bt.tag = d.tag;", "bt.tag = d.tag; __bts[d.tag] = bt;")
-      .replace("var r = app.runModalForWindow(win);", `
-ObjC.registerSubclass({ name: 'SpTick', superclass: 'NSObject', methods: { 'tick:': { types: ['void', ['id']], implementation: function (x) { __bts[${tag}].performClick(null); } } } });
-var tk = $.SpTick.alloc.init;
-var tm = $.NSTimer.timerWithTimeIntervalTargetSelectorUserInfoRepeats(1.0, tk, 'tick:', null, false);
-$.NSRunLoop.currentRunLoop.addTimerForMode(tm, $.NSRunLoopCommonModes);
-var r = app.runModalForWindow(win);`);
-    // En una esquina, y solo un segundo: es la ventana de verdad.
-    const r = spawnSync("osascript", ["-l", "JavaScript", "-e", g], { encoding: "utf8", env: { ...process.env, SPOOCHIE_VENTANA_POS: "40,40" }, timeout: 20_000 });
-    const salida = `${r.stdout}${r.stderr}`;
-    expect(salida).toContain(`button returned:${titulo}`);
-    expect(interpretar(salida, r.status)).toBe(esperado);
-  }, plazo(30_000));
+const conPantalla = process.platform === "darwin" && !process.env.CI;
+const ahoraEnPrimerPlano = () => spawnSync("osascript", ["-l", "JavaScript", "-e",
+  "ObjC.import('AppKit'); $.NSWorkspace.sharedWorkspace.frontmostApplication.localizedName.js"], { encoding: "utf8" }).stdout.trim();
+
+/** Corre el guion y mira quien esta en primer plano mientras la ventana existe. Que la
+ *  persona cambie de aplicacion por su cuenta no es de la ventana: lo que no puede pasar
+ *  es que sea la ventana quien se ponga delante. */
+async function correrYMirarElFoco(guion: string) {
+  const { spawn } = await import("node:child_process");
+  const hijo = spawn("osascript", ["-l", "JavaScript", "-e", guion], { stdio: ["ignore", "pipe", "pipe"] });
+  let salida = "";
+  hijo.stdout.on("data", d => { salida += d.toString(); });
+  hijo.stderr.on("data", d => { salida += d.toString(); });
+  const fin = new Promise<number | null>(r => hijo.on("close", r));
+  const delante = new Set<string>();
+  let termino = false;
+  void fin.then(() => { termino = true; });
+  while (!termino) { delante.add(ahoraEnPrimerPlano()); }
+  return { salida, codigo: await fin, delante };
 }
+
+for (const [titulo, tag, esperado] of [["Que pase", 3, "acepto"], ["Ahora no", 1, "rechazo"], ["Ver en Slack", 2, "slack"]] as const) {
+  test.if(conPantalla)(`pulsar "${titulo}" en la ventana real llega al demonio como ${esperado}, siempre y sin tomar el foco`, async () => {
+    const { interpretar } = await import("../src/dialogo.ts");
+    process.env.SPOOCHIE_VENTANA_CLIC = String(tag);
+    let guion: string;
+    try { guion = guionVentana(hilo({ id: `clic${tag}` })); } finally { delete process.env.SPOOCHIE_VENTANA_CLIC; }
+    // Varias vueltas: el 01-10 un clic dio el boton equivocado una de cada seis veces.
+    for (let i = 0; i < 6; i++) {
+      const r = await correrYMirarElFoco(guion);
+      expect(r.salida).toContain(`button returned:${titulo}`);
+      expect(interpretar(r.salida, r.codigo)).toBe(esperado);
+      // Ni osascript ni la ventana se pusieron delante de lo que la persona estaba haciendo.
+      expect([...r.delante].filter(n => /osascript|Script Editor/i.test(n))).toEqual([]);
+    }
+  }, plazo(60_000));
+}
+
+test("sin SPOOCHIE_VENTANA_CLIC el guion de produccion no lleva ningun clic automatico ni es invisible", () => {
+  delete process.env.SPOOCHIE_VENTANA_CLIC;
+  const g = guionVentana(hilo());
+  expect(datos(g).clic).toBe(0);
+  // El bloque de la prueba existe en el guion, pero detras de `if (D.clic)`: con 0 no corre.
+  expect(g).toContain("if (D.clic) {");
+  process.env.SPOOCHIE_VENTANA_CLIC = "9";
+  try { expect(datos(guionVentana(hilo())).clic).toBe(0); } finally { delete process.env.SPOOCHIE_VENTANA_CLIC; }
+});
