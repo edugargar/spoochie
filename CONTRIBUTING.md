@@ -48,6 +48,32 @@ are green. That applies to the maintainer too.
   names, no employer, no Slack ids, no internal app names. The leak check enforces the
   generic part; the private word list enforces the rest.
 - Write in the same register as the code around you. Comments explain why, not what.
+- Everything is in English: names, comments, messages, docs, commits.
+
+## Spanish names that stay
+
+spoochie was written in Spanish up to 0.9.10. Some names from then are still read by an
+older peer, by an existing install, or by a CLI and a daemon of different versions, so
+they stay. Do not rename them without reading the old name too.
+
+- On the wire: the `hola` envelope kind, the Slack notice id `aviso`, the Nostr deletion
+  text `spoochie cerrado`, and the thread placeholders `(otra maquina)`, `(esta maquina)`
+  and `yo`.
+- In config.json: `aparte`, `aparteCopia`, `borrarAlCerrar`, `transporte`,
+  `invitaciones`, `slack.hilos` (`grupo`, `canal`, `dm`), `slack.canal`, and a
+  contact's `visto` and `nivel` (`alto`, `normal`). The keychain marker `@llavero` and
+  the keychain accounts `clave-de-firma`, `clave-nostr`, `token-de-bot`.
+- Files under `~/.claude/spoochie`: `auditoria.log` with its event names and fields,
+  `desconocidos.json`, `holas.json`, `vistos.json`, `nostr-vistos.json`, `arranque.txt`,
+  `latido`, the `aparte/` directory, the `-copia` worktree suffix, and the fields stored
+  in threads and sessions (`copiaDe`, `firma` and its values, the watcher verdicts
+  `dentro`/`fuera`/`dudoso`/`sin vigilar`, `retenido`, the `aparte-` session prefix).
+- Between the CLI and the daemon: the RPC ops and fields (`olvidar`, `close-grupo`,
+  `quien`, `motivo`, `aqui`, `seguir`, `cerrados`, `donde`, ...) and the delivery states
+  `publicado`, `encolado`, `retenido`.
+- Aliases, kept on purpose: the old subcommands and flags (`confiar`, `--vincular`,
+  `portero`, ...), the old environment variables (`SPOOCHIE_VENTANA`, ...), and the
+  Spanish words a person can type in a Slack thread to accept, release or drop.
 
 ## Versions
 
