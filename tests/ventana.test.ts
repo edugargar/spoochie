@@ -120,7 +120,19 @@ sleep 60
   // La ventana se abrio en el repo de B, se registro, y recibio el primer turno y lo guardado, en orden.
   expect(await hasta(() => ventanas().length === 1, 10_000)).toBe(true);
   expect(ventanas()[0]).toContain(REPO_B);
-  expect(await hasta(() => V.got.length >= 2, 10_000)).toBe(true);
+  const llegaron = await hasta(() => V.got.length >= 2, 10_000);
+  // En CI, solo en las PR de Dependabot, esto fallo dos veces seguidas (01-10 y 02-10) y
+  // nunca en local ni en Docker con el mismo arbol. Sin el log del demonio no hay como
+  // saber por que: se imprime aqui en vez de adivinar.
+  if (!llegaron) {
+    console.log(`V.got=${JSON.stringify(V.got)}\nB.got=${B.got.length}\n--- daemon.log\n${existsSync(join(HOME, "daemon.log")) ? readFileSync(join(HOME, "daemon.log"), "utf8") : "(no hay)"}`);
+    const { readdirSync, statSync } = await import("node:fs");
+    for (const f of readdirSync(join(HOME, "sessions"))) {
+      const p = join(HOME, "sessions", f);
+      console.log(`--- sessions/${f} modo ${(statSync(p).mode & 0o777).toString(8)}\n${readFileSync(p, "utf8")}`);
+    }
+  }
+  expect(llegaron).toBe(true);
   expect(V.got[0]).toContain("Asunto: el boton");
   expect(V.got[0]).toContain("mira tu Button");
   expect(V.got[0]).toContain(`desde ${REPO_B}`);
