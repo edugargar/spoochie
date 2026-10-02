@@ -792,7 +792,7 @@ async function main() {
       const { check } = await import("./doctor.ts");
       let failed = 0;
       for (const c of await check()) {
-        const mark = c.ok === true ? "  ok " : c.ok === "aviso" ? " note" : "FAIL ";
+        const mark = c.ok === true ? "  ok " : c.ok === "warn" ? " note" : "FAIL ";
         if (c.ok === false) failed++;
         console.log(`${mark}  ${c.what.padEnd(26)} ${c.detail}`);
       }

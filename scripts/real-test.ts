@@ -273,7 +273,7 @@ async function main() {
   //    person clicks before the search (every 1.5 s) sees the window: on run
   //    39dcb60 the daemon logged the accept 1.8 s after drawing it and the test failed
   //    saying there was no notice. The daemon log is the proof it showed up.
-  const answered = () => log(HOME_B).match(new RegExp(`aviso ${opened.id} dialog: (\\S+)`))?.[1] ?? null;
+  const answered = () => log(HOME_B).match(new RegExp(`notice ${opened.id} dialog: (\\S+)`))?.[1] ?? null;
   const notice = await until(() => {
     if (answered()) return "done";
     const r = spawnSync("swift", [SWIFT, "find"], { encoding: "utf8" });
@@ -303,7 +303,7 @@ async function main() {
   // 7. Bea's aside Claude window starts (this is where "claude: not found" failed).
   const aside = await until(() => readdirSync(join(HOME_B, "sessions")).map(f => json(join(HOME_B, "sessions", f)))
     .find(s => s?.aparte === opened.id && s.socket && !s.socket.startsWith("(")), 90_000, 1000);
-  step(Boolean(aside), "Bea's aside Claude starts and registers", aside ? `pid ${aside.pid}` : (log(HOME_B).match(/.*aparte.*/g)?.slice(-1)[0] ?? ""));
+  step(Boolean(aside), "Bea's aside Claude starts and registers", aside ? `pid ${aside.pid}` : (log(HOME_B).match(/.*aside.*/g)?.slice(-1)[0] ?? ""));
 
   // 8. Bea answers and the answer reaches Ana's session: Ana writes the number.
   const received = await until(() => existsSync(RECEIVED) && readFileSync(RECEIVED, "utf8").trim(), 300_000, 2000);
@@ -312,7 +312,7 @@ async function main() {
   // And she uses it soon after it lands in her inbox. On run fa7c225 the daemon delivered it in
   // 8 s and Ana's Claude took 4 min 28 s to see it: it was in a `show` loop in the
   // foreground and the turn couldn't get in. That's a failure even if it arrives in the end.
-  const landed = log(HOME_A).match(new RegExp(`^(\\S+) entrada ${opened.id} claude in the session`, "m"))?.[1];
+  const landed = log(HOME_A).match(new RegExp(`^(\\S+) in ${opened.id} claude in the session`, "m"))?.[1];
   const used = existsSync(RECEIVED) ? statSync(RECEIVED).mtimeMs : 0;
   const took = landed && used ? Math.round((used - Date.parse(landed)) / 1000) : null;
   step(took !== null && took <= 90, "Ana's Claude uses it as soon as it lands", took === null ? "can't measure: the inbound line or the file is missing" : `${took} s from the inbox`);

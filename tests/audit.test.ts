@@ -16,7 +16,7 @@ test("a clean config only says that delete on close holds", () => {
 test("each unredeemed invite is a nonce that still lets a key in", () => {
   const out = audit({ ...base, invitaciones: { k1: { name: "Sam", at: Date.now() }, k2: { id: "U0X", at: Date.now() } } });
   const l = line(out, "unredeemed invites");
-  expect(l?.ok).toBe("aviso");
+  expect(l?.ok).toBe("warn");
   expect(l?.detail).toContain("2 live");
   expect(l?.detail).toContain("Sam");
 });
@@ -31,7 +31,7 @@ test("a contact with no pinned key is reported: their first signature is the one
 test("the bot token at rest is named for what it is: the real edge", () => {
   const out = audit({ ...base, slack: { userId: "U0", botToken: "xoxb-x", pollMs: 20_000 } });
   const l = line(out, "bot token at rest");
-  expect(l?.ok).toBe("aviso");
+  expect(l?.ok).toBe("warn");
   expect(l?.detail).toContain("Rotate it when someone leaves");
 });
 
