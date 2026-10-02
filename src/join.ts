@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { ORIGIN } from "./origin.ts";
 
 /** What travels in the invite. `u` is who it is for (so the join does not have to look
@@ -106,14 +105,4 @@ export function inviteText(blob: string, who: string, repo = ORIGIN): string {
     ``,
     `Your Claude will tell you when you are in. To try it, ask: "open a spoochie with @${handle} and ask them what this is".`,
   ].join("\n");
-}
-
-/** The work email is almost always in git already, and asking again is one more step in
- *  the one place where we are counting steps. If it does not match Slack, the joiner
- *  passes it by hand; the error says which one was tried. */
-export function gitEmail(cwd = process.cwd()): string | undefined {
-  try {
-    const e = execFileSync("git", ["config", "--get", "user.email"], { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
-    return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e) ? e : undefined;
-  } catch { return undefined; }
 }

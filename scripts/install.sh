@@ -212,7 +212,7 @@ pause
 # ── 2 ─────────────────────────────────────────────────────────────────────
 stage "Paste the invitation"
 say "Whoever signs you up ran 'spoochie invite' and sent you a line that starts"
-say "with 'spoochie join'. Paste it here in full, with its --email or its --user."
+say "with 'spoochie join'. Paste it here in full, with its --user if it has one."
 say ""
 say "You don't need to install anything in Slack or have any token of your own:"
 say "the invitation carries the bot's, which belongs to the app and not to anyone."

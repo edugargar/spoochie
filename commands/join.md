@@ -20,10 +20,10 @@ $ARGUMENTS
    invite again. Only if, after restarting, the hook says it could not download the
    binary is Bun the alternative (`curl -fsSL https://bun.sh/install | bash`).
 2. `spoochie join <what they pasted, whole, as is>`. The command cleans up whatever is
-   extra on its own (the leading "spoochie join", Slack's quotes, the plugin slash). The
-   email comes from `git config user.email`; if Slack does not recognise it, the error
-   says which one it tried. Then ask them for the email they use in Slack and repeat with
-   `--email <mail>`.
+   extra on its own (the leading "spoochie join", Slack's quotes, the plugin slash). Their
+   Slack id usually comes inside the invite. If `join` says it got no Slack id, ask them
+   for it (Slack profile, "Copy member ID", it starts with U) and repeat with
+   `--user <U0..>`.
 3. `join` already runs the selftest at the end. If everything comes out `ok`, tell them
    they are in and that the first time someone opens a spoochie to them they will get a
    DM from the bot in Slack: replying in that thread accepts it. If anything comes out
