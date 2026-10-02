@@ -21,10 +21,10 @@ test("an envelope crosses a real relay, encrypted, and reaches only its recipien
 
   const forBea: string[] = [], forOther: string[] = [];
   const subBea = pool.subscribe([relay.url], { kinds: [1059], "#p": [bea.pk] }, {
-    onevent: ev => { try { forBea.push(N.open(ev, bea.sk)!.texto); } catch {} },
+    onevent: ev => { try { forBea.push(N.open(ev, bea.sk)!.text); } catch {} },
   });
   const subOther = pool.subscribe([relay.url], { kinds: [1059], "#p": [other.pk] }, {
-    onevent: ev => { try { forOther.push(N.open(ev, other.sk)!.texto); } catch {} },
+    onevent: ev => { try { forOther.push(N.open(ev, other.sk)!.text); } catch {} },
   });
   await sleep(300);
 
@@ -54,7 +54,7 @@ test("what was published with nobody listening arrives on subscribing later", as
 
   const arrived: string[] = [];
   const sub = pool.subscribe([relay.url], { kinds: [1059], "#p": [bea.pk] }, {
-    onevent: ev => { const a = N.open(ev, bea.sk); if (a) arrived.push(a.texto); },
+    onevent: ev => { const a = N.open(ev, bea.sk); if (a) arrived.push(a.text); },
   });
   expect(await hasta(() => arrived.includes("look at this"))).toBe(true);
   sub.close();
@@ -82,11 +82,11 @@ test("if the relay drops and comes back, the bridge resubscribes on its own and 
   // daemon stopped receiving and nobody noticed".
   const hellos: string[] = [];
   const bridge = new N.NostrBridge(bea.sk, bea.pk, [relay.url], {
-    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {},
-    onHola: async (_de, _env, name) => { hellos.push(name); },
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {},
+    onHello: async (_de, _env, name) => { hellos.push(name); },
     log: () => {},
   });
-  bridge.escuchar();
+  bridge.listen();
   await sleep(400);
 
   const pool = N.realPool();
@@ -106,7 +106,7 @@ test("if the relay drops and comes back, the bridge resubscribes on its own and 
   const two = N.wrapEnvelope(ana.sk, bea.pk, { v: 1, id: "hola", kind: "hola", fromName: "after" }, "after");
   await Promise.all(N.realPool().publish([relay.url], two.wrap).map(p => p.catch(() => {})));
   expect(await hasta(() => hellos.includes("after"), 15000)).toBe(true);
-  bridge.cerrar();
+  bridge.close();
 }, plazo(60000));
 
 test("a bare SimplePool subscription does not come back on its own: that is why the bridge revives it", async () => {
@@ -137,11 +137,11 @@ test("the same envelope twice is delivered once: relays repeat and do not keep o
   const ana = N.myKeys({} as any), bea = N.myKeys({} as any);
   const hellos: string[] = [];
   const bridge = new N.NostrBridge(bea.sk, bea.pk, [relay.url], {
-    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {},
-    onHola: async (_de, _s, name) => { hellos.push(name); },
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {},
+    onHello: async (_de, _s, name) => { hellos.push(name); },
     log: () => {},
   });
-  bridge.escuchar();
+  bridge.listen();
   await sleep(400);
 
   const pool = N.realPool();
@@ -155,7 +155,7 @@ test("the same envelope twice is delivered once: relays repeat and do not keep o
 
   expect(relay.events()).toBeGreaterThanOrEqual(2);
   expect(hellos.filter(h => h === "repeated")).toHaveLength(1);
-  bridge.cerrar();
+  bridge.close();
 }, plazo(20000));
 
 test("two envelopes arriving in reverse order are both still delivered", async () => {
@@ -163,11 +163,11 @@ test("two envelopes arriving in reverse order are both still delivered", async (
   const ana = N.myKeys({} as any), bea = N.myKeys({} as any);
   const hellos: string[] = [];
   const bridge = new N.NostrBridge(bea.sk, bea.pk, [relay.url], {
-    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {},
-    onHola: async (_de, _s, name) => { hellos.push(name); },
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {},
+    onHello: async (_de, _s, name) => { hellos.push(name); },
     log: () => {},
   });
-  bridge.escuchar();
+  bridge.listen();
   await sleep(400);
 
   const pool = N.realPool();
@@ -179,7 +179,7 @@ test("two envelopes arriving in reverse order are both still delivered", async (
   await Promise.all(pool.publish([relay.url], first.wrap));
 
   expect(await hasta(() => hellos.includes("first") && hellos.includes("second"))).toBe(true);
-  bridge.cerrar();
+  bridge.close();
 }, plazo(20000));
 
 /**
@@ -198,11 +198,11 @@ test("if one of two relays drops and comes back, what is published only there st
   const drops = testRelay(), stays = testRelay();
   const hellos: string[] = [];
   const bridge = new N.NostrBridge(bea.sk, bea.pk, [drops.url, stays.url], {
-    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {},
-    onHola: async (_de, _s, name) => { hellos.push(name); },
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {},
+    onHello: async (_de, _s, name) => { hellos.push(name); },
     log: () => {},
   });
-  bridge.escuchar();
+  bridge.listen();
   await sleep(400);
 
   drops.takeDown();
@@ -213,7 +213,7 @@ test("if one of two relays drops and comes back, what is published only there st
   const { wrap } = N.wrapEnvelope(ana.sk, bea.pk, { v: 1, id: "hola", kind: "hola", fromName: "only on the one that dropped" }, "x");
   await Promise.all(N.realPool().publish([drops.url], wrap).map(p => p.catch(() => {})));
   expect(await hasta(() => hellos.includes("only on the one that dropped"), 15000)).toBe(true);
-  bridge.cerrar(); drops.close(); stays.close();
+  bridge.close(); drops.close(); stays.close();
 }, plazo(60000));
 
 /**
@@ -227,11 +227,11 @@ test("if a relay forgets the subscription without hanging up, the bridge asks ag
   const mute = testRelay();
   const hellos: string[] = [];
   const bridge = new N.NostrBridge(bea.sk, bea.pk, [mute.url], {
-    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {},
-    onHola: async (_de, _s, name) => { hellos.push(name); },
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {},
+    onHello: async (_de, _s, name) => { hellos.push(name); },
     log: () => {},
   }, undefined, { refrescoMs: 1500 });
-  bridge.escuchar();
+  bridge.listen();
   await sleep(400);
   mute.forgetSubs();
 
@@ -239,5 +239,5 @@ test("if a relay forgets the subscription without hanging up, the bridge asks ag
   await Promise.all(N.realPool().publish([mute.url], wrap));
   expect(await hasta(() => hellos.includes("after forgetting"), 10000)).toBe(true);
   expect(hellos.filter(h => h === "after forgetting")).toHaveLength(1);
-  bridge.cerrar(); mute.close();
+  bridge.close(); mute.close();
 }, plazo(30000));

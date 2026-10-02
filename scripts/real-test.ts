@@ -271,7 +271,7 @@ async function main() {
 
   // 6. The notice on screen, and the click on the accept button (the right one). A quick
   //    person clicks before the search (every 1.5 s) sees the window: on run
-  //    39dcb60 the daemon logged "acepto" 1.8 s after drawing it and the test failed
+  //    39dcb60 the daemon logged the accept 1.8 s after drawing it and the test failed
   //    saying there was no notice. The daemon log is the proof it showed up.
   const answered = () => log(HOME_B).match(new RegExp(`aviso ${opened.id} dialog: (\\S+)`))?.[1] ?? null;
   const notice = await until(() => {
@@ -297,7 +297,7 @@ async function main() {
     const t = threads(HOME_B).find(t => t.id === opened.id);
     return t && t.state !== "pending" ? t : null;
   }, manualClick ? 180_000 : 30_000, 500);
-  step(Boolean(accepted) && answered() === "acepto", `the ${manualClick ? "person's" : "synthetic mouse"} click reaches the daemon as an accept`, accepted ? `state ${accepted.state}, the daemon read ${answered()}` : (log(HOME_B).match(/.*no answer.*|.*button returned.*/g)?.slice(-1)[0] ?? "still pending"));
+  step(Boolean(accepted) && answered() === "accept", `the ${manualClick ? "person's" : "synthetic mouse"} click reaches the daemon as an accept`, accepted ? `state ${accepted.state}, the daemon read ${answered()}` : (log(HOME_B).match(/.*no answer.*|.*button returned.*/g)?.slice(-1)[0] ?? "still pending"));
   if (!accepted) throw new Error("click lost");
 
   // 7. Bea's aside Claude window starts (this is where "claude: not found" failed).

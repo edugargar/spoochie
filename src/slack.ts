@@ -324,7 +324,7 @@ export class SlackBridge {
   private botUserId: string | null = null;
   private seenHellos = new Set<string>();
   /** The other side closed the spoochie. */
-  onCierre: OnClose | null = null;
+  onClose: OnClose | null = null;
   private myDm: string | null = null;
   /** On startup it looks back as far as the pending queue lasts: a spoochie older than
    *  that has already expired, and one from a minute ago has to show up even if the
@@ -359,7 +359,7 @@ export class SlackBridge {
     // installing the app yourself.
     if (!bot || !c.slack?.userId) return null;
     const b = new SlackBridge(user ?? "", bot, c.slack.userId, onMessage, onAccept, onRemoteAccept, onOrder);
-    b.onCierre = onClose ?? null;
+    b.onClose = onClose ?? null;
     return b;
   }
 
@@ -424,7 +424,7 @@ export class SlackBridge {
     fresh.avisoVersion = true;
     T.save(fresh);
     const who = env.from === fresh.from.slackUser ? (fresh.from.human ?? fresh.from.name) : (fresh.to.human ?? fresh.to.name);
-    await this.aviso(fresh, `:information_source: ${who} has spoochie ${theirs} and this side has ${VERSION}. Some things may not work the same for them: \`/plugin update ${PLUGIN}\` and restart a session.`);
+    await this.notice(fresh, `:information_source: ${who} has spoochie ${theirs} and this side has ${VERSION}. Some things may not work the same for them: \`/plugin update ${PLUGIN}\` and restart a session.`);
   }
 
   /** The DM between the bot and me: the only channel to watch for what comes in. */
@@ -534,7 +534,7 @@ export class SlackBridge {
   /** Sends a person my Nostr key over their DM with the bot. That way someone already on
    *  spoochie over Slack moves to Nostr without joining again: their daemon stores it in
    *  their contacts and replies with theirs. */
-  async hola(userId: string, np: string, r: string[], name: string): Promise<boolean> {
+  async hello(userId: string, np: string, r: string[], name: string): Promise<boolean> {
     try {
       const im = await this.call("conversations.open", { users: userId });
       await this.call("chat.postMessage", {
@@ -548,7 +548,7 @@ export class SlackBridge {
     } catch { return false; }
   }
   /** Tells a person I changed my signing key, signed with the old one. */
-  async rotar(userId: string, newPub: string, priv: string, oldPub: string, name: string): Promise<boolean> {
+  async rotate(userId: string, newPub: string, priv: string, oldPub: string, name: string): Promise<boolean> {
     try {
       const im = await this.call("conversations.open", { users: userId });
       await this.call("chat.postMessage", {
@@ -560,13 +560,13 @@ export class SlackBridge {
     } catch { return false; }
   }
   /** On receiving a rotation over Slack. */
-  onRota: ((from: string, newPk: string, verdict: Verdict) => Promise<void>) | null = null;
+  onRotation: ((from: string, newPk: string, verdict: Verdict) => Promise<void>) | null = null;
 
   /** On receiving a hola over Slack. */
-  onHola: ((from: string, name: string, np: string, r: string[], verdict: Verdict) => Promise<void>) | null = null;
+  onHello: ((from: string, name: string, np: string, r: string[], verdict: Verdict) => Promise<void>) | null = null;
 
   /** A notice to a person over their DM with the bot, with no envelope: the thread lives elsewhere. */
-  async avisarDm(userId: string, text: string): Promise<boolean> {
+  async noticeDm(userId: string, text: string): Promise<boolean> {
     try {
       const im = await this.call("conversations.open", { users: userId });
       await this.call("chat.postMessage", { channel: im.channel.id, text, blocks: [ctx(text)], metadata: { event_type: EVENT, event_payload: { v: PROTOCOL, id: "aviso", kind: "notice", from: this.me } } });
@@ -580,7 +580,7 @@ export class SlackBridge {
    * The bot cannot delete what a person wrote by hand; that stays, without context.
    * Returns how many messages were deleted. Both daemons try it: it is idempotent.
    */
-  async borrarHilo(t: T.Thread): Promise<number> {
+  async eraseThread(t: T.Thread): Promise<number> {
     if (!t.slack) return 0;
     let n = 0;
     const del = async (channel: string, ts: string) => { try { await this.call("chat.delete", { channel, ts }); n++; } catch {} };
@@ -600,7 +600,7 @@ export class SlackBridge {
 
   async post(t: T.Thread, notice: string, m?: T.Msg): Promise<boolean> {
     if (!t.slack) return false;
-    await this.pensandoOff(t);
+    await this.thinkingOff(t);
     const mine = t.from.slackUser === this.me ? t.from : t.to;
     const env: Envelope = {
       v: PROTOCOL, id: t.id,
@@ -642,7 +642,7 @@ export class SlackBridge {
    * blank screen where nobody knows whether the tunnel died.
    * It goes up when a turn is delivered and comes down as soon as the reply arrives.
    */
-  async pensandoOn(t: T.Thread, who: string) {
+  async thinkingOn(t: T.Thread, who: string) {
     if (!t.slack || this.thinking.has(t.id)) return;
     try {
       const r = await this.call("chat.postMessage", {
@@ -657,7 +657,7 @@ export class SlackBridge {
     } catch {}
   }
 
-  async pensandoOff(t: T.Thread) {
+  async thinkingOff(t: T.Thread) {
     const p = this.thinking.get(t.id);
     if (!p || !t.slack) return;
     this.thinking.delete(t.id);
@@ -695,7 +695,7 @@ export class SlackBridge {
   private lastDiscoverAt = 0;
 
   /** What this daemon spends right now, so `spoochie doctor` can report it. */
-  presupuesto(): { hilos: number; historyPorMin: number; repliesPorMin: number } {
+  budget(): { hilos: number; historyPorMin: number; repliesPorMin: number } {
     const live = T.all().filter(t => t.state !== "closed" && t.slack).length;
     const cadence = discoveryCadence(Object.keys(Cfg.load().contacts ?? {}).length + 1);
     return {
@@ -781,8 +781,8 @@ export class SlackBridge {
         const text = bodyFromBlocks((rep as any).blocks) || rep.text || "";
         // Before the signature: if I cannot read the envelope, I cannot claim anything about it.
         const reading = readVersion(env.v, env.app);
-        if (!reading.entiendo) {
-          await this.aviso(t, `:warning: a message from ${env.fromName ?? env.from}: ${reading.por}`);
+        if (!reading.understood) {
+          await this.notice(t, `:warning: a message from ${env.fromName ?? env.from}: ${reading.reason}`);
           continue;
         }
         const verdict = verifyEnvelope(env, text);
@@ -799,7 +799,7 @@ export class SlackBridge {
         if (REJECTED[verdict]) {
           // Not delivered. It is said in the thread, which is where people see it.
           const what = env.kind === "accept" ? "an accept" : env.kind === "close" ? "a close" : "a message";
-          await this.aviso(t, `:no_entry: ${what} claiming to come from ${env.fromName ?? env.from} ${REJECTED[verdict]}. Dropped.`);
+          await this.notice(t, `:no_entry: ${what} claiming to come from ${env.fromName ?? env.from} ${REJECTED[verdict]}. Dropped.`);
           continue;
         }
         // With the signature checked: the two envelopes that act on their own.
@@ -816,14 +816,14 @@ export class SlackBridge {
           // opens a door: v1 signs neither time nor recipient, so one of its envelopes is
           // valid forever and in any thread.
           if (verdict !== "ok" && verdict !== "nueva") {
-            await this.aviso(t, `:no_entry: ${env.kind === "accept" ? "an accept" : "a close"} from ${env.fromName ?? env.from} came unsigned. Dropped: anyone with the bot token can post this.`);
+            await this.notice(t, `:no_entry: ${env.kind === "accept" ? "an accept" : "a close"} from ${env.fromName ?? env.from} came unsigned. Dropped: anyone with the bot token can post this.`);
             continue;
           }
         }
         if (env.kind === "accept") { await this.onRemoteAccept(t, "on the other machine"); continue; }
         // The other side's close: it used to be just another notice and got ignored, and
         // this side found out from silence 10 min later. Now it closes (and erases) here too.
-        if (env.kind === "close") { if (this.onCierre) await this.onCierre(t, closeReasonOf(rep.text ?? "") ?? "closed by the other side"); continue; }
+        if (env.kind === "close") { if (this.onClose) await this.onClose(t, closeReasonOf(rep.text ?? "") ?? "closed by the other side"); continue; }
         await this.onMessage(t, {
           at: Math.round(Number(rep.ts) * 1000),
           from: T.otherSide(t, this.localSideId(t)).sessionId,
@@ -872,7 +872,7 @@ export class SlackBridge {
   }
 
   /** A spoochie notice in the thread, with an envelope so no daemon takes it for a person. */
-  async aviso(t: T.Thread, text: string) {
+  async notice(t: T.Thread, text: string) {
     if (!t.slack) return;
     await this.noticeIn(t.slack.channel, t.slack.ts, text);
   }
@@ -922,19 +922,19 @@ export class SlackBridge {
       const env = envelopeOf(msg);
       if (env?.kind === "hola" && env.from !== this.me && env.np && /^[0-9a-f]{64}$/.test(env.np) && !this.seenHellos.has(msg.ts)) {
         this.seenHellos.add(msg.ts);
-        if (this.onHola) await this.onHola(env.from, env.fromName ?? env.from, env.np, Array.isArray(env.r) ? env.r : [], verifyEnvelope({ id: "hola", kind: "hola", from: env.from, fromName: env.fromName, pk: env.pk, sig: env.sig }, env.np));
+        if (this.onHello) await this.onHello(env.from, env.fromName ?? env.from, env.np, Array.isArray(env.r) ? env.r : [], verifyEnvelope({ id: "hola", kind: "hola", from: env.from, fromName: env.fromName, pk: env.pk, sig: env.sig }, env.np));
         continue;
       }
       if (env?.kind === "rota" && env.from !== this.me && typeof (env as any).pkNueva === "string") {
         // Checked against the key that was ALREADY pinned: the signed text is the new one.
-        if (this.onRota) await this.onRota(env.from, (env as any).pkNueva, verifyEnvelope(env, (env as any).pkNueva));
+        if (this.onRotation) await this.onRotation(env.from, (env as any).pkNueva, verifyEnvelope(env, (env as any).pkNueva));
         continue;
       }
       if (!env || env.kind !== "invite" || known.has(env.id) || env.from === this.me) continue;
       const inviteReading = readVersion(env.v, env.app);
-      if (!inviteReading.entiendo) {
+      if (!inviteReading.understood) {
         known.add(env.id);
-        await this.noticeIn(ch, msg.thread_ts ?? msg.ts, `:warning: an invite from ${env.fromName ?? env.from}: ${inviteReading.por}`);
+        await this.noticeIn(ch, msg.thread_ts ?? msg.ts, `:warning: an invite from ${env.fromName ?? env.from}: ${inviteReading.reason}`);
         continue;
       }
       const inviteVerdict = verifyEnvelope(env, bodyFromBlocks(msg.blocks));

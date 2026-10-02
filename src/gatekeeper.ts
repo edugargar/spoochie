@@ -26,7 +26,7 @@ import { envVar } from "./paths.ts";
  *  that gets written and never runs, which is what happened. */
 export const FILE_READERS = ["Read", "Grep", "Glob", "NotebookRead"];
 
-export type Verdict = { ok: true } | { ok: false; por: string };
+export type Verdict = { ok: true } | { ok: false; reason: string };
 
 /** Whether a path falls inside the aside's directory. `..` and outside absolutes do not. */
 export function inside(base: string, path: string): boolean {
@@ -134,32 +134,32 @@ function judgeGit(rest: string[]): Verdict {
   while (i < rest.length && rest[i].startsWith("-")) {
     const n = flagName(rest[i]);
     const why = GIT_BAD_GLOBALS[n];
-    if (why) return { ok: false, por: `\`git ${n}\` ${why}` };
+    if (why) return { ok: false, reason: `\`git ${n}\` ${why}` };
     // An unknown global before the subcommand is not guessed at.
     if (n !== "--no-pager" && n !== "-P" && n !== "--literal-pathspecs" && n !== "--no-replace-objects") {
-      return { ok: false, por: `I don't recognize the global option \`git ${n}\`` };
+      return { ok: false, reason: `I don't recognize the global option \`git ${n}\`` };
     }
     i++;
   }
 
   const sub = rest[i];
-  if (!sub) return { ok: false, por: "git without a subcommand" };
-  if (!GIT_READ.has(sub)) return { ok: false, por: `\`git ${sub}\` is not one of the read-only subcommands` };
+  if (!sub) return { ok: false, reason: "git without a subcommand" };
+  if (!GIT_READ.has(sub)) return { ok: false, reason: `\`git ${sub}\` is not one of the read-only subcommands` };
 
   const args = rest.slice(i + 1);
   for (const a of args) {
     const n = flagName(a);
     const why = GIT_BAD_FLAGS[n];
-    if (why) return { ok: false, por: `\`${n}\` ${why}` };
+    if (why) return { ok: false, reason: `\`${n}\` ${why}` };
     // -o glued to its value (-o/tmp/x) is not a form git accepts, but -O is.
-    if (a.startsWith("-o") && a.length > 2 && !a.startsWith("--")) return { ok: false, por: "`-o` writes the output to a file" };
+    if (a.startsWith("-o") && a.length > 2 && !a.startsWith("--")) return { ok: false, reason: "`-o` writes the output to a file" };
   }
 
   if (sub === "branch") {
     const flags = args.filter(a => a.startsWith("-"));
-    if (!flags.some(a => flagName(a) === "--list")) return { ok: false, por: "`git branch` only with `--list`: bare, it takes -D and -f" };
+    if (!flags.some(a => flagName(a) === "--list")) return { ok: false, reason: "`git branch` only with `--list`: bare, it takes -D and -f" };
     for (const a of flags) {
-      if (!GIT_BRANCH_FLAGS.has(flagName(a))) return { ok: false, por: `\`git branch ${flagName(a)}\` does more than list` };
+      if (!GIT_BRANCH_FLAGS.has(flagName(a))) return { ok: false, reason: `\`git branch ${flagName(a)}\` does more than list` };
     }
   }
 
@@ -168,8 +168,8 @@ function judgeGit(rest: string[]): Verdict {
 
 function judgeSpoochie(rest: string[], cwd: string): Verdict {
   const sub = rest[0];
-  if (!sub) return { ok: false, por: "spoochie without a subcommand" };
-  if (!SP_SUBCOMMANDS.has(sub)) return { ok: false, por: `\`spoochie ${sub}\` is not one the aside may run` };
+  if (!sub) return { ok: false, reason: "spoochie without a subcommand" };
+  if (!SP_SUBCOMMANDS.has(sub)) return { ok: false, reason: `\`spoochie ${sub}\` is not one the aside may run` };
 
   for (let i = 1; i < rest.length; i++) {
     const n = flagName(rest[i]);
@@ -177,7 +177,7 @@ function judgeSpoochie(rest: string[], cwd: string): Verdict {
     const value = rest[i].includes("=") ? rest[i].slice(rest[i].indexOf("=") + 1) : rest[i + 1];
     if (!value || value === "-") continue;
     for (const path of value.split(",").map(x => x.trim()).filter(Boolean)) {
-      if (!inside(cwd, path)) return { ok: false, por: `\`${n} ${path}\` sends a file from outside this repo through the tunnel` };
+      if (!inside(cwd, path)) return { ok: false, reason: `\`${n} ${path}\` sends a file from outside this repo through the tunnel` };
     }
   }
   return { ok: true };
@@ -189,22 +189,22 @@ function judgeSpoochie(rest: string[], cwd: string): Verdict {
  */
 export function judgeBash(cmd: string, cli: string, cwd = ""): Verdict {
   const { words, problem } = scan(cmd);
-  if (problem) return { ok: false, por: `the line has ${problem}` };
-  if (!words.length) return { ok: false, por: "an empty line" };
+  if (problem) return { ok: false, reason: `the line has ${problem}` };
+  if (!words.length) return { ok: false, reason: "an empty line" };
 
   const cliHead = scan(cli).words;
   let p = words;
 
   // rtk in front: the proxy rewrites the command, what comes after is what matters.
   if (p[0] === "rtk") p = p.slice(1);
-  if (!p.length) return { ok: false, por: "rtk with no command after it" };
+  if (!p.length) return { ok: false, reason: "rtk with no command after it" };
 
   if (cliHead.length && p.length >= cliHead.length && cliHead.every((w, n) => p[n] === w)) {
     return judgeSpoochie(p.slice(cliHead.length), cwd);
   }
   if (p[0] === "git") return judgeGit(p.slice(1));
 
-  return { ok: false, por: `\`${p[0]}\` is not something the aside may run (read-only git and spoochie)` };
+  return { ok: false, reason: `\`${p[0]}\` is not something the aside may run (read-only git and spoochie)` };
 }
 
 /** What the hook writes to its standard output. */
@@ -268,5 +268,5 @@ export function gatekeeper(input: unknown, cli: string): Decision {
   const v = judgeBash(cmd, cli, cwd);
   return v.ok
     ? decision("allow", "")
-    : decision("deny", `spoochie: this Claude handles a tunnel and only reads. Blocked because ${v.por}. If you need that, say so through the tunnel with \`spoochie say\` and let the person on the other side do it.`);
+    : decision("deny", `spoochie: this Claude handles a tunnel and only reads. Blocked because ${v.reason}. If you need that, say so through the tunnel with \`spoochie say\` and let the person on the other side do it.`);
 }

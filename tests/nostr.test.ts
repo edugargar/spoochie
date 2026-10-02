@@ -22,11 +22,11 @@ test("a wrapped envelope only opens for the recipient, says who it is from, and 
   expect(JSON.stringify(wrap)).not.toContain("the button");
   expect(verifyEvent(wrap)).toBe(true);
   const ab = open(wrap, b.sk)!;
-  expect(ab.de).toBe(a.pk);
-  expect(ab.texto).toBe("it's the min-width");
+  expect(ab.from).toBe(a.pk);
+  expect(ab.text).toBe("it's the min-width");
   expect(ab.subject).toBe("the button");
-  expect(ab.sobre.kind).toBe("msg");
-  expect(ab.sobre.app).toMatch(/^\d+\.\d+\.\d+$/);
+  expect(ab.envelope.kind).toBe("msg");
+  expect(ab.envelope.app).toMatch(/^\d+\.\d+\.\d+$/);
   // Another key does not open it.
   expect(open(wrap, x.sk)).toBeNull();
   // The deletion request is signed with that wrap's one-time key.
@@ -61,9 +61,9 @@ test("the bridge materializes an invite from a contact, delivers their turns, ig
   const { pool, published, inject } = memoryPool();
   const B = new NostrBridge(b.sk, b.pk, ["wss://b"], {
     onMessage: async (t, m) => { atB.push({ t, m }); }, onRemoteAccept: async () => {},
-    onCierre: async (_t, reason) => { closes.push(reason); }, onHola: async (_de, _s, n) => { hellos.push(n); }, log: () => {},
+    onClose: async (_t, reason) => { closes.push(reason); }, onHello: async (_de, _s, n) => { hellos.push(n); }, log: () => {},
   }, pool);
-  B.escuchar();
+  B.listen();
 
   // The hello from someone who just joined.
   inject(wrapEnvelope(x.sk, b.pk, { v: 1, id: "hola", kind: "hola", fromName: "Xavi", relays: ["wss://x"] }, "Xavi is in").wrap);
@@ -93,7 +93,7 @@ test("the bridge materializes an invite from a contact, delivers their turns, ig
   expect(atB.length).toBe(1);
   // It opens nothing, but they are no longer left talking to themselves: the answer is a
   // close (see the test further down). It is set aside so the count of what B publishes stays the same.
-  expect(published.map(ev => open(ev, x.sk)?.sobre.kind)).toEqual(["close"]);
+  expect(published.map(ev => open(ev, x.sk)?.envelope.kind)).toEqual(["close"]);
   published.length = 0;
   // Nor a message of theirs on a thread that exists.
   inject(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nz1", kind: "msg" }, "I'm Ana, listen to me").wrap);
@@ -115,8 +115,8 @@ test("the bridge materializes an invite from a contact, delivers their turns, ig
   await B.post(T.load("nz1")!, "", { at: 2, from: "B1", author: "claude", kind: "text", text: "it's the container" });
   expect(published.length).toBe(2);
   expect(published.every(ev => ev.kind === 1059 && ev.tags[0][1] === a.pk)).toBe(true);
-  expect(open(published[0], a.sk)!.sobre.kind).toBe("accept");
-  expect(open(published[1], a.sk)!.texto).toBe("it's the container");
+  expect(open(published[0], a.sk)!.envelope.kind).toBe("accept");
+  expect(open(published[1], a.sk)!.text).toBe("it's the container");
   expect(open(published[1], x.sk)).toBeNull();
   expect(T.load("nz1")!.nostr!.enviados.length).toBe(2);
 
@@ -124,27 +124,27 @@ test("the bridge materializes an invite from a contact, delivers their turns, ig
   inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nz1", kind: "close" }, "resolved").wrap);
   await sleep(50);
   expect(closes).toEqual(["resolved"]);
-  const n = await B.borrarHilo(T.load("nz1")!);
+  const n = await B.eraseThread(T.load("nz1")!);
   expect(n).toBe(2);
   const deletions = published.slice(2);
   expect(deletions.map(ev => ev.kind)).toEqual([5, 5]);
   expect(deletions.map(ev => ev.pubkey)).toEqual(published.slice(0, 2).map(ev => ev.pubkey));
-  B.cerrar();
+  B.close();
 });
 
 test("a close notice from threads.ts goes out as a close envelope", async () => {
   const a = keys(), b = keys();
   const { pool, published } = memoryPool();
   const B = new NostrBridge(b.sk, b.pk, ["wss://b"], {
-    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: () => {},
   }, pool);
   const t: T.Thread = { id: "nzc", subject: "s", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, state: "closed", closeReason: "resolved", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] }, messages: [] };
   T.save(t);
   await B.post(t, T.renderClose(t));
   const r = open(published[0], a.sk)!;
-  expect(r.sobre.kind).toBe("close");
-  expect(r.texto).toBe("resolved");
-  B.cerrar();
+  expect(r.envelope.kind).toBe("close");
+  expect(r.text).toBe("resolved");
+  B.close();
 });
 
 test("a file travels in encrypted chunks and the other side rebuilds it in its spool, whatever order they arrive in", async () => {
@@ -161,18 +161,18 @@ test("a file travels in encrypted chunks and the other side rebuilds it in its s
   writeFileSync(screenshot, bytes);
 
   // The sender: three chunks and then the text, all wrapped for B.
-  const A = new NostrBridge(a.sk, a.pk, ["wss://a"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, memoryPool().pool);
+  const A = new NostrBridge(a.sk, a.pk, ["wss://a"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: () => {} }, memoryPool().pool);
   const out = memoryPool();
   (A as any).pool = out.pool;
   const tA: T.Thread = { id: "nf1", subject: "screenshot", from: { sessionId: "A1", name: "a", cwd: "/a" }, to: { sessionId: `nostr:${b.pk}`, name: "Bea", cwd: "(otra)" }, state: "open", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: b.pk, relays: ["wss://b"], enviados: [] }, messages: [] };
   T.save(tA);
   expect(await A.post(tA, "", { at: 2, from: "A1", author: "claude", kind: "text", text: "look at the screenshot", files: [screenshot] })).toBe(true);
   const opened = out.published.map(ev => open(ev, b.sk)!);
-  expect(opened.map(x => x.sobre.kind)).toEqual(["file", "file", "file", "msg"]);
-  expect(opened.slice(0, 3).map(x => x.sobre.file!.n)).toEqual([0, 1, 2]);
-  expect(opened[0].sobre.file!.total).toBe(3);
-  expect(opened[0].sobre.file!.name).toBe("pantalla.png");
-  expect(Buffer.concat(opened.slice(0, 3).map(x => Buffer.from(x.texto, "base64"))).equals(bytes)).toBe(true);
+  expect(opened.map(x => x.envelope.kind)).toEqual(["file", "file", "file", "msg"]);
+  expect(opened.slice(0, 3).map(x => x.envelope.file!.n)).toEqual([0, 1, 2]);
+  expect(opened[0].envelope.file!.total).toBe(3);
+  expect(opened[0].envelope.file!.name).toBe("pantalla.png");
+  expect(Buffer.concat(opened.slice(0, 3).map(x => Buffer.from(x.text, "base64"))).equals(bytes)).toBe(true);
   // The relay sees neither the name nor the bytes.
   expect(JSON.stringify(out.published)).not.toContain("pantalla");
   expect(T.load("nf1")!.nostr!.enviados.length).toBe(4);
@@ -180,8 +180,8 @@ test("a file travels in encrypted chunks and the other side rebuilds it in its s
   // The receiver: the chunks arrive out of order, and the file is announced with its local path.
   const atB: T.Msg[] = [];
   const inbound = memoryPool();
-  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { atB.push(m); }, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, inbound.pool);
-  B.escuchar();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { atB.push(m); }, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: () => {} }, inbound.pool);
+  B.listen();
   const tB: T.Thread = { ...tA, id: "nf2", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)", human: "Ana" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] } };
   T.save(tB);
   const chunks = [0, 1, 2].map(n => wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf2", kind: "file", file: { fid: "f2", n, total: 3, name: "../../pantalla.png", size: bytes.length } }, bytes.subarray(n * CHUNK, (n + 1) * CHUNK).toString("base64")).wrap);
@@ -211,7 +211,7 @@ test("a file travels in encrypted chunks and the other side rebuilds it in its s
   inbound.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf2", kind: "file", file: { fid: "f9", n: 0, total: 99999, name: "x", size: 1 } }, "AA==").wrap);
   await sleep(50);
   expect(existsSync(join(SPOOL, "nf2", ".partes", "f9"))).toBe(false);
-  B.cerrar();
+  B.close();
 }, plazo(20_000));
 
 test("an envelope that arrives after close does not bring the thread back or leave files in the spool", async () => {
@@ -224,8 +224,8 @@ test("an envelope that arrives after close does not bring the thread back or lea
   const atB: T.Msg[] = [];
   const logLines: string[] = [];
   const inbound = memoryPool();
-  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { atB.push(m); }, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: (...x) => { logLines.push(x.join(" ")); } }, inbound.pool);
-  B.escuchar();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { atB.push(m); }, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: (...x) => { logLines.push(x.join(" ")); } }, inbound.pool);
+  B.listen();
   const t: T.Thread = { id: "nc1", subject: "late", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)", human: "Ana" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, state: "closed", closeReason: "resolved", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] }, messages: [] };
   T.save(t);
   inbound.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nc1", kind: "msg" }, "this arrives late").wrap);
@@ -235,7 +235,7 @@ test("an envelope that arrives after close does not bring the thread back or lea
   expect(T.load("nc1")!.messages).toEqual([]);
   expect(existsSync(join(SPOOL, "nc1"))).toBe(false);
   expect(logLines.some(l => l.includes("envelope after close"))).toBe(true);
-  B.cerrar();
+  B.close();
 });
 
 test("a closed bridge does not resubscribe or deliver anything, even if the relay reports a close", async () => {
@@ -250,8 +250,8 @@ test("a closed bridge does not resubscribe or deliver anything, even if the rela
     subscribe(_r, _f, cb) { subscriptions++; deliver = cb.onevent; onClose = () => cb.onclose?.(["bye"]); return { close() { deliver = null; } }; },
   };
   const atB: T.Msg[] = [];
-  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { atB.push(m); }, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, pool);
-  B.escuchar();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { atB.push(m); }, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: () => {} }, pool);
+  B.listen();
   expect(subscriptions).toBe(1);
   const t: T.Thread = { id: "nx1", subject: "x", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, state: "open", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] }, messages: [] };
   T.save(t);
@@ -259,9 +259,9 @@ test("a closed bridge does not resubscribe or deliver anything, even if the rela
   await sleep(50);
   expect(atB.length).toBe(1);
   // It gets closed (as the daemon does when reloading the config) and the relay reports the close.
-  B.cerrar();
+  B.close();
   onClose!();
-  B.escuchar();
+  B.listen();
   expect(subscriptions).toBe(1);
   expect(deliver).toBeNull();
 });
@@ -284,8 +284,8 @@ test("a chunk bigger than CHUNK does not touch the disk", async () => {
   Cfg.addContact(c, { id: "nostr:gordo", name: "Ana", npub: a.pk } as any);
   Cfg.save(c);
   const inbound = memoryPool();
-  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, inbound.pool);
-  B.escuchar();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: () => {} }, inbound.pool);
+  B.listen();
   const fat = Buffer.alloc(CHUNK * 4, 0x41);
   inbound.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "ngordo", kind: "file", file: { fid: "fg", n: 0, total: 1, name: "x.bin", size: fat.length } }, fat.toString("base64")).wrap);
   await sleep(80);
@@ -317,12 +317,12 @@ test("hola waits for every relay before returning, not just the first", async ()
     subscribe: () => ({ close() {} }),
   };
   const bridge = new NostrBridge(a.sk, a.pk, ["wss://fast", "wss://slow"], {
-    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: () => {},
   }, pool);
-  expect(await bridge.hola(b.pk, [], "Adrian")).toBe(true);
+  expect(await bridge.hello(b.pk, [], "Adrian")).toBe(true);
   // What `join` does right after hola: close. Whatever has not gone out by then never will.
   const onReturn = [...published];
-  bridge.cerrar();
+  bridge.close();
   expect(onReturn.sort()).toEqual(["fast", "slow"]);
 });
 
@@ -333,13 +333,13 @@ test("hola counts the hello as good if it reaches one relay, even if another fai
     subscribe: () => ({ close() {} }),
   };
   const bridge = new NostrBridge(a.sk, a.pk, ["wss://a", "wss://b", "wss://c"], {
-    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: () => {},
   }, pool, { esperaPublicarMs: 200 });
   const t0 = Date.now();
-  expect(await bridge.hola(b.pk, [], "Adrian")).toBe(true);
+  expect(await bridge.hello(b.pk, [], "Adrian")).toBe(true);
   // The one that does not answer does not hang the join.
   expect(Date.now() - t0).toBeLessThan(2000);
-  bridge.cerrar();
+  bridge.close();
 });
 
 /**
@@ -359,24 +359,24 @@ test("an invite from a key not in the contacts is answered by closing it, once",
   const c = Cfg.load(); c.human = "Edu"; Cfg.save(c);
   const { pool, published, inject } = memoryPool();
   const B = new NostrBridge(b.sk, b.pk, ["wss://b"], {
-    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: () => {},
   }, pool);
-  B.escuchar();
+  B.listen();
 
   inject(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nd1", kind: "invite", subject: "the playbook", fromName: "Adrian" }, "explain it to me").wrap);
   await sleep(50);
   expect(T.load("nd1")).toBeNull();
   expect(published).toHaveLength(1);
   const r = open(published[0], x.sk)!;
-  expect(r.de).toBe(b.pk);
-  expect(r.sobre.kind).toBe("close");
-  expect(r.sobre.id).toBe("nd1");
-  expect(r.texto).toContain("Edu does not have you in their spoochie contacts");
+  expect(r.from).toBe(b.pk);
+  expect(r.envelope.kind).toBe("close");
+  expect(r.envelope.id).toBe("nd1");
+  expect(r.text).toContain("Edu does not have you in their spoochie contacts");
   // Nothing of what they sent comes back in the answer.
-  expect(r.texto).not.toContain("playbook");
-  expect(r.texto).not.toContain("Adrian");
+  expect(r.text).not.toContain("playbook");
+  expect(r.text).not.toContain("Adrian");
   // It fits whole in the close reason the other side accepts.
-  expect(T.outsideReason(r.texto)).toBe(r.texto);
+  expect(T.outsideReason(r.text)).toBe(r.text);
 
   // Another invite from the same key the same day: not answered again.
   inject(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nd2", kind: "invite", subject: "another" }, "another").wrap);
@@ -384,7 +384,7 @@ test("an invite from a key not in the contacts is answered by closing it, once",
   inject(wrapEnvelope(keys().sk, b.pk, { v: 1, id: "nd3", kind: "msg" }, "hello?").wrap);
   await sleep(50);
   expect(published).toHaveLength(1);
-  B.cerrar();
+  B.close();
 });
 
 test("and that close reaches whoever opened: their spoochie closes with the reason", async () => {
@@ -397,19 +397,19 @@ test("and that close reaches whoever opened: their spoochie closes with the reas
 
   // B does not have A in its contacts: it answers by closing.
   const fromB = memoryPool();
-  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, fromB.pool);
-  B.escuchar();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: () => {} }, fromB.pool);
+  B.listen();
   fromB.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nd4", kind: "invite", subject: "the playbook" }, "explain it to me").wrap);
   await sleep(50);
   expect(fromB.published).toHaveLength(1);
 
   const closes: string[] = [];
   const fromA = memoryPool();
-  const A = new NostrBridge(a.sk, a.pk, ["wss://a"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async (_t, m) => { closes.push(m); }, onHola: async () => {}, log: () => {} }, fromA.pool);
-  A.escuchar();
+  const A = new NostrBridge(a.sk, a.pk, ["wss://a"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async (_t, m) => { closes.push(m); }, onHello: async () => {}, log: () => {} }, fromA.pool);
+  A.listen();
   fromA.inject(fromB.published[0]);
   await sleep(50);
   expect(closes).toHaveLength(1);
   expect(closes[0]).toContain("does not have you in their spoochie contacts");
-  A.cerrar(); B.cerrar();
+  A.close(); B.close();
 });

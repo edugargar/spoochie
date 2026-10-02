@@ -53,7 +53,7 @@ function bridge(reply: any) {
   const b = SlackBridge.fromConfig(
     async () => {}, async () => {}, async () => { seen.accepted = true; },
   )!;
-  b.onCierre = async (_t: any, m: string) => { seen.closed = m; };
+  b.onClose = async (_t: any, m: string) => { seen.closed = m; };
   b.get = async (m: string) => m === "conversations.replies" ? { ok: true, messages: [reply] } : { ok: true };
   b.call = async (_m: string, body: any) => { seen.notices.push(String(body?.text ?? "")); return { ok: true, ts: "9.0" }; };
   return { b, seen };

@@ -62,8 +62,8 @@ test("another person's text travels as data, not as code", () => {
 
 test("the three buttons, with Return on the one that accepts", () => {
   const d = data(windowScript(thread(), null));
-  expect(d.buttons.map((b: any) => b.title)).toEqual([BUTTONS.rechazar, BUTTONS.slack, BUTTONS.aceptar]);
-  expect(d.buttons.find((b: any) => b.title === BUTTONS.aceptar).key).toBe("\r");
+  expect(d.buttons.map((b: any) => b.title)).toEqual([BUTTONS.decline, BUTTONS.slack, BUTTONS.accept]);
+  expect(d.buttons.find((b: any) => b.title === BUTTONS.accept).key).toBe("\r");
   expect(d.width).toBe(WIDTH);
   // The tags are what the script returns on stdout, and they have to be distinct.
   expect(new Set(d.buttons.map((b: any) => b.tag)).size).toBe(3);
@@ -140,7 +140,7 @@ async function runAndWatchFocus(script: string) {
   return { output, code: await done, front };
 }
 
-for (const [title, tag, expected] of [[BUTTONS.aceptar, 3, "acepto"], [BUTTONS.rechazar, 1, "rechazo"], [BUTTONS.slack, 2, "slack"]] as const) {
+for (const [title, tag, expected] of [[BUTTONS.accept, 3, "accept"], [BUTTONS.decline, 1, "decline"], [BUTTONS.slack, 2, "slack"]] as const) {
   test.if(withScreen)(`pressing "${title}" in the real window reaches the daemon as ${expected}, every time and without taking focus`, async () => {
     const { interpret } = await import("../src/dialog.ts");
     process.env.SPOOCHIE_WINDOW_CLICK = String(tag);

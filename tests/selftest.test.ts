@@ -15,7 +15,7 @@ test("with the daemon broken, not a single step comes out green", async () => {
     const steps = await selftest();
     expect(steps.length).toBeGreaterThan(0);
     expect(steps.filter(p => p.ok)).toEqual([]);
-    expect(steps.some(p => p.detalle === "never got to test it" || p.que === "the test broke")).toBe(true);
+    expect(steps.some(p => p.detail === "never got to test it" || p.what === "the test broke")).toBe(true);
   } finally {
     delete process.env.SPOOCHIE_DAEMON_CMD;
   }

@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
-export type Step = { ok: boolean; que: string; detalle: string };
+export type Step = { ok: boolean; what: string; detail: string };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -57,7 +57,7 @@ export async function selftest(): Promise<Step[]> {
 
   // A step that depends on a broken one does not run: it would say "ok" for the wrong
   // reason, which is worse than a failure because it makes you believe something works.
-  const skip = (what: string) => { steps.push({ ok: false, que: what, detalle: "never got to test it" }); };
+  const skip = (what: string) => { steps.push({ ok: false, what: what, detail: "never got to test it" }); };
 
   try {
     const env = { ...process.env, SPOOCHIE_HOME: home };
@@ -82,10 +82,10 @@ export async function selftest(): Promise<Step[]> {
     daemon.on("error", () => {});
     for (let i = 0; i < 60 && !existsSync(join(home, "daemon.sock")); i++) await sleep(100);
     const pong = await rpc({ op: "ping" });
-    steps.push({ ok: pong.ok === true, que: "the daemon starts and answers", detalle: `pid ${pong.pid}` });
+    steps.push({ ok: pong.ok === true, what: "the daemon starts and answers", detail: `pid ${pong.pid}` });
 
     const opened = await rpc({ op: "open", sessionId: "st-a", to: "st-b", subject: "install check", body: "if you read this, the inbox works" });
-    steps.push({ ok: opened.ok && opened.delivered === true, que: "the invite reaches the other inbox", detalle: opened.ok ? `spoochie ${opened.id}` : opened.error });
+    steps.push({ ok: opened.ok && opened.delivered === true, what: "the invite reaches the other inbox", detail: opened.ok ? `spoochie ${opened.id}` : opened.error });
     if (!opened.ok) {
       for (const q of ["the envelope says how to accept", "the gate: no answering before accepting", "only the receiver can accept",
                        "the receiving human opens the tunnel", "round trip", "empty messages are not sent",
@@ -96,24 +96,24 @@ export async function selftest(): Promise<Step[]> {
 
     steps.push({
       ok: B.received.some(x => x.includes(`spoochie accept ${id}`)),
-      que: "the envelope says how to accept",
-      detalle: B.received.length ? "the invite carries the command" : "nothing arrived",
+      what: "the envelope says how to accept",
+      detail: B.received.length ? "the invite carries the command" : "nothing arrived",
     });
 
     const early = await rpc({ op: "say", sessionId: "st-b", id, text: "answering without permission" });
-    steps.push({ ok: early.ok === false, que: "the gate: no answering before accepting", detalle: early.ok ? "IT GOT THROUGH" : "rejected, as it should be" });
+    steps.push({ ok: early.ok === false, what: "the gate: no answering before accepting", detail: early.ok ? "IT GOT THROUGH" : "rejected, as it should be" });
 
     const wrong = await rpc({ op: "accept", sessionId: "st-a", id });
-    steps.push({ ok: wrong.ok === false, que: "only the receiver can accept", detalle: wrong.ok ? "the wrong side accepted" : "rejected" });
+    steps.push({ ok: wrong.ok === false, what: "only the receiver can accept", detail: wrong.ok ? "the wrong side accepted" : "rejected" });
 
     const right = await rpc({ op: "accept", sessionId: "st-b", id });
-    steps.push({ ok: right.ok === true, que: "the receiving human opens the tunnel", detalle: `state ${right.state}` });
+    steps.push({ ok: right.ok === true, what: "the receiving human opens the tunnel", detail: `state ${right.state}` });
 
     const reply = await rpc({ op: "say", sessionId: "st-b", id, text: "here is my answer" });
-    steps.push({ ok: reply.delivered === true && A.received.some(x => x.includes("here is my answer")), que: "round trip", detalle: "the message reaches the other side whole" });
+    steps.push({ ok: reply.delivered === true && A.received.some(x => x.includes("here is my answer")), what: "round trip", detail: "the message reaches the other side whole" });
 
     const empty = await rpc({ op: "say", sessionId: "st-a", id, text: "  " });
-    steps.push({ ok: empty.ok === false, que: "empty messages are not sent", detalle: empty.ok ? "an empty one went out" : "rejected" });
+    steps.push({ ok: empty.ok === false, what: "empty messages are not sent", detail: empty.ok ? "an empty one went out" : "rejected" });
 
     // Only what B receives after the close counts, so the check does not hang on the
     // wording of the close notice.
@@ -121,8 +121,8 @@ export async function selftest(): Promise<Step[]> {
     await rpc({ op: "close", sessionId: "st-a", id, reason: "end of the selftest" });
     steps.push({
       ok: B.received.slice(beforeClose).some(x => x.includes(id)),
-      que: "closing notifies the other side",
-      detalle: "the close notice arrives",
+      what: "closing notifies the other side",
+      detail: "the close notice arrives",
     });
 
     // "Closing erases" is one of the README's three promises, and it was the only stop
@@ -136,11 +136,11 @@ export async function selftest(): Promise<Step[]> {
     } catch { left = 0; }
     steps.push({
       ok: left === 0,
-      que: "closing erases what was said",
-      detalle: left === 0 ? "no text left on disk" : `${left} message(s) WITH TEXT LEFT in ${path}`,
+      what: "closing erases what was said",
+      detail: left === 0 ? "no text left on disk" : `${left} message(s) WITH TEXT LEFT in ${path}`,
     });
   } catch (e) {
-    steps.push({ ok: false, que: "the test broke", detalle: String(e) });
+    steps.push({ ok: false, what: "the test broke", detail: String(e) });
   } finally {
     daemon?.kill();
     A.server.close(); B.server.close();

@@ -202,20 +202,19 @@ export function firstTurn(t: T.Thread, sessionId: string, cli = cliCommand(), cw
   ].join("\n");
 }
 
-// The values are kept: src/daemon.ts compares against them.
-export type Mode = "ventana" | "fondo";
+export type Mode = "window" | "background";
 export type Aside = {
-  id: string; cwd: string; modo: Mode; sess: SessionRecord;
+  id: string; cwd: string; mode: Mode; sess: SessionRecord;
   /** If `cwd` is a worktree copy, the checkout it comes from. */
-  origen?: string;
+  origin?: string;
   /** Background mode only: the `claude -p` whose stdin we own. */
   child?: ChildProcess;
   /** Window mode: what arrived before the window registered. */
-  cola: string[];
+  queue: string[];
   /** Window mode: its session's hook already wrote the record with a socket. */
-  listo: boolean;
+  ready: boolean;
   /** Background mode: the process has died. */
-  muerto: boolean;
+  dead: boolean;
 };
 
 /** An aside's session id. One per launch: if the spoochie moves repo with `take`, the
@@ -237,9 +236,9 @@ export const PENDING_SOCKET = "(esperando a la ventana)";
  */
 export function asideMode(): Mode {
   const v = envVar("SPOOCHIE_WINDOW", "SPOOCHIE_VENTANA");
-  if (v === "background") return "fondo";
-  if (v && v !== "window") return "ventana";
-  return process.platform === "darwin" ? "ventana" : "fondo";
+  if (v === "background") return "background";
+  if (v && v !== "window") return "window";
+  return process.platform === "darwin" ? "window" : "background";
 }
 
 const sq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
@@ -302,7 +301,7 @@ export function launch(t: T.Thread, cwd: string, how: Mode = asideMode()): Aside
   const base = { sessionId: asideSession(t.id), name: asideName(t.id), cwd, startedAt: Date.now(), aparte: t.id };
   const env = cleanEnv({ SPOOCHIE_ASIDE: t.id, SPOOCHIE_ASIDE_SESSION: base.sessionId });
 
-  if (how === "ventana") {
+  if (how === "window") {
     const script = join(ASIDE_DIR, `${t.id}.command`);
     writeFileSync(script, windowScript(t, cwd, base.sessionId), { mode: 0o700 });
     chmodSync(script, 0o700);
@@ -310,7 +309,7 @@ export function launch(t: T.Thread, cwd: string, how: Mode = asideMode()): Aside
     register(sess);
     const opener = openWindow(script);
     if (!opener) return null;
-    return { id: t.id, cwd, modo: "ventana", sess, cola: [], listo: false, muerto: false };
+    return { id: t.id, cwd, mode: "window", sess, queue: [], ready: false, dead: false };
   }
 
   const out = openSync(join(ASIDE_DIR, `${t.id}.log`), "a");
@@ -326,8 +325,8 @@ export function launch(t: T.Thread, cwd: string, how: Mode = asideMode()): Aside
   child.on("error", () => {});
   const sess: SessionRecord = { ...base, socket: "(stdin)", token: "", pid: child.pid ?? 0 };
   register(sess);
-  const a: Aside = { id: t.id, cwd, modo: "fondo", sess, child, cola: [], listo: true, muerto: false };
-  child.on("exit", () => { a.muerto = true; });
+  const a: Aside = { id: t.id, cwd, mode: "background", sess, child, queue: [], ready: true, dead: false };
+  child.on("exit", () => { a.dead = true; });
   return a;
 }
 
@@ -344,7 +343,7 @@ export function windowRecord(a: Aside, live: SessionRecord[]): SessionRecord | u
 }
 
 export function alive(a: Aside): boolean {
-  return a.modo === "fondo" ? !a.muerto : true;
+  return a.mode === "background" ? !a.dead : true;
 }
 
 export function killAside(a: Aside) {

@@ -99,7 +99,7 @@ export function wrapEnvelope(sk: string, toPk: string, envelope: Envelope, text:
   return { wrap, wsk: bytesToHex(wskBytes) };
 }
 
-export type Opened = { de: string; sobre: Envelope; texto: string; subject?: string };
+export type Opened = { from: string; envelope: Envelope; text: string; subject?: string };
 
 /** Opens a wrap addressed to me. Null if it is not for me, not spoochie's, or malformed. */
 export function open(wrap: Event, sk: string): Opened | null {
@@ -121,7 +121,7 @@ export function open(wrap: Event, sk: string): Opened | null {
     // Slack it did hold: the two paths did different things.
     if (envelope.v !== undefined && typeof envelope.v !== "number") return null;
     if (typeof envelope.id !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(envelope.id)) return null;
-    return { de: seal.pubkey, sobre: envelope, texto: String(rumor.content ?? ""), subject: rumor.tags.find((t: string[]) => t[0] === "subject")?.[1] };
+    return { from: seal.pubkey, envelope: envelope, text: String(rumor.content ?? ""), subject: rumor.tags.find((t: string[]) => t[0] === "subject")?.[1] };
   } catch { return null; }
 }
 
@@ -135,9 +135,9 @@ export function deletionRequest(id: string, wsk: string): Event {
 export type Pool = {
   publish(relays: string[], ev: Event): Promise<unknown>[];
   subscribe(relays: string[], filter: Record<string, unknown>, cb: { onevent(ev: Event): void; onclose?(reasons: string[]): void }): { close(): void };
-  cerrar?(): void;
+  closeAll?(): void;
   /** Drops the connections and starts with fresh sockets. See `NostrBridge.refresh`. */
-  reiniciar?(): void;
+  restart?(): void;
 };
 
 /** A pool over a shared directory: each publish is a file, each subscription reads it
@@ -174,8 +174,8 @@ export function realPool(): Pool {
   return {
     publish: (relays, ev) => pool.publish(relays, ev),
     subscribe: (relays, filter, cb) => pool.subscribe(relays, filter as any, { onevent: cb.onevent, onclose: cb.onclose }),
-    cerrar: () => pool.destroy(),
-    reiniciar: () => { const old = pool; pool = new SimplePool(); try { old.destroy(); } catch {} },
+    closeAll: () => pool.destroy(),
+    restart: () => { const old = pool; pool = new SimplePool(); try { old.destroy(); } catch {} },
   };
 }
 
@@ -184,11 +184,11 @@ const SEEN_FILE = join(ROOT, "nostr-vistos.json");
 export type Callbacks = {
   onMessage: (t: T.Thread, m: T.Msg) => Promise<void>;
   onRemoteAccept: (t: T.Thread, how: string) => Promise<void>;
-  onCierre: (t: T.Thread, reason: string) => Promise<void>;
+  onClose: (t: T.Thread, reason: string) => Promise<void>;
   /** Someone I invited is in now: they send me their key and relays. */
-  onHola: (from: string, envelope: Envelope, name: string) => Promise<void>;
+  onHello: (from: string, envelope: Envelope, name: string) => Promise<void>;
   /** An envelope from a key that is not in the contacts. See strangers.ts. */
-  onDesconocido?: (from: string, envelope: Envelope) => Promise<void>;
+  onStranger?: (from: string, envelope: Envelope) => Promise<void>;
   log: (...a: unknown[]) => void;
 };
 
@@ -233,7 +233,7 @@ export class NostrBridge {
    * the REQ, never closes. So every `refreshMs` the connections are dropped and
    * everything is asked for again; `seen` removes the repeats.
    */
-  escuchar() {
+  listen() {
     // A closed bridge does not listen again. Without this, `cerrar()` fired the relay's
     // onclose, and 5 s later the old bridge resubscribed next to the new one: two bridges
     // with two seen lists, and every envelope delivered twice to the session.
@@ -265,16 +265,16 @@ export class NostrBridge {
     const old = [...this.subs.values()];
     this.subs.clear();
     for (const s of old) { try { s.close(); } catch {} }
-    this.pool.reiniciar?.();
+    this.pool.restart?.();
     for (const url of this.relays) this.listenRelay(url);
   }
 
-  cerrar() {
+  close() {
     this.closed = true;
     if (this.timer) clearInterval(this.timer);
     for (const s of this.subs.values()) { try { s.close(); } catch {} }
     this.subs.clear();
-    this.pool.cerrar?.();
+    this.pool.closeAll?.();
   }
 
   private async receive(ev: Event) {
@@ -284,43 +284,43 @@ export class NostrBridge {
     const a = open(ev, this.sk);
     if (!a) return;
     const c = Cfg.load();
-    const contact = Cfg.contactByNpub(c, a.de);
-    if (a.sobre.kind === "hola") {
-      await this.cb.onHola(a.de, a.sobre, a.sobre.fromName ?? a.texto);
+    const contact = Cfg.contactByNpub(c, a.from);
+    if (a.envelope.kind === "hola") {
+      await this.cb.onHello(a.from, a.envelope, a.envelope.fromName ?? a.text);
       return;
     }
     // Someone not in the contacts does not even get to make me write in a thread: the
     // version is checked afterwards, because the "update" notice gets posted and anyone
     // who can encrypt to my key could trigger it.
     if (!contact) {
-      this.cb.log("nostr", "envelope from a key not in the contacts; ignored", a.de.slice(0, 12), a.sobre.kind);
-      if (a.sobre.kind === "invite") await this.answerStranger(a, c);
-      await this.cb.onDesconocido?.(a.de, a.sobre);
+      this.cb.log("nostr", "envelope from a key not in the contacts; ignored", a.from.slice(0, 12), a.envelope.kind);
+      if (a.envelope.kind === "invite") await this.answerStranger(a, c);
+      await this.cb.onStranger?.(a.from, a.envelope);
       return;
     }
     // If I do not understand the envelope I cannot treat it as if I did: it would lack
     // exactly the part that narrows it or the part that holds it back. Say so, do not deliver.
-    const reading = readVersion(a.sobre.v, a.sobre.app);
-    if (!reading.entiendo) {
-      this.cb.log("nostr", a.sobre.id, `envelope not delivered: ${reading.por}`);
+    const reading = readVersion(a.envelope.v, a.envelope.app);
+    if (!reading.understood) {
+      this.cb.log("nostr", a.envelope.id, `envelope not delivered: ${reading.reason}`);
       // If it is an invite there is no thread to say it in yet, and over Nostr there is
       // nowhere else: it stays in the daemon log and `spoochie doctor` surfaces it.
-      const t0 = T.load(a.sobre.id);
-      if (t0) await this.cb.onMessage(t0, { at: Date.now(), from: t0.from.sessionId === `nostr:${a.de}` ? t0.from.sessionId : t0.to.sessionId, author: "claude", kind: "text", text: `[spoochie] A message from the other machine was not delivered: ${reading.por}`, firma: "ok" });
+      const t0 = T.load(a.envelope.id);
+      if (t0) await this.cb.onMessage(t0, { at: Date.now(), from: t0.from.sessionId === `nostr:${a.from}` ? t0.from.sessionId : t0.to.sessionId, author: "claude", kind: "text", text: `[spoochie] A message from the other machine was not delivered: ${reading.reason}`, firma: "ok" });
       return;
     }
-    Cfg.touchContact({ npub: a.de });
-    if (a.sobre.kind === "invite") { await this.materialize(a, contact); return; }
-    if (a.sobre.kind === "file") { await this.chunk(a); return; }
-    const t = T.load(a.sobre.id);
-    if (!t || t.transporte !== "nostr" || t.nostr?.otro !== a.de) return;
+    Cfg.touchContact({ npub: a.from });
+    if (a.envelope.kind === "invite") { await this.materialize(a, contact); return; }
+    if (a.envelope.kind === "file") { await this.chunk(a); return; }
+    const t = T.load(a.envelope.id);
+    if (!t || t.transporte !== "nostr" || t.nostr?.otro !== a.from) return;
     // An envelope arriving after close (relays do not keep order) does not bring the
     // thread back: it is already purged, and putting a message back in breaks "deleted on close".
     if (t.state === "closed") { this.cb.log("nostr", t.id, "envelope after close; dropped"); return; }
-    if (a.sobre.kind === "accept") { await this.cb.onRemoteAccept(t, "on the other machine"); return; }
-    if (a.sobre.kind === "close") { await this.cb.onCierre(t, a.texto || "closed by the other side"); return; }
-    if (a.sobre.kind === "notice") return;
-    await this.cb.onMessage(t, { at: Date.now(), from: t.from.sessionId === `nostr:${a.de}` ? t.from.sessionId : t.to.sessionId, author: "claude", kind: a.sobre.kindOfMsg ?? "text", text: a.texto, firma: "ok" });
+    if (a.envelope.kind === "accept") { await this.cb.onRemoteAccept(t, "on the other machine"); return; }
+    if (a.envelope.kind === "close") { await this.cb.onClose(t, a.text || "closed by the other side"); return; }
+    if (a.envelope.kind === "notice") return;
+    await this.cb.onMessage(t, { at: Date.now(), from: t.from.sessionId === `nostr:${a.from}` ? t.from.sessionId : t.to.sessionId, author: "claude", kind: a.envelope.kindOfMsg ?? "text", text: a.text, firma: "ok" });
   }
 
   /**
@@ -338,43 +338,43 @@ export class NostrBridge {
   private rejected = new Map<string, number>();
   private async answerStranger(a: Opened, c: Cfg.Config) {
     const nowMs = Date.now();
-    const last = this.rejected.get(a.de);
+    const last = this.rejected.get(a.from);
     if (last !== undefined && nowMs - last < 24 * 3600_000) return;
     const inLastHour = [...this.rejected.values()].filter(x => nowMs - x < 3600_000).length;
     if (inLastHour >= 20) return;
-    this.rejected.set(a.de, nowMs);
+    this.rejected.set(a.from, nowMs);
     const who = (c.human ?? "").replace(/[\[\]\r\n\t]/g, "").trim().slice(0, 30) || "The person you called";
     const text = `${who} does not have you in their spoochie contacts, so it did not arrive. Ask to be invited`;
-    const { wrap } = wrapEnvelope(this.sk, a.de, { v: PROTOCOL, id: a.sobre.id, kind: "close" }, text);
-    try { await Promise.any(this.pool.publish(this.relays, wrap)); this.cb.log("nostr", a.sobre.id, "answered: not in the contacts", a.de.slice(0, 12)); }
-    catch (e) { this.cb.log("nostr", a.sobre.id, "could not answer the stranger", String(e)); }
+    const { wrap } = wrapEnvelope(this.sk, a.from, { v: PROTOCOL, id: a.envelope.id, kind: "close" }, text);
+    try { await Promise.any(this.pool.publish(this.relays, wrap)); this.cb.log("nostr", a.envelope.id, "answered: not in the contacts", a.from.slice(0, 12)); }
+    catch (e) { this.cb.log("nostr", a.envelope.id, "could not answer the stranger", String(e)); }
   }
 
   /** A spoochie arriving from another machine: it stays pending until my human accepts. */
   private async materialize(a: Opened, contact: { id: string; name: string; relays?: string[] }) {
-    if (T.load(a.sobre.id) || T.alreadySeen(a.sobre.id)) return;
+    if (T.load(a.envelope.id) || T.alreadySeen(a.envelope.id)) return;
     // A contact does not fill your state with spoochies you have not answered: see
     // `roomForAnotherFrom`. The existing ones expire on their own after 4 h.
-    if (!T.roomForAnotherFrom(`nostr:${a.de}`)) {
-      this.cb.log("nostr", a.sobre.id, `${contact.name} already has ${T.MAX_PENDING_PER_PERSON} unanswered spoochies with you; this one does not get in`);
+    if (!T.roomForAnotherFrom(`nostr:${a.from}`)) {
+      this.cb.log("nostr", a.envelope.id, `${contact.name} already has ${T.MAX_PENDING_PER_PERSON} unanswered spoochies with you; this one does not get in`);
       return;
     }
     const now = Date.now();
-    const name = T.displayName(contact.name, a.sobre.fromName, contact.id);
+    const name = T.displayName(contact.name, a.envelope.fromName, contact.id);
     const t: T.Thread = {
-      id: a.sobre.id,
-      subject: T.outsideSubject(a.sobre.subject ?? a.subject),
+      id: a.envelope.id,
+      subject: T.outsideSubject(a.envelope.subject ?? a.subject),
       // The name comes from the contacts, not from the envelope: see `displayName`.
-      from: { sessionId: `nostr:${a.de}`, name, cwd: "(otra maquina)", human: name, slackUser: contact.id.startsWith("nostr:") ? undefined : contact.id },
+      from: { sessionId: `nostr:${a.from}`, name, cwd: "(otra maquina)", human: name, slackUser: contact.id.startsWith("nostr:") ? undefined : contact.id },
       to: { sessionId: `nostr:${this.pk}`, name: "yo", cwd: "(esta maquina)", slackUser: Cfg.load().slack?.userId },
       state: "pending", createdAt: now, lastActivityAt: now,
-      context: T.outsideContext(a.sobre.context),
+      context: T.outsideContext(a.envelope.context),
       transporte: "nostr",
-      nostr: { otro: a.de, relays: a.sobre.relays ?? contact.relays ?? DEFAULT_RELAYS, enviados: [] },
+      nostr: { otro: a.from, relays: a.envelope.relays ?? contact.relays ?? DEFAULT_RELAYS, enviados: [] },
       messages: [],
     };
     T.save(t);
-    await this.cb.onMessage(t, { at: now, from: t.from.sessionId, author: "claude", kind: "text", text: a.texto || "(the opening message arrived empty)", firma: "ok" });
+    await this.cb.onMessage(t, { at: now, from: t.from.sessionId, author: "claude", kind: "text", text: a.text || "(the opening message arrived empty)", firma: "ok" });
     await this.deliverReady(t);
   }
 
@@ -385,7 +385,7 @@ export class NostrBridge {
    * in the spool until the thread exists.
    */
   private async chunk(a: Opened) {
-    const f = a.sobre.file;
+    const f = a.envelope.file;
     if (!f || !VALID_FID.test(String(f.fid)) || !Number.isInteger(f.n) || !Number.isInteger(f.total) || f.n < 0 || f.n >= f.total) return;
     if (f.total > Math.ceil(MAX_BYTES / CHUNK) || !(f.size >= 0 && f.size <= MAX_BYTES)) { this.cb.log("nostr", "file too big; ignored", f.name); return; }
     // The numbers above are declared by the sender; these are the bytes that actually
@@ -393,12 +393,12 @@ export class NostrBridge {
     // allowed: measured, 3 MB written to disk with CHUNK at 20 KB, and decoded whole in
     // memory before anyone checked anything. A chunk bigger than a chunk is not a
     // spoochie chunk.
-    const raw = Buffer.from(a.texto, "base64");
+    const raw = Buffer.from(a.text, "base64");
     if (raw.length > CHUNK) { this.cb.log("nostr", "chunk bigger than a chunk; ignored", f.name, raw.length); return; }
-    const t = T.load(a.sobre.id);
-    if (t && (t.transporte !== "nostr" || t.nostr?.otro !== a.de || t.state === "closed")) return;
-    if (!t && T.alreadySeen(a.sobre.id)) return;
-    const dir = join(SPOOL, a.sobre.id, PARTS, f.fid);
+    const t = T.load(a.envelope.id);
+    if (t && (t.transporte !== "nostr" || t.nostr?.otro !== a.from || t.state === "closed")) return;
+    if (!t && T.alreadySeen(a.envelope.id)) return;
+    const dir = join(SPOOL, a.envelope.id, PARTS, f.fid);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     writeFileSync(join(dir, String(f.n)), raw, { mode: 0o600 });
     const have = readdirSync(dir).filter(x => /^\d+$/.test(x)).length;
@@ -407,11 +407,11 @@ export class NostrBridge {
     for (let i = 0; i < f.total; i++) parts.push(readFileSync(join(dir, String(i))));
     const bytes = Buffer.concat(parts);
     rmSync(dir, { recursive: true, force: true });
-    try { rmdirSync(join(SPOOL, a.sobre.id, PARTS)); } catch {}
+    try { rmdirSync(join(SPOOL, a.envelope.id, PARTS)); } catch {}
     if (bytes.length !== f.size) { this.cb.log("nostr", "file rebuilt with a different size; dropped", f.name); return; }
-    const dest = join(SPOOL, a.sobre.id, `${f.fid}-${safeName(f.name)}`);
+    const dest = join(SPOOL, a.envelope.id, `${f.fid}-${safeName(f.name)}`);
     writeFileSync(dest, bytes, { mode: 0o600 });
-    const ready = join(SPOOL, a.sobre.id, READY);
+    const ready = join(SPOOL, a.envelope.id, READY);
     const queue: string[] = existsSync(ready) ? JSON.parse(readFileSync(ready, "utf8")) : [];
     writeAtomic(ready, JSON.stringify([...queue, dest]));
     if (t) await this.deliverReady(t);
@@ -478,12 +478,12 @@ export class NostrBridge {
     return this.send(T.load(t.id) ?? t, { v: PROTOCOL, id: t.id, kind, subject: t.subject, ...(m ? { kindOfMsg: m.kind } : {}) }, text);
   }
 
-  async aviso(t: T.Thread, text: string) { await this.send(t, { v: PROTOCOL, id: t.id, kind: "notice", subject: t.subject }, text); }
-  async pensandoOn(_t: T.Thread, _who: string) {}
-  async pensandoOff(_t: T.Thread) {}
+  async notice(t: T.Thread, text: string) { await this.send(t, { v: PROTOCOL, id: t.id, kind: "notice", subject: t.subject }, text); }
+  async thinkingOn(_t: T.Thread, _who: string) {}
+  async thinkingOff(_t: T.Thread) {}
 
   /** Asks the relays to delete everything this side sent for this spoochie. */
-  async borrarHilo(t: T.Thread): Promise<number> {
+  async eraseThread(t: T.Thread): Promise<number> {
     let n = 0;
     for (const e of t.nostr?.enviados ?? []) {
       try { await Promise.any(this.pool.publish([...new Set([...t.nostr!.relays, ...this.relays])], deletionRequest(e.id, e.wsk))); n++; } catch {}
@@ -499,7 +499,7 @@ export class NostrBridge {
    * 14-09, a real join's hello ended up on one relay out of three. A relay that does not
    * answer does not hang the join: after `publishWaitMs` it stops waiting.
    */
-  async hola(toPk: string, relays: string[], name: string, slackId?: string, k?: string): Promise<boolean> {
+  async hello(toPk: string, relays: string[], name: string, slackId?: string, k?: string): Promise<boolean> {
     const { wrap } = wrapEnvelope(this.sk, toPk, { v: PROTOCOL, id: "hola", kind: "hola", fromName: name, slack: slackId, relays: this.relays, k }, `${name} is on spoochie now`);
     let accepted = 0;
     const all = this.pool.publish([...new Set([...relays, ...this.relays])], wrap).map(p => p.then(() => { accepted++; }, () => {}));
