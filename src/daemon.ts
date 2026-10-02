@@ -818,7 +818,10 @@ async function watch(t: T.Thread, m: T.Msg): Promise<boolean> {
   // trustworthy. The prompt itself already distinguishes: proposing a patch for a
   // person to review isn't danger; what it looks for inside it is instructions to the assistant.
   if (!Cfg.load().guardian || m.author === "spoochie") return true;
+  const started = Date.now();
   const v = await judge(t.subject, m.text);
+  // The message waits for this before it reaches the session; the log says how long.
+  log("watch", t.id, v.verdict, `${Date.now() - started} ms`);
   m.offTopic = { verdict: v.verdict, why: v.why };
   const sender = T.otherSide(t, T.mySide(t, sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId).sessionId);
   if (v.peligro) {
