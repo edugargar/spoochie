@@ -608,14 +608,16 @@ export class SlackBridge {
     const body: any = m
       ? { text: fallbackText(t, m), blocks: messageBlocks(t, m) }
       : noticeBlocks(t, notice);
-    // What gets signed is what the other side will rebuild, which is the block body.
+    // What gets signed is what the other side will rebuild, which is the block body. Up to
+    // 0.9.10 a message signed m.text instead, and a branch, whose body carries a label,
+    // arrived with a signature that did not match and was dropped.
     // `accept` and `close` used to go unsigned, and they are the two envelopes that DO
     // something on arrival: open the tunnel, and close it purging the thread. `notice`
     // stays unsigned because it does nothing on arrival, and signing it would mean also
     // signing the ones the receiver posts ("is looking at their code"), which have no
     // owner in the thread.
     if (m || env.kind === "accept" || env.kind === "close") {
-      this.sign(env, m ? m.text : (bodyFromBlocks(body.blocks) || body.text || ""), T.otherSide(t, mine.sessionId).slackUser);
+      this.sign(env, bodyFromBlocks(body.blocks) || (m ? m.text : body.text || ""), T.otherSide(t, mine.sessionId).slackUser);
     }
     // Files go to the thread before the text, so they are read together.
     if (m?.files?.length) {
