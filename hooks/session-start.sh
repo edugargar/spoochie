@@ -42,9 +42,8 @@ if [ ! -x "$BIN" ] && ! command -v bun >/dev/null 2>&1; then
     rm -f "$BIN.sums"
     if [ -n "$want" ] && [ "$want" = "$got" ]; then
       chmod +x "$BIN.tmp" && mv "$BIN.tmp" "$BIN"
-      # Binaries from earlier versions are no longer needed.
-      for old in "$DIR"/spoochie-*; do [ "$old" = "$BIN" ] || rm -f "$old"; done
-      rm -f "$DIR/spoochie"
+      # Binaries from earlier versions are no longer needed. Newer ones may be in use.
+      sh "$ROOT/hooks/prune-binaries.sh" "$DIR" "$VERSION"
       note ok "binary $VERSION for $os-$arch downloaded and verified"
       echo "spoochie: downloaded and verified the spoochie $VERSION binary for $os-$arch, no Bun needed."
     else
