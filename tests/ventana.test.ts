@@ -77,12 +77,18 @@ test("la conversacion va a la ventana por su socket; la sesion no ve nada mas; n
 nohup /bin/sh "$1" >/dev/null 2>&1 &
 `);
   // El claude falso de la ventana: se registra como lo haria el hook y se queda vivo.
+  // Como el hook: a un fichero aparte y un mv, que sustituye el registro provisional de
+  // una vez. Con "cat >" el demonio podia leerlo vacio a mitad de escribirse, darlo por
+  // no existente y perder el say que llegaba en ese instante: en CI ubuntu, 3 de 8
+  // pasadas ("say ... FALLO" 3 ms despues del accept). register() usa escribirAtomico.
   writeFileSync(join(bin, "claude"), `#!/bin/sh
 echo "$SPOOCHIE_APARTE_SESION $PWD" >> "$SPOOCHIE_HOME/ventanas.txt"
-cat > "$SPOOCHIE_HOME/sessions/$SPOOCHIE_APARTE_SESION.json" <<JSON
+f="$SPOOCHIE_HOME/sessions/$SPOOCHIE_APARTE_SESION.json"
+cat > "$f.tmp" <<JSON
 {"sessionId":"$SPOOCHIE_APARTE_SESION","name":"aparte-$SPOOCHIE_APARTE","cwd":"$PWD","socket":"${V.sock}","token":"t","pid":$$,"startedAt":$(date +%s)000,"aparte":"$SPOOCHIE_APARTE"}
 JSON
-chmod 600 "$SPOOCHIE_HOME/sessions/$SPOOCHIE_APARTE_SESION.json"
+chmod 600 "$f.tmp"
+mv "$f.tmp" "$f"
 sleep 60
 `);
   chmodSync(join(bin, "claude"), 0o755); chmodSync(join(bin, "abridor"), 0o755);
