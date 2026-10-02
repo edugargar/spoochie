@@ -230,8 +230,12 @@ async function main() {
   // 2. Bea has no Bun: she uses the compiled binary, as the release hook downloads it.
   //    It is compiled from this tree, with the same command as the release workflow.
   const version = json(join(ROOT, ".claude-plugin", "plugin.json")).version;
-  const binB = join(HOME_B, "bin", `spoochie-${version}`);
-  mkdirSync(join(HOME_B, "bin"), { recursive: true, mode: 0o700 });
+  //    Not in HOME_B/bin, where the release hook would put it: the aside window loads the
+  //    plugin installed on this machine, whose SessionStart hook may be another version
+  //    and, up to 0.9.10, deleted every binary there but its own. A person runs one
+  //    version everywhere; this machine runs the tree's daemon next to the installed plugin.
+  const binB = join(LAB, "bea-bin", `spoochie-${version}`);
+  mkdirSync(join(LAB, "bea-bin"), { recursive: true, mode: 0o700 });
   const comp = spawnSync("bun", ["build", "--compile", join(ROOT, "src", "cli.ts"), "--outfile", binB], { encoding: "utf8" });
   step(comp.status === 0 && existsSync(binB), "Bea's binary compiles", comp.status === 0 ? `spoochie-${version}` : comp.stderr.trim().slice(-300));
   if (!existsSync(binB)) throw new Error("no binary");
