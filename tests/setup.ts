@@ -6,9 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 process.env.SPOOCHIE_HOME = mkdtempSync(join(tmpdir(), "spoochie-test-"));
 // Y no abren dialogos de macOS: el aviso va a la terminal salvo que un test diga otra cosa.
-process.env.SPOOCHIE_AVISO ??= "terminal";
+process.env.SPOOCHIE_NOTICE ??= "terminal";
 // Ni miran GitHub para ver si hay version nueva, ni copian el repo para el aparte.
-process.env.SPOOCHIE_SIN_RED = "1";
+process.env.SPOOCHIE_OFFLINE = "1";
 
 /**
  * El plazo por defecto de los tests, y por que no son los 5 s de bun.
@@ -18,7 +18,7 @@ process.env.SPOOCHIE_SIN_RED = "1";
  * o sea justo en el corte, y el mensaje no decia "esto tarda mas", decia "esto no pasa".
  *
  * Los plazos que cada test declara ya pasaban por `plazo()`, pero un test que no declara
- * ninguno se quedaba con los 5 s de bun, y esos no los movia SPOOCHIE_TEST_LENTO. O sea
+ * ninguno se quedaba con los 5 s de bun, y esos no los movia SPOOCHIE_TEST_SLOW. O sea
  * que el mando de la maquina lenta seguia sin llegar a todo.
  */
 import { setDefaultTimeout } from "bun:test";

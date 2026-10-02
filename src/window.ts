@@ -37,6 +37,7 @@
  * propia si bloquea, que es por lo que la ventana se monta a mano.
  */
 import * as T from "./threads.ts";
+import { envVar } from "./paths.ts";
 
 /** El ancho fijo. Una columna estrecha se lee de un vistazo; una ancha obliga a barrer
  *  la linea entera, y esto se mira durante un segundo. */
@@ -88,7 +89,7 @@ export const BUTTONS = { rechazar: "Ahora no", slack: "Ver en Slack", aceptar: "
  * Sin la variable, centrada, que es donde tiene que estar cuando la mira una persona.
  */
 export function requestedPosition(): { x: number; y: number } | null {
-  const v = process.env.SPOOCHIE_VENTANA_POS;
+  const v = envVar("SPOOCHIE_WINDOW_POS", "SPOOCHIE_VENTANA_POS");
   if (!v) return null;
   const [x, y] = v.split(",").map(n => Number(n.trim()));
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
@@ -107,7 +108,7 @@ export function requestedPosition(): { x: number; y: number } | null {
  * corre; nada que llegue por el tunel puede ponerla.
  */
 export function requestedClick(): 1 | 2 | 3 | 0 {
-  const v = process.env.SPOOCHIE_VENTANA_CLIC;
+  const v = envVar("SPOOCHIE_WINDOW_CLICK", "SPOOCHIE_VENTANA_CLIC");
   return v === "1" ? 1 : v === "2" ? 2 : v === "3" ? 3 : 0;
 }
 

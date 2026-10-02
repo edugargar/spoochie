@@ -60,7 +60,7 @@ test("al apagarse el demonio, su aviso abierto se cierra", async () => {
     }), { mode: 0o600 });
     writeFileSync(join(home, "sessions", `${id}.json`), JSON.stringify({ sessionId: id, name: `repo-${yo.toLowerCase()}`, cwd: home, socket: box.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
     demonios.push(spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-      env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOSTR_DIR: NOSTR, SPOOCHIE_AVISO: aviso, SPOOCHIE_VENTANA: "fondo" }, stdio: "ignore",
+      env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOSTR_DIR: NOSTR, SPOOCHIE_NOTICE: aviso, SPOOCHIE_WINDOW: "background" }, stdio: "ignore",
     }));
   }
   expect(await hasta(() => existsSync(join(HOME_A, "daemon.sock")) && existsSync(join(HOME_B, "daemon.sock")))).toBe(true);

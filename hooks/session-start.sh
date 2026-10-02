@@ -25,7 +25,7 @@ BIN="$DIR/spoochie-$VERSION"
 # cambia en .claude-plugin/marketplace.json ("origin") y aqui no hay que tocar nada.
 REPO=$(sed -n 's/.*"origin" *: *"\([^"]*\)".*/\1/p' "$ROOT/.claude-plugin/marketplace.json" | head -1)
 [ -n "$REPO" ] || REPO="edugargar/spoochie"
-REPO="${SPOOCHIE_ORIGEN:-$REPO}"
+REPO="${SPOOCHIE_ORIGIN:-${SPOOCHIE_ORIGEN:-$REPO}}"
 
 if [ ! -x "$BIN" ] && ! command -v bun >/dev/null 2>&1; then
   os=$(uname -s | tr '[:upper:]' '[:lower:]'); arch=$(uname -m)

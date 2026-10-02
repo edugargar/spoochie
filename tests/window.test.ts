@@ -8,7 +8,7 @@ import { windowScript } from "../src/aside.ts";
 import { hasta, plazo } from "./wait.ts";
 
 /**
- * El Claude aparte en una ventana nueva. Aqui no hay iTerm: SPOOCHIE_VENTANA apunta a un
+ * El Claude aparte en una ventana nueva. Aqui no hay iTerm: SPOOCHIE_WINDOW apunta a un
  * "abridor" que corre el script en segundo plano, y el `claude` del PATH es uno falso
  * que hace lo que haria el hook SessionStart de la ventana (registrar su sesion con un
  * socket) y se queda vivo. Con eso se prueba lo que fallo en e856: que la conversacion
@@ -59,8 +59,8 @@ test("el script de la ventana entra en el repo, lleva la correa y las variables 
   const t: any = { id: "w1", subject: "el boton", messages: [] };
   const s = windowScript(t, "/tmp/mi repo", "aparte-w1-x");
   expect(s).toContain("cd '/tmp/mi repo'");
-  expect(s).toContain("SPOOCHIE_APARTE='w1'");
-  expect(s).toContain("SPOOCHIE_APARTE_SESION='aparte-w1-x'");
+  expect(s).toContain("SPOOCHIE_ASIDE='w1'");
+  expect(s).toContain("SPOOCHIE_ASIDE_SESSION='aparte-w1-x'");
   expect(s).toContain("--allowedTools");
   // Desde que ventana y fondo comparten `banderasAparte`, cada palabra del exec va
   // entrecomillada por sq(), banderas incluidas: al shell le llega igual.
@@ -82,10 +82,10 @@ nohup /bin/sh "$1" >/dev/null 2>&1 &
   // no existente y perder el say que llegaba en ese instante: en CI ubuntu, 3 de 8
   // pasadas ("say ... FALLO" 3 ms despues del accept). register() usa escribirAtomico.
   writeFileSync(join(bin, "claude"), `#!/bin/sh
-echo "$SPOOCHIE_APARTE_SESION $PWD" >> "$SPOOCHIE_HOME/ventanas.txt"
-f="$SPOOCHIE_HOME/sessions/$SPOOCHIE_APARTE_SESION.json"
+echo "$SPOOCHIE_ASIDE_SESSION $PWD" >> "$SPOOCHIE_HOME/ventanas.txt"
+f="$SPOOCHIE_HOME/sessions/$SPOOCHIE_ASIDE_SESSION.json"
 cat > "$f.tmp" <<JSON
-{"sessionId":"$SPOOCHIE_APARTE_SESION","name":"aparte-$SPOOCHIE_APARTE","cwd":"$PWD","socket":"${V.sock}","token":"t","pid":$$,"startedAt":$(date +%s)000,"aparte":"$SPOOCHIE_APARTE"}
+{"sessionId":"$SPOOCHIE_ASIDE_SESSION","name":"aparte-$SPOOCHIE_ASIDE","cwd":"$PWD","socket":"${V.sock}","token":"t","pid":$$,"startedAt":$(date +%s)000,"aparte":"$SPOOCHIE_ASIDE"}
 JSON
 chmod 600 "$f.tmp"
 mv "$f.tmp" "$f"
@@ -101,7 +101,7 @@ sleep 60
       { mode: 0o600 });
   }
   daemon = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_VENTANA: join(bin, "abridor") }, stdio: "ignore",
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_WINDOW: join(bin, "abridor") }, stdio: "ignore",
   });
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   expect((await rpc({ op: "ping" })).pid).toBe(daemon.pid!);

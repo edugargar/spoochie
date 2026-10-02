@@ -6,14 +6,14 @@ import { LENTO, plazo } from "./wait.ts";
 /**
  * Un solo mando para una maquina lenta.
  *
- * `SPOOCHIE_TEST_LENTO` escalaba los sondeos de `hasta()` pero no el plazo de cada test,
+ * `SPOOCHIE_TEST_SLOW` escalaba los sondeos de `hasta()` pero no el plazo de cada test,
  * que es un numero suelto al final de la funcion. La promesa estaba a medias: las
  * esperas se estiraban y el corte seguia donde estaba.
  *
  * Medido con ocho procesos comiendo CPU: cuatro tests en rojo, y ninguno por su logica.
  * El de fugas decia `status: null` porque bun lo habia cortado a los 5.000 ms por
  * defecto, no porque el comprobador fallara. Con los plazos ya multiplicados y
- * SPOOCHIE_TEST_LENTO=3, la misma carga: 250 pass, 0 fail, dos veces.
+ * SPOOCHIE_TEST_SLOW=3, la misma carga: 250 pass, 0 fail, dos veces.
  *
  * Un test rojo por un plazo corto es peor que no tenerlo, porque no dice "esto tarda
  * mas": dice "esto no pasa", y lo siguiente que hace alguien es mirar el codigo bueno.
@@ -39,7 +39,7 @@ test("y el presupuesto multiplica de verdad", () => {
 
 /**
  * La guarda de arriba mira los plazos que un test DECLARA. El que no declara ninguno se
- * quedaba con los 5 s de bun, que no los mueve SPOOCHIE_TEST_LENTO: medido,
+ * quedaba con los 5 s de bun, que no los mueve SPOOCHIE_TEST_SLOW: medido,
  * `copia.test.ts` fallando a los 5.037 ms con la maquina cargada. El plazo por defecto lo
  * pone ahora `tests/setup.ts`, que es el preload de toda la suite.
  */

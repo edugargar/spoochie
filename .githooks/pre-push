@@ -1,26 +1,29 @@
 #!/bin/sh
-# Antes de empujar: la comprobacion de fugas sobre lo que sale (scripts/leaks.ts).
-# Se activa con:  git config core.hooksPath .githooks
-# La lista de palabras prohibidas vive fuera del repo, en ~/.claude/spoochie/fugas-prohibidas.txt
-# (una linea, separadas por comas). Si no existe, solo corren los patrones genericos.
+# Before pushing: the leak check over what goes out (scripts/leaks.ts).
+# Turn it on with:  git config core.hooksPath .githooks
+# The forbidden word list lives outside the repo, in ~/.claude/spoochie/forbidden-words.txt
+# (one line, comma separated; fugas-prohibidas.txt, its old name, still works). Without it,
+# only the generic patterns run.
 set -e
-# Y la prueba real: nada sale sin una conversacion de verdad entre dos personas
-# (scripts/real-test.ts), que deja un sello por arbol de ficheros. Los tests en verde no bastan:
-# el 01-10 lo estaban y la primera conversacion entre dos personas fallo entera.
-# Sin --path-format: el git de Apple no lo conoce y lo devuelve como texto, y el sello
-# se buscaba en "--path-format=absolute\n.git/...", o sea en ningun sitio.
-sellos="$(cd "$(git rev-parse --git-common-dir)" && pwd)/spoochie-real-test"
-lista="${SPOOCHIE_HOME:-$HOME/.claude/spoochie}/fugas-prohibidas.txt"
-[ -r "$lista" ] && FUGAS_PROHIBIDAS="$(cat "$lista")" && export FUGAS_PROHIBIDAS
+# And the real test: nothing goes out without a real conversation between two people
+# (scripts/real-test.ts), which leaves one seal per file tree. Green tests are not enough:
+# on 10-01 they were green and the first conversation between two people failed end to end.
+# No --path-format: Apple's git doesn't know it and echoes it back as text, so the seal
+# was looked up in "--path-format=absolute\n.git/...", which is nowhere.
+seals="$(cd "$(git rev-parse --git-common-dir)" && pwd)/spoochie-real-test"
+dir="${SPOOCHIE_HOME:-$HOME/.claude/spoochie}"
+list="$dir/forbidden-words.txt"
+[ -r "$list" ] || list="$dir/fugas-prohibidas.txt"
+[ -r "$list" ] && SPOOCHIE_FORBIDDEN_WORDS="$(cat "$list")" && export SPOOCHIE_FORBIDDEN_WORDS
 while read -r _local_ref local_sha _remote_ref remote_sha; do
   [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
-  # Por arbol: un rebase de GitHub cambia el SHA del commit pero no sus ficheros.
-  arbol=$(git rev-parse "$local_sha^{tree}")
-  if [ ! -f "$sellos/$arbol" ]; then
-    echo "pre-push: $(git log -1 --format='%h %s' "$local_sha") no tiene prueba real." >&2
-    echo "  Corre: bun scripts/real-test.ts   (dos Claude de verdad hablando; deja el sello si llega todo)" >&2
+  # By tree: a GitHub rebase changes the commit SHA but not its files.
+  tree=$(git rev-parse "$local_sha^{tree}")
+  if [ ! -f "$seals/$tree" ]; then
+    echo "pre-push: $(git log -1 --format='%h %s' "$local_sha") has no real test." >&2
+    echo "  Run: bun scripts/real-test.ts   (two real Claudes talking; it leaves the seal if everything arrives)" >&2
     exit 1
   fi
-  if git cat-file -e "$remote_sha" 2>/dev/null; then desde="$remote_sha"; else desde=""; fi
-  bun scripts/leaks.ts ${desde:+--desde "$desde"}
+  if git cat-file -e "$remote_sha" 2>/dev/null; then since="$remote_sha"; else since=""; fi
+  bun scripts/leaks.ts ${since:+--desde "$since"}
 done

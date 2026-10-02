@@ -236,16 +236,16 @@ one you typed in most recently. That session only lends its directory. If it pic
 wrong, `spoochie take <id>` from the right session moves it. Accepting twice, or taking
 it from the same repo, never opens a second window.
 
-Without a desktop (Linux servers, `SPOOCHIE_AVISO=terminal`) the invitation is delivered
+Without a desktop (Linux servers, `SPOOCHIE_NOTICE=terminal`) the invitation is delivered
 into that session as a turn instead, and its Claude asks you.
 
 - The window runs in Claude Code's `auto` permission mode: the read-only allowlist is
   approved outright, anything else is judged by Claude Code's own classifier instead of
   stopping to ask, and Edit, Write, `git push`, `git commit`, `git checkout`, `git reset`
-  and `rm` are denied outright, which no mode can override. `SPOOCHIE_APARTE_PERMISOS=default`
+  and `rm` are denied outright, which no mode can override. `SPOOCHIE_ASIDE_PERMISSIONS=default`
   in the daemon's environment makes it ask for everything again.
 - On macOS the window is Terminal.app, opened with `open`, which needs no permissions.
-  Anywhere a window cannot be opened (Linux without a desktop, `SPOOCHIE_VENTANA=fondo`)
+  Anywhere a window cannot be opened (Linux without a desktop, `SPOOCHIE_WINDOW=background`)
   the side Claude runs headless as `claude -p`, with its output in
   `~/.claude/spoochie/aparte/<id>.log`.
 - `--aqui` on `accept` or `take` keeps the old behaviour: that session answers itself.
