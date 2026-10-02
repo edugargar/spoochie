@@ -92,7 +92,7 @@ test("each README promise names the test that proves it, and that test exists", 
   // true (the named tests do that), it checks that the README can't
   // promise something pointing at a file that's no longer there.
   const readme = await Bun.file(new URL("../README.md", import.meta.url)).text();
-  const table = readme.slice(readme.indexOf("## The promises"), readme.indexOf("## Security model"));
+  const table = readme.slice(readme.indexOf("## Trust"), readme.indexOf("And the rules around them"));
   expect(table).toContain("No server of ours");
   expect(table).toContain("The model is yours");
   expect(table).toContain("Closing deletes it");
