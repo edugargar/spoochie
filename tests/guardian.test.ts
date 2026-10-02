@@ -84,3 +84,10 @@ test("the watcher sees the whole message, and what does not fit does not go in",
   expect(v.peligro).toBe(true);
   expect(v.why).toContain("is held");
 });
+
+test("the watcher's claude starts bare: no settings, hooks, plugins or MCP of this machine", async () => {
+  // Starting all that was 6 of the 8 s each judgement took, and every message from the
+  // other side waits for the judgement before it is delivered.
+  const src = await Bun.file(new URL("../src/guardian.ts", import.meta.url)).text();
+  for (const flag of [`"--setting-sources", ""`, `"--strict-mcp-config"`, `"--disable-slash-commands"`]) expect(src).toContain(flag);
+});

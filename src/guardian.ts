@@ -101,7 +101,11 @@ function onePass(subject: string, text: string): Promise<Verdict | null> {
   return new Promise(resolve => {
     const child = execFile(
       "claude",
-      ["-p", "--model", MODEL, "--output-format", "json", "--max-turns", "1"],
+      // Nothing of this machine's setup: no settings, hooks, plugins, MCP servers, skills
+      // or Chrome. Starting all that was 6 of the 8 s a judgement took, and none of it
+      // should see a message from someone else anyway.
+      ["-p", "--model", MODEL, "--output-format", "json", "--max-turns", "1",
+        "--setting-sources", "", "--strict-mcp-config", "--disable-slash-commands", "--no-chrome", "--no-session-persistence"],
       { timeout: TIMEOUT_MS, maxBuffer: 1 << 20 },
       (err, stdout) => {
         if (err) return resolve(null);
