@@ -89,7 +89,7 @@ const launching = new Map<string, Promise<SessionRecord | null>>();
 function attend(t: T.Thread, cwd: string): Promise<SessionRecord | null> {
   const inFlight = launching.get(t.id);
   if (inFlight) return inFlight;
-  const p = attendNow(t, cwd).catch(e => { log("aparte", t.id, "failed:", String(e)); return null; }).finally(() => launching.delete(t.id));
+  const p = attendNow(t, cwd).catch(e => { log("aside", t.id, "failed:", String(e)); return null; }).finally(() => launching.delete(t.id));
   launching.set(t.id, p);
   return p;
 }
@@ -101,10 +101,10 @@ async function startBackground(t: T.Thread, cwd: string): Promise<Ap.Aside | nul
   const ap = Ap.launch(t, cwd, "background");
   if (!ap) return null;
   asides.set(t.id, ap);
-  ap.child!.on("error", e => log("aparte", t.id, "won't start:", String(e)));
-  ap.child!.on("exit", code => { if (asides.get(t.id) === ap) asides.delete(t.id); unregister(ap.sess.sessionId); log("aparte", t.id, "exited", code); });
+  ap.child!.on("error", e => log("aside", t.id, "won't start:", String(e)));
+  ap.child!.on("exit", code => { if (asides.get(t.id) === ap) asides.delete(t.id); unregister(ap.sess.sessionId); log("aside", t.id, "exited", code); });
   await sleep(300);
-  if (ap.child!.exitCode !== null) { log("aparte", t.id, "won't start; see", `${Ap.ASIDE_DIR}/${t.id}.log`); asides.delete(t.id); unregister(ap.sess.sessionId); return null; }
+  if (ap.child!.exitCode !== null) { log("aside", t.id, "won't start; see", `${Ap.ASIDE_DIR}/${t.id}.log`); asides.delete(t.id); unregister(ap.sess.sessionId); return null; }
   return ap;
 }
 
@@ -131,18 +131,18 @@ async function attendNow(t: T.Thread, cwd: string): Promise<SessionRecord | null
   const old = asides.get(t.id);
   // There's already a live one in that same repo: it isn't relaunched. That's what happened in e856,
   // where two accepts in a row killed the first one and the second was born in the wrong repo.
-  if (old && Ap.alive(old) && (old.origin ?? old.cwd) === cwd && sessById(old.sess.sessionId)) { log("aparte", t.id, "already alive in", cwd); return old.sess; }
+  if (old && Ap.alive(old) && (old.origin ?? old.cwd) === cwd && sessById(old.sess.sessionId)) { log("aside", t.id, "already alive in", cwd); return old.sess; }
   if (old) { asides.delete(t.id); await dismiss(old, `is now handled from ${cwd}`); }
 
   // On a clean copy of the repo, not on the person's checkout.
   const origin = cwd;
   const copy = Cfg.load().aparteCopia !== false ? Ap.worktreeCopy(origin, t.id) : null;
-  if (Cfg.load().aparteCopia !== false && !copy) log("aparte", t.id, "no copy (not a git repo or the worktree failed); on the checkout");
+  if (Cfg.load().aparteCopia !== false && !copy) log("aside", t.id, "no copy (not a git repo or the worktree failed); on the checkout");
   cwd = copy ?? origin;
   let ap = Ap.asideMode() === "window" ? Ap.launch(t, cwd, "window") : null;
   if (ap) asides.set(t.id, ap);
   else {
-    if (Ap.asideMode() === "window") log("aparte", t.id, "couldn't open a window; going to the background");
+    if (Ap.asideMode() === "window") log("aside", t.id, "couldn't open a window; going to the background");
     ap = await startBackground(t, cwd);
     if (!ap) return null;
   }
@@ -161,13 +161,13 @@ async function attendNow(t: T.Thread, cwd: string): Promise<SessionRecord | null
 
   if (ap.mode === "background") {
     Ap.stdinTurn(ap, first);
-    log("aparte", t.id, "handled in the background in", cwd);
+    log("aside", t.id, "handled in the background in", cwd);
     return ap.sess;
   }
 
   const rec = await waitForWindow(ap, 60_000);
   if (!rec) {
-    log("aparte", t.id, "the window didn't register in 60 s (old plugin in that session?); continuing in the background");
+    log("aside", t.id, "the window didn't register in 60 s (old plugin in that session?); continuing in the background");
     unregister(ap.sess.sessionId);
     const bg = await startBackground(t, cwd);
     if (!bg) { asides.delete(t.id); return null; }
@@ -184,7 +184,7 @@ async function attendNow(t: T.Thread, cwd: string): Promise<SessionRecord | null
   ap.ready = true;
   await deliver(rec, first);
   for (const x of ap.queue.splice(0)) await deliver(rec, x);
-  log("aparte", t.id, "handled in a new window, pid", rec.pid, "in", cwd);
+  log("aside", t.id, "handled in a new window, pid", rec.pid, "in", cwd);
   return rec;
 }
 
@@ -389,7 +389,7 @@ async function handle(req: Req): Promise<any> {
         enqueue(t, m, async (tt, mm) => {
           const peer = T.otherSide(tt, req.sessionId);
           const ok = await sendToSide(tt, peer, T.renderMessage(tt, mm, peer.sessionId), mm);
-          log("salida", tt.id, ok ? `posted ${via(tt)}` : "FAILED to post");
+          log("out", tt.id, ok ? `posted ${via(tt)}` : "FAILED to post");
           signalSent(ok);
           if (ok) await bridge(tt)?.thinkingOn(tt, peer.human ?? peer.name);
           if (!ok) {
@@ -425,7 +425,7 @@ async function handle(req: Req): Promise<any> {
       delete c.contacts![key];
       Cfg.save(c);
       Aud.record("confianza", "-", Cfg.load().human ?? "this machine", `forgot ${x.name} (${x.id})${req.motivo ? ` · ${req.motivo}` : ""}`);
-      log("olvidar", x.id, x.name, `${theirs.length} spoochies closed`);
+      log("forget", x.id, x.name, `${theirs.length} spoochies closed`);
       return { ok: true, quien: x.name, cerrados: theirs.map(t => t.id) };
     }
 
@@ -631,7 +631,7 @@ function queueNotice(t: T.Thread, pick: SessionRecord) {
   if (dialogs.has(t.id) || queue.some(x => x.id === t.id)) return;
   if (dialogs.size > 0) {
     queue.push({ id: t.id, sessionId: pick.sessionId });
-    log("aviso", t.id, `queued (${queue.length} waiting)`);
+    log("notice", t.id, `queued (${queue.length} waiting)`);
     return;
   }
   askWithDialog(t, pick);
@@ -708,7 +708,7 @@ function askWithDialog(t: T.Thread, pick: SessionRecord) {
     // Whatever happens with this one, the next in the queue can now go.
     setTimeout(nextNotice, 0).unref?.();
     const fresh = T.load(t.id);
-    log("aviso", t.id, "dialog:", r ?? "no answer");
+    log("notice", t.id, "dialog:", r ?? "no answer");
     // While the dialog was open it may have been accepted in Slack or expired: the state rules.
     if (!fresh || fresh.state !== "pending") return;
     if (r === "accept") { Aud.record("aceptado", fresh.id, Cfg.load().human ?? "this machine", "in the dialog"); await onSlackAccept(fresh, "in the notice"); }
@@ -777,7 +777,7 @@ async function onRemoteAccept(t: T.Thread, by: string) {
 async function onSlackMessage(t: T.Thread, m: T.Msg) {
   // Closed is closed: whatever arrives late (a slow relay, someone writing in the
   // already-closed Slack thread) doesn't refill a spoochie that was already purged.
-  if (t.state === "closed") { log("entrada", t.id, "message after close; dropped"); return; }
+  if (t.state === "closed") { log("in", t.id, "message after close; dropped"); return; }
   t.messages.push(m);
   t.lastActivityAt = m.at;
   if (t.state === "pending" && m.author === "human") { t.state = "open"; t.acceptedAt = m.at; t.acceptedBy = "human in Slack"; }
@@ -799,7 +799,7 @@ async function onSlackMessage(t: T.Thread, m: T.Msg) {
     await send(local, withTranscript(t, mine, T.renderMessage(t, m, mine)));
     // As soon as it lands, not at the end: the transcript and the "thinking" took 9 s and in the
     // real test the log said nothing about an answer that was already in the session.
-    log("entrada", t.id, m.author, "in the session");
+    log("in", t.id, m.author, "in the session");
     // The other side sees that work is happening here, instead of 40 blank seconds.
     await bridge(t)?.thinkingOn(t, T.mySide(t, mine).human ?? T.mySide(t, mine).name);
   }
@@ -862,7 +862,7 @@ async function release(t: T.Thread, action: "suelta" | "descarta", how: string):
     if (bridge(t) && hasThread(t)) await bridge(t)!.notice(t, action === "suelta" ? `:unlock: ${n} held message(s) delivered ${how}.` : `:wastebasket: ${n} held message(s) discarded ${how}.`);
     await refreshTranscript(t);
   }
-  log("retenidos", t.id, action, n, how);
+  log("held", t.id, action, n, how);
   return n;
 }
 
@@ -969,14 +969,14 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string, remo
   if (Cfg.load().borrarAlCerrar !== false) {
     // Locally, right away: the conversation lives in the Claude that had it, not here.
     T.purge(t, { spool: join(SPOOL, t.id), transcript: transcriptPath(t.id) });
-    log("borrado", t.id, "local");
+    log("erased", t.id, "local");
     const p = bridge(t);
     if (p && hasThread(t)) {
-      setTimeout(async () => { const n = await p.eraseThread(t); log("borrado", t.id, t.transporte ?? "slack", n, "posts"); }, DELETE_REMOTE_AFTER_MS).unref();
+      setTimeout(async () => { const n = await p.eraseThread(t); log("erased", t.id, t.transporte ?? "slack", n, "posts"); }, DELETE_REMOTE_AFTER_MS).unref();
     }
   }
   const ap = asides.get(t.id);
-  if (t.copiaDe) { const [origin, copy] = [t.copiaDe, t.to.cwd]; setTimeout(() => { Ap.removeCopy(origin, copy); log("aparte", t.id, "copy removed"); }, 60_000).unref(); }
+  if (t.copiaDe) { const [origin, copy] = [t.copiaDe, t.to.cwd]; setTimeout(() => { Ap.removeCopy(origin, copy); log("aside", t.id, "copy removed"); }, 60_000).unref(); }
   if (ap?.mode === "background") setTimeout(() => Ap.killAside(ap), 15_000).unref();
   if (ap?.mode === "window" && ap.ready) { const r = sessById(ap.sess.sessionId); if (r) await send(r, `This spoochie has ended. You can close this window.`); }
   if (ap) asides.delete(t.id);
@@ -1007,7 +1007,7 @@ async function warnUnread(t: T.Thread, closedBy?: string) {
   const who = T.otherSide(t, mine);
   const ago = Math.round((Date.now() - last.at) / 60000);
   await send(local, `[spoochie ${t.id}] has closed (${t.closeReason}) and the last thing said was from ${who.human ?? who.name}, ${ago} min ago, with no reply from you:\n\n${(last.text ?? "").slice(0, 400)}\n\n${t.transcriptUrl ? `The whole thread: ${t.transcriptUrl}` : "There's no published transcript of this spoochie."} Tell your human; don't open another spoochie on your own.`);
-  log("no-leido", t.id, who.name, `${ago} min`);
+  log("unread", t.id, who.name, `${ago} min`);
 }
 
 /** The Slack bridge is recreated when the config reloads, and each time the rotation
@@ -1019,9 +1019,9 @@ function hookRotation() {
     const c = Cfg.load();
     const { incomingRotation } = await import("./keys.ts");
     const r = incomingRotation(c, from, newPk, verdict);
-    if (!r.ok) { log("rota", from, "rejected:", r.por); Aud.record("clave-rechazada", "-", from, `rotation: ${r.por}`); return; }
+    if (!r.ok) { log("rotation", from, "rejected:", r.por); Aud.record("clave-rechazada", "-", from, `rotation: ${r.por}`); return; }
     Cfg.save(c);
-    log("rota", from, r.nombre, "key changed");
+    log("rotation", from, r.nombre, "key changed");
     Aud.record("clave-fijada", "-", r.nombre, `rotation accepted · before ${r.antes.slice(0, 12)}...`);
   };
 }
@@ -1044,13 +1044,13 @@ async function tick() {
         const s = sessById(side.sessionId);
         if (s) await send(s, T.renderNotice(t, (due - now) / 1000, side.sessionId));
       }
-      log("aviso-silencio", t.id);
+      log("silence-notice", t.id);
     }
   }
   // What a contact left in the spool of a thread that never existed: the chunks can
   // arrive before the invite, but if the invite never arrives, nobody claims them.
   for (const id of sweepOrphans(id => Boolean(T.load(id)), T.PENDING_TTL_MS)) {
-    log("spool-huerfano", id, "deleted: 4 h with no thread to claim it");
+    log("spool-orphan", id, "deleted: 4 h with no thread to claim it");
   }
   if (slack) { try { await slack.poll(); } catch (e) { log("slack-poll-error", String(e)); } }
 }
@@ -1075,7 +1075,7 @@ function sweepClosedWithText() {
     T.purge(t, { spool: join(SPOOL, t.id), transcript: transcriptPath(t.id) });
     n++;
   }
-  if (n) log("barrido", `${n} closed spoochie(s) still kept text from when they closed without sweeping; deleted`);
+  if (n) log("sweep", `${n} closed spoochie(s) still kept text from when they closed without sweeping; deleted`);
 }
 
 function main() {
@@ -1095,15 +1095,15 @@ function main() {
     const me = sessById(tt.from.sessionId) ? tt.from : tt.to;
     const other = T.otherSide(tt, me.sessionId);
     const ok = await sendToSide(tt, other, T.renderMessage(tt, mm, other.sessionId), mm);
-    log("salida", tt.id, ok ? `posted ${via(tt)} (resumed)` : "FAILED to post (will retry)");
+    log("out", tt.id, ok ? `posted ${via(tt)} (resumed)` : "FAILED to post (will retry)");
     return ok;
   });
-  if (resumed) log("cola", "resumed", resumed);
+  if (resumed) log("queue", "resumed", resumed);
   for (const s of liveSessions()) {
     if (!s.aparte || s.socket === Ap.PENDING_SOCKET || s.socket === "(stdin)") continue;
     const th = T.load(s.aparte);
     asides.set(s.aparte, { id: s.aparte, cwd: s.cwd, mode: "window", sess: s, queue: [], ready: true, dead: false, origin: th?.copiaDe });
-    log("aparte", s.aparte, "reattached, window pid", s.pid);
+    log("aside", s.aparte, "reattached, window pid", s.pid);
   }
 
   const server = net.createServer(conn => {

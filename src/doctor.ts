@@ -14,7 +14,7 @@ import * as T from "./threads.ts";
 import * as Des from "./strangers.ts";
 import { whoIs } from "./slack.ts";
 
-export type Check = { ok: boolean | "aviso"; what: string; detail: string };
+export type Check = { ok: boolean | "warn"; what: string; detail: string };
 
 const mode = (p: string) => { try { return (statSync(p).mode & 0o777).toString(8).padStart(3, "0"); } catch { return "?"; } };
 
@@ -62,7 +62,7 @@ export async function check(): Promise<Check[]> {
   if (brokenSockets.length) out.push({ ok: false, what: "inboxes", detail: `${brokenSockets.length} sessions without a socket` });
 
   if (!c.slack) {
-    out.push({ ok: "aviso", what: "Slack", detail: "not set up: spoochie only works on this machine" });
+    out.push({ ok: "warn", what: "Slack", detail: "not set up: spoochie only works on this machine" });
   } else {
     const user = Cfg.slackToken(c), bot = Cfg.slackBotToken(c);
     const me = user ? await whoIs(user) : null;
@@ -99,7 +99,7 @@ export async function check(): Promise<Check[]> {
   });
 
   out.push({
-    ok: c.guardian ? "aviso" : true,
+    ok: c.guardian ? "warn" : true,
     what: "topic watcher",
     detail: c.guardian
       ? "on: costs one Haiku call per message received, paid by the receiver"
@@ -115,12 +115,12 @@ export async function check(): Promise<Check[]> {
   {
     const N = await import("./nostr.ts");
     out.push({
-      ok: c.nostr?.pk ? true : "aviso",
+      ok: c.nostr?.pk ? true : "warn",
       what: "Nostr",
       detail: c.nostr?.pk ? `${N.npub(c.nostr.pk).slice(0, 16)}..., relays: ${N.myRelays(c).join(", ")}${c.transporte === "slack" ? " (threads go over Slack)" : ""}` : "no key yet: it's created by `spoochie nostr`, `invite` or `join`",
     });
     const noKey = Object.values(c.contacts ?? {}).filter(k => !k.npub).map(k => k.name);
-    if (noKey.length) out.push({ ok: "aviso", what: "contacts without a Nostr key", detail: `${noKey.join(", ")}: with them it goes over Slack until their spoochie (>= 0.9) sends its key` });
+    if (noKey.length) out.push({ ok: "warn", what: "contacts without a Nostr key", detail: `${noKey.join(", ")}: with them it goes over Slack until their spoochie (>= 0.9) sends its key` });
   }
 
   out.push({
@@ -139,14 +139,14 @@ export async function check(): Promise<Check[]> {
     const { VERSION } = await import("./version.ts");
     const { newVersionNotice } = await import("./update.ts");
     const update = await newVersionNotice();
-    out.push({ ok: update ? "aviso" : true, what: "version", detail: update ? `${VERSION}; ${update}` : `${VERSION}, the latest published` });
+    out.push({ ok: update ? "warn" : true, what: "version", detail: update ? `${VERSION}; ${update}` : `${VERSION}, the latest published` });
     const { heartbeatVersion, heartbeatAge, installedAgentPath, findClaude } = await import("./startup.ts");
     const c = claudeCheck(installedAgentPath(), findClaude);
     if (c) out.push(c);
     const beat = heartbeatVersion();
     const alive = (heartbeatAge() ?? Infinity) < 90;
     if (alive && beat !== VERSION) out.push({
-      ok: "aviso",
+      ok: "warn",
       what: "daemon version",
       detail: `${beat ?? "older than 0.9.1"}, and this spoochie is ${VERSION}: the daemon started before the update. Restart Claude Code and the hook swaps it`,
     });
@@ -155,13 +155,13 @@ export async function check(): Promise<Check[]> {
   if (existsSync(OUTBOX_FILE)) {
     try {
       const n = (JSON.parse(readFileSync(OUTBOX_FILE, "utf8")) as { msgs: unknown[] }[]).reduce((a, d) => a + d.msgs.length, 0);
-      if (n) out.push({ ok: "aviso", what: "outbox", detail: `${n} message(s) waiting to go out to Slack; the daemon retries every minute` });
+      if (n) out.push({ ok: "warn", what: "outbox", detail: `${n} message(s) waiting to go out to Slack; the daemon retries every minute` });
     } catch {}
   }
 
   if (existsSync(THREADS_DIR)) {
     const old = T.all().filter(t => t.state === "closed" && Date.now() - (t.closedAt ?? 0) > 30 * 24 * 3600 * 1000);
-    if (old.length) out.push({ ok: "aviso", what: "cleanup", detail: `${old.length} spoochies closed more than a month ago` });
+    if (old.length) out.push({ ok: "warn", what: "cleanup", detail: `${old.length} spoochies closed more than a month ago` });
   }
 
   {
@@ -214,7 +214,7 @@ export function audit(c: Cfg.Config, now = Date.now()): Check[] {
   if (pending.length) {
     const names = pending.map(i => i.name ?? i.id ?? "no name").join(", ");
     out.push({
-      ok: "aviso",
+      ok: "warn",
       what: "unredeemed invites",
       detail: `${pending.length} live (${names}): each one lets a key into your contacts until it expires after 30 days`,
     });
@@ -231,7 +231,7 @@ export function audit(c: Cfg.Config, now = Date.now()): Check[] {
       ? `if it's ${theirs.name}: spoochie contacts --bind ${theirs.id} --npub ${d.pk}`
       : "if you know them, invite them: spoochie invite --to <their id>";
     out.push({
-      ok: "aviso",
+      ok: "warn",
       what: "outside your contacts",
       detail: `${d.nombre ? `claims to be ${d.nombre}` : "no name"}${d.slack ? ` (${d.slack})` : ""}, key ${d.pk.slice(0, 12)}...: ${what}, ${d.veces} time(s), last on ${when}. ${fix}`,
     });
@@ -242,7 +242,7 @@ export function audit(c: Cfg.Config, now = Date.now()): Check[] {
   const noKey = Object.values(c.contacts ?? {}).filter(x => !x.pk);
   if (noKey.length) {
     out.push({
-      ok: "aviso",
+      ok: "warn",
       what: "contacts without a pinned key",
       detail: `${noKey.map(x => x.name).join(", ")}: until a signed envelope from them arrives, their first signature is the one that gets pinned`,
     });
@@ -267,7 +267,7 @@ export function audit(c: Cfg.Config, now = Date.now()): Check[] {
       c.slack?.botToken && c.slack.botToken !== "@llavero" ? "bot token" : null,
     ].filter(Boolean);
     if (inFile.length) out.push({
-      ok: "aviso",
+      ok: "warn",
       what: "secrets in config.json",
       detail: `${inFile.join(", ")} in plain text at 0600. On macOS, \`spoochie keychain on\` moves them to the keychain: it goes from "read a file" to "ask the system for permission"`,
     });
@@ -280,7 +280,7 @@ export function audit(c: Cfg.Config, now = Date.now()): Check[] {
     const withKey = Object.values(c.contacts ?? {}).filter(x => x.npub).length;
     const total = Object.values(c.contacts ?? {}).length;
     if (total && withKey === total && c.slack?.botToken) out.push({
-      ok: "aviso",
+      ok: "warn",
       what: "you no longer need the bot token",
       detail: `your ${total} contact(s) have a Nostr key: spoochies go encrypted without passing through Slack and the notice is the system dialog. \`spoochie slack off\` removes the token from this machine; you'd only lose the DM notifications`,
     });
@@ -291,7 +291,7 @@ export function audit(c: Cfg.Config, now = Date.now()): Check[] {
   // be rotated when someone leaves.
   if (c.slack?.botToken) {
     out.push({
-      ok: "aviso",
+      ok: "warn",
       what: "bot token at rest",
       detail: `this machine keeps the team's bot token in config.json: whoever reads it can read the bot's DM with anyone and post as the bot. Rotate it when someone leaves`,
     });
