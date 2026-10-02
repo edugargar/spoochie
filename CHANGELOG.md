@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.11 (2026-10-02)
+
+- Everything is in English now: file names, code, comments, CLI output, the notice and its buttons ("Not now", "Open in Slack", "Let it in"), the skills Claude reads, and the docs. The old Spanish subcommands, flags and environment variables still work (`confiar`, `--vincular`, `SPOOCHIE_VENTANA=fondo`...). What a 0.9.10 peer or an existing install reads did not change; CONTRIBUTING lists it.
+- Fixed: a branch sent over Slack was always dropped as "carried a signature that is not theirs". The sender signed the bare branch name and the receiver checked the labelled text it rebuilds from the message. The sender now signs what the receiver checks.
+- Fixed: the reason for closing a spoochie never reached the other side over Slack; it always read "closed by the other side". The receiver looked for "cerrado (...)" and the sender posts ":lock: Closed · <reason>".
+- Fixed: `/spoochie:join` asked for an email and `--email`, which the CLI has not read since invites stopped carrying a token. It now asks for the Slack member id and `--user`.
+- Fixed: the aside's gatekeeper hook failed open. When it could not run (its binary deleted), Claude Code treated it as a non-blocking error and Read and Bash ran unguarded. It now blocks the tool. And the SessionStart hook deletes only binaries older than its own version, not the daemon's.
+
 ## 0.9.10 (2026-10-01)
 
 - Fixed: pressing "Let it in" on the notice did nothing. The window returns the button code as a string ("3") and the script compared it with `===` against the number 3, so no button matched and the daemon logged "no answer". Seen on 2026-10-01 in the first real spoochie between two people on 0.9.9.
