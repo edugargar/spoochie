@@ -118,7 +118,20 @@ test("the aside starts with the gatekeeper hooked in, in window and in backgroun
   // The matcher said plain "Bash", and that left Read, Grep and Glob out of the hook:
   // the test passed it because it checked the string, not what it covers.
   expect(a.hooks.PreToolUse[0].matcher.split("|")).toContain("Bash");
-  expect(a.hooks.PreToolUse[0].hooks[0].command).toBe("/usr/local/bin/spoochie gatekeeper");
+  expect(a.hooks.PreToolUse[0].hooks[0].command).toStartWith("/usr/local/bin/spoochie gatekeeper ");
+});
+
+test("if the gatekeeper cannot run, the tool is blocked, not let through", () => {
+  // Claude Code treats a failing hook as a non-blocking error and runs the tool anyway.
+  // Exit code 2 is the one that blocks. A missing binary must end there.
+  const { spawnSync } = require("node:child_process");
+  const cmd = (asideSettings("/nonexistent/spoochie-0.0.0") as any).hooks.PreToolUse[0].hooks[0].command;
+  const r = spawnSync("/bin/sh", ["-c", cmd], { input: JSON.stringify({ tool_name: "Read", tool_input: { file_path: "/etc/passwd" } }), encoding: "utf8" });
+  expect(r.status).toBe(2);
+  expect(r.stderr).toContain("blocked");
+  // And a gatekeeper that runs keeps its own answer: the fallback does not fire.
+  const ok = spawnSync("/bin/sh", ["-c", (asideSettings("/bin/echo") as any).hooks.PreToolUse[0].hooks[0].command], { encoding: "utf8" });
+  expect(ok.status).toBe(0);
 });
 
 test("window and background start with the same flags", () => {

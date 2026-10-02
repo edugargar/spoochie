@@ -88,7 +88,11 @@ export function asideSettings(cli = cliCommand()): Record<string, unknown> {
     crossSessionInbound: "accept",
     hooks: {
       PreToolUse: [
-        { matcher: GATEKEEPER_TOOLS.join("|"), hooks: [{ type: "command", command: `${cli} gatekeeper` }] },
+        // Fail closed. A hook that cannot run is a "non-blocking error" for Claude Code and
+        // the tool goes ahead unguarded. Seen in a real test: the window's own SessionStart
+        // hook, from an older installed plugin, deleted the daemon's binary, and every
+        // Read and Bash of the aside ran without the gatekeeper. Exit 2 blocks the tool.
+        { matcher: GATEKEEPER_TOOLS.join("|"), hooks: [{ type: "command", command: `${cli} gatekeeper || { echo "spoochie: the gatekeeper could not run, so this tool is blocked" >&2; exit 2; }` }] },
       ],
       // The sentinel: an aside that ends its turn without answering through the tunnel
       // leaves the other side in silence until the clock closes the spoochie.
