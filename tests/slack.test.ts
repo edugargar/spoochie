@@ -320,6 +320,30 @@ test("a branch sent over Slack carries a signature that matches what the receive
   expect(checkSignature(env.pk, env, bodyFromBlocks(posts[0].blocks), env.sig)).toBe(true);
 });
 
+test("the close reason reaches the other side as the sender posts it", async () => {
+  // The receiver read the reason with /cerrado \((.*)\)/ from the posted text, but what is
+  // posted is ":lock: Closed · <reason>" (":lock: Cerrado · <reason>" in 0.9.10), so the
+  // other side always saw "closed by the other side".
+  const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
+  const posts: any[] = [];
+  b.call = async (method: string, body: any) => { if (method === "chat.postMessage") posts.push(body); return { ts: "1.0" }; };
+  b.pensandoOff = async () => {};
+  await b.post({ ...t, id: "c10s", slack: { channel: "G1", ts: "0.1" }, closeReason: "fixed in main" }, "[spoochie c10s | s] closed (fixed in main).");
+  const Tm = await import("../src/threads.ts");
+  for (const text of [posts[0].text, ":lock: Cerrado · fixed in main"]) {
+    const closed: string[] = [];
+    const r: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_SAM", async () => {}, async () => {}, async () => {});
+    r.onCierre = async (_t: any, reason: string) => { closed.push(reason); };
+    r.get = async () => ({ messages: [
+      { ts: "0.1", user: "UBOT", text: "root" },
+      { ts: "0.2", user: "UBOT", bot_id: "B1", text, metadata: { event_type: EVENT, event_payload: signedClose("c10s", "U_EDU", text) } },
+    ] });
+    Tm.save({ ...t, id: "c10s", slack: { channel: "G1", ts: "0.1" } } as any);
+    await r.pollThread(Tm.load("c10s"));
+    expect(closed).toEqual(["fixed in main"]);
+  }
+});
+
 test("borrarHilo deletes what the bot posted (messages, files, root and notice) and leaves what a person wrote", async () => {
   const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
   b.botUserId = "UBOT";

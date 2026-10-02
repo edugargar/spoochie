@@ -149,6 +149,10 @@ type Block = Record<string, unknown>;
  */
 const isAcceptedNotice = (s: string) => s.includes("ha aceptado el tunel") || s.includes("accepted the tunnel");
 const isClosedNotice = (s: string) => s.includes("cerrado (") || s.includes("closed (");
+/** The reason in a posted close. The sender posts ":lock: Closed · <reason>" (0.9.10:
+ *  ":lock: Cerrado · <reason>"); older text carried "cerrado (<reason>)". */
+const closeReasonOf = (text: string) =>
+  /:lock: (?:Closed|Cerrado) · (.+)$/m.exec(text)?.[1]?.trim() ?? /(?:cerrado|closed) \(([^)]*)\)/.exec(text)?.[1];
 /** Drops the lines that are instructions for the local Claude, not for a person. */
 const stripInternal = (s: string) => s.split("\n")
   .filter(l => !l.startsWith("spoochie ") && !l.includes("--- Esto viene") && !l.includes("--- This comes from"))
@@ -819,8 +823,7 @@ export class SlackBridge {
         if (env.kind === "accept") { await this.onRemoteAccept(t, "on the other machine"); continue; }
         // The other side's close: it used to be just another notice and got ignored, and
         // this side found out from silence 10 min later. Now it closes (and erases) here too.
-        // The reason is read from "cerrado (...)" as 0.9.10 writes it, or "closed (...)".
-        if (env.kind === "close") { if (this.onCierre) await this.onCierre(t, /(?:cerrado|closed) \(([^)]*)\)/.exec(rep.text ?? "")?.[1] ?? "closed by the other side"); continue; }
+        if (env.kind === "close") { if (this.onCierre) await this.onCierre(t, closeReasonOf(rep.text ?? "") ?? "closed by the other side"); continue; }
         await this.onMessage(t, {
           at: Math.round(Number(rep.ts) * 1000),
           from: T.otherSide(t, this.localSideId(t)).sessionId,
