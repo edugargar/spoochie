@@ -8,15 +8,16 @@ import { dialogText, dialogParts, osascriptScript, windowScript } from "../src/d
 import { hasta, plazo } from "./wait.ts";
 
 /**
- * El aviso fuera de la terminal. Aqui el "dialogo" es un programa que recibe el texto y
- * contesta con un boton: Aceptar salvo que el asunto diga "rechazame". Con eso se prueba
- * lo que pidio Edu: la sesion donde trabaja no recibe NADA, ni la invitacion; aceptar
- * abre el aparte en su repo y la conversacion va alli; rechazar cierra el tunel.
+ * The notice outside the terminal. Here the "dialog" is a program that gets the text and
+ * answers with a button: accept unless the question says otherwise. That tests what Edu
+ * asked for: the session where he works gets NOTHING, not even the invitation; accepting
+ * opens the aside in his repo and the conversation goes there; declining closes the
+ * tunnel.
  */
 const HOME = mkdtempSync(join(tmpdir(), "spoochie-dlg-"));
 const DAEMON_SOCK = join(HOME, "daemon.sock");
-const RECIBIDO = join(HOME, "aparte-recibido.txt");
-const AVISOS = join(HOME, "avisos.txt");
+const RECEIVED = join(HOME, "aside-received.txt");
+const NOTICES = join(HOME, "notices.txt");
 const REPO = mkdtempSync(join(tmpdir(), "repo-dlg-"));
 
 function fakeInbox(name: string) {
@@ -46,45 +47,45 @@ function rpc(req: any): Promise<any> {
   });
 }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-const leer = (f: string) => existsSync(f) ? readFileSync(f, "utf8") : "";
-const hilo = (id: string) => JSON.parse(readFileSync(join(HOME, "threads", `${id}.json`), "utf8"));
+const read = (f: string) => existsSync(f) ? readFileSync(f, "utf8") : "";
+const thread = (id: string) => JSON.parse(readFileSync(join(HOME, "threads", `${id}.json`), "utf8"));
 
 const S = fakeInbox("dlg");
 let daemon: ChildProcess;
 afterAll(() => { daemon?.kill(); S.server.close(); });
 
-test("el aviso dice quien, que quiere, con que contexto y que pasa si abres, sin etiquetas", () => {
-  const t: any = { id: "d1", subject: "el boton", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {}, context: { branch: "feat/x", files: ["a.ts", "b.ts"] },
-    messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: "mira tu Button" }] };
+test("the notice says who, what they want, with what context and what happens if you open it, without labels", () => {
+  const t: any = { id: "d1", subject: "the button", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {}, context: { branch: "feat/x", files: ["a.ts", "b.ts"] },
+    messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: "look at your Button" }] };
   const { titular, cuerpo } = dialogParts(t);
-  // Lo primero que se lee es quien llama, no una entradilla.
-  expect(titular).toBe("Ana llama.");
-  // El asunto entra con mayuscula inicial aunque quien lo escribio no la pusiera.
-  expect(cuerpo).toContain("El boton");
-  expect(cuerpo).toContain("feat/x · 2 ficheros");
-  expect(cuerpo).toContain("“mira tu Button”");
-  expect(cuerpo).toContain("ventana aparte");
-  // Ni etiquetas de formulario ni entradillas.
-  expect(cuerpo).not.toContain("Asunto:");
-  expect(cuerpo).not.toContain("Rama:");
+  // The first thing you read is who is calling, not a lead-in.
+  expect(titular).toBe("Ana is calling.");
+  // The subject starts with a capital even if whoever wrote it did not use one.
+  expect(cuerpo).toContain("The button");
+  expect(cuerpo).toContain("feat/x · 2 files");
+  expect(cuerpo).toContain("“look at your Button”");
+  expect(cuerpo).toContain("separate window");
+  // No form labels and no lead-ins.
+  expect(cuerpo).not.toContain("Subject:");
+  expect(cuerpo).not.toContain("Branch:");
   expect(dialogText(t)).not.toContain("Poochie");
 });
 
-test("sin contexto no se pinta una linea vacia, y un cuerpo largo se corta por frases", () => {
+test("with no context no empty line is painted, and a long body is cut at sentences", () => {
   const base = { id: "d2", subject: "s", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {} };
-  const sin: any = { ...base, context: {}, messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: "corto" }] };
-  expect(dialogParts(sin).cuerpo.split("\n")[1]).toBe("");
-  const largo = "Una frase que ocupa lo suyo y termina aqui. " .repeat(12);
-  const con: any = { ...base, context: {}, messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: largo }] };
-  const c = dialogParts(con).cuerpo;
+  const bare: any = { ...base, context: {}, messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: "short" }] };
+  expect(dialogParts(bare).cuerpo.split("\n")[1]).toBe("");
+  const long = "A sentence that takes up some room and ends here. ".repeat(12);
+  const withLong: any = { ...base, context: {}, messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: long }] };
+  const c = dialogParts(withLong).cuerpo;
   expect(c).toContain("…");
-  // Cortado tras un punto, no a mitad de palabra.
+  // Cut after a period, not mid-word.
   expect(c).toMatch(/\.\s…”/);
 });
 
-test("el aviso normal es la ventana nativa, y la caja de AppleScript es el plan B", () => {
-  // El pintor de verdad es `ventana.ts`. `display dialog` solo sale si el programa de la
-  // ventana no arranca, porque un aviso feo es mejor que un spoochie que nadie ve.
+test("the normal notice is the native window, and the AppleScript box is the fallback", () => {
+  // The real painter is `window.ts`. `display dialog` only comes out if the window
+  // program does not start, because an ugly notice beats a spoochie nobody sees.
   const t: any = { id: "d3", subject: "s", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {}, context: {},
     messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: "x" }] };
   const v = windowScript(t);
@@ -94,104 +95,105 @@ test("el aviso normal es la ventana nativa, y la caja de AppleScript es el plan 
   const g = osascriptScript(t, 10);
   expect(g).toStartWith("display dialog");
   expect(g).toContain("with icon POSIX file");
-  expect(g).toContain(`default button "Que pase"`);
-  expect(g).toContain(`cancel button "Ahora no"`);
-  expect(g).toContain(`"Ver en Slack"`);
+  expect(g).toContain(`default button "Let it in"`);
+  expect(g).toContain(`cancel button "Not now"`);
+  expect(g).toContain(`"Open in Slack"`);
   expect(g).toContain("giving up after 10");
 });
 
-test("el asunto entra en mayuscula aunque quien lo escribio no la pusiera", () => {
-  const t: any = { id: "d4", subject: "el guardado revienta", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {}, context: {},
+test("the subject starts with a capital even if whoever wrote it did not use one", () => {
+  const t: any = { id: "d4", subject: "saving blows up", from: { sessionId: "slack:U1", name: "Ana", human: "Ana", cwd: "x" }, to: {}, context: {},
     messages: [{ at: 1, from: "slack:U1", author: "claude", kind: "text", text: "x" }] };
-  expect(dialogParts(t).cuerpo).toStartWith("El guardado revienta");
+  expect(dialogParts(t).cuerpo).toStartWith("Saving blows up");
 });
 
-test("el aviso va a un dialogo: la sesion no recibe nada; aceptar abre el aparte, rechazar cierra", async () => {
+test("the notice goes to a dialog: the session gets nothing; accepting opens the aside, declining closes", async () => {
   const bin = mkdtempSync(join(tmpdir(), "sp-dlg-bin-"));
-  writeFileSync(join(bin, "dialogo"), `#!/bin/sh
-printf '%s\\n---\\n' "$1" >> "$SPOOCHIE_HOME/avisos.txt"
-# Se decide por la pregunta, no por el asunto: el asunto se pinta con mayuscula inicial.
-case "$1" in *"pregunta de no1"*) echo Rechazar ;; *) echo Aceptar ;; esac
+  writeFileSync(join(bin, "dialog"), `#!/bin/sh
+printf '%s\\n---\\n' "$1" >> "$SPOOCHIE_HOME/notices.txt"
+# Decided by the question, not the subject: the subject gets painted with a capital.
+case "$1" in *"question from no1"*) echo "Not now" ;; *) echo "Let it in" ;; esac
 `);
   writeFileSync(join(bin, "claude"), `#!/bin/sh
-while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aparte-recibido.txt"; done
+while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aside-received.txt"; done
 `);
-  chmodSync(join(bin, "dialogo"), 0o755); chmodSync(join(bin, "claude"), 0o755);
+  chmodSync(join(bin, "dialog"), 0o755); chmodSync(join(bin, "claude"), 0o755);
   mkdirSync(join(HOME, "sessions"), { recursive: true, mode: 0o700 });
   mkdirSync(join(HOME, "threads"), { recursive: true, mode: 0o700 });
   writeFileSync(join(HOME, "config.json"), JSON.stringify({ guardian: false, transcript: false, aparte: true, human: "Edu", slack: { userId: "U_ME" } }), { mode: 0o600 });
   writeFileSync(join(HOME, "sessions", "S.json"),
-    JSON.stringify({ sessionId: "S", name: "trabajo", cwd: REPO, socket: S.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
+    JSON.stringify({ sessionId: "S", name: "work", cwd: REPO, socket: S.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
   daemon = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_WINDOW: "background", SPOOCHIE_NOTICE: join(bin, "dialogo") }, stdio: "ignore",
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_WINDOW: "background", SPOOCHIE_NOTICE: join(bin, "dialog") }, stdio: "ignore",
   });
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   expect((await rpc({ op: "ping" })).pid).toBe(daemon.pid!);
 
-  // Un spoochie llegado de otra maquina, sin lado local todavia.
-  const sobre = (id: string, subject: string) => ({
+  // A spoochie arrived from another machine, with no local side yet.
+  const envelope = (id: string, subject: string) => ({
     id, subject, state: "pending", createdAt: Date.now(), lastActivityAt: Date.now(),
-    from: { sessionId: "slack:U_ANA", name: "Ana", cwd: "(otra maquina)", human: "Ana", slackUser: "U_ANA" },
-    to: { sessionId: "slack:U_ME", name: "yo", cwd: "(esta maquina)", slackUser: "U_ME" },
-    context: {}, messages: [{ at: Date.now(), from: "slack:U_ANA", author: "claude", kind: "text", text: `pregunta de ${id}` }],
+    from: { sessionId: "slack:U_ANA", name: "Ana", cwd: "(other machine)", human: "Ana", slackUser: "U_ANA" },
+    to: { sessionId: "slack:U_ME", name: "me", cwd: "(this machine)", slackUser: "U_ME" },
+    context: {}, messages: [{ at: Date.now(), from: "slack:U_ANA", author: "claude", kind: "text", text: `question from ${id}` }],
   });
-  writeFileSync(join(HOME, "threads", "ok1.json"), JSON.stringify(sobre("ok1", "el boton")));
+  writeFileSync(join(HOME, "threads", "ok1.json"), JSON.stringify(envelope("ok1", "the button")));
   await rpc({ op: "claim", sessionId: "S" });
 
-  // El dialogo se mostro con la pregunta; el aparte nacio en el repo de la sesion y recibio el primer turno.
-  expect(await hasta(() => leer(AVISOS).includes("pregunta de ok1"))).toBe(true);
-  expect(await hasta(() => leer(RECIBIDO).includes("el boton") && leer(RECIBIDO).includes("pregunta de ok1"))).toBe(true);
-  expect(hilo("ok1").state).toBe("open");
-  expect(hilo("ok1").to.cwd).toBe(REPO);
+  // The dialog showed with the question; the aside was born in the session's repo and got the first turn.
+  expect(await hasta(() => read(NOTICES).includes("question from ok1"))).toBe(true);
+  expect(await hasta(() => read(RECEIVED).includes("the button") && read(RECEIVED).includes("question from ok1"))).toBe(true);
+  expect(thread("ok1").state).toBe("open");
+  expect(thread("ok1").to.cwd).toBe(REPO);
 
-  // Rechazar cierra, sin aparte.
-  writeFileSync(join(HOME, "threads", "no1.json"), JSON.stringify(sobre("no1", "rechazame")));
+  // Declining closes, with no aside.
+  writeFileSync(join(HOME, "threads", "no1.json"), JSON.stringify(envelope("no1", "decline me")));
   await rpc({ op: "claim", sessionId: "S" });
-  expect(await hasta(() => hilo("no1").state === "closed")).toBe(true);
-  expect(hilo("no1").closeReason).toContain("rechazado");
+  expect(await hasta(() => thread("no1").state === "closed")).toBe(true);
+  expect(thread("no1").closeReason).toContain("rejected");
   await sleep(300);
-  expect(leer(RECIBIDO)).not.toContain("no1");
+  expect(read(RECEIVED)).not.toContain("no1");
 
-  // Y la sesion de trabajo no ha recibido NADA en todo el proceso.
+  // And the work session got NOTHING during the whole thing.
   expect(S.got).toEqual([]);
 }, plazo(30_000));
 
 /**
- * Uno en pantalla, y punto.
+ * One on screen, period.
  *
- * Cada spoochie pendiente sacaba su ventana en cuanto llegaba. Medido con veinticinco
- * sobres seguidos de un mismo contacto: veinticinco ventanas a la vez, todas flotando en
- * el centro y todas robando el foco. Y lo peor no es que la maquina quede inservible: la
- * forma rapida de quitar una pila de ventanas modales es machacar Return, y el Return de
- * esta ventana es "Que pase". La avalancha convierte el boton de aceptar en la salida de
- * emergencia, y hace falta la cuenta de alguien que ya esta en tu agenda.
+ * Every pending spoochie popped its window as soon as it arrived. Measured with
+ * twenty-five envelopes in a row from one contact: twenty-five windows at once, all
+ * floating in the center and all stealing focus. And the worst part is not that the
+ * machine becomes unusable: the quick way to clear a stack of modal windows is to hammer
+ * Return, and this window's Return is "Let it in". The flood turns the accept button into
+ * the emergency exit, and all it takes is the account of someone already in your
+ * contacts.
  *
- * Aqui el "dialogo" es un programa que apunta que ha salido y se queda esperando, que es
- * lo que hace el de verdad mientras nadie pulsa.
+ * Here the "dialog" is a program that records that it showed up and then waits, which is
+ * what the real one does while nobody presses.
  */
-test("con varios spoochies a la vez solo se abre un aviso; el resto espera turno", async () => {
-  const bin2 = mkdtempSync(join(tmpdir(), "sp-cola-bin-"));
-  const HOME2 = mkdtempSync(join(tmpdir(), "sp-cola-"));
-  const REPO2 = mkdtempSync(join(tmpdir(), "repo-cola-"));
-  writeFileSync(join(bin2, "dialogo"), "#!/bin/sh\necho aviso >> \"$SPOOCHIE_HOME/avisos.txt\"\nsleep 120\n");
-  chmodSync(join(bin2, "dialogo"), 0o755);
+test("with several spoochies at once only one notice opens; the rest wait their turn", async () => {
+  const bin2 = mkdtempSync(join(tmpdir(), "sp-queue-bin-"));
+  const HOME2 = mkdtempSync(join(tmpdir(), "sp-queue-"));
+  const REPO2 = mkdtempSync(join(tmpdir(), "repo-queue-"));
+  writeFileSync(join(bin2, "dialog"), "#!/bin/sh\necho notice >> \"$SPOOCHIE_HOME/notices.txt\"\nsleep 120\n");
+  chmodSync(join(bin2, "dialog"), 0o755);
   mkdirSync(join(HOME2, "sessions"), { recursive: true, mode: 0o700 });
   mkdirSync(join(HOME2, "threads"), { recursive: true, mode: 0o700 });
   writeFileSync(join(HOME2, "config.json"), JSON.stringify({ guardian: false, transcript: false, aparte: false, human: "Edu", slack: { userId: "U_ME" } }), { mode: 0o600 });
-  const caja = fakeInbox("cola");
+  const box = fakeInbox("queue");
   writeFileSync(join(HOME2, "sessions", "S.json"),
-    JSON.stringify({ sessionId: "S", name: "trabajo", cwd: REPO2, socket: caja.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
+    JSON.stringify({ sessionId: "S", name: "work", cwd: REPO2, socket: box.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
 
-  const sobre = (id: string) => ({
-    id, subject: "asunto " + id, state: "pending", createdAt: Date.now(), lastActivityAt: Date.now(),
-    from: { sessionId: "slack:U_ANA", name: "Ana", cwd: "(otra maquina)", human: "Ana", slackUser: "U_ANA" },
-    to: { sessionId: "slack:U_ME", name: "yo", cwd: "(esta maquina)", slackUser: "U_ME" },
-    context: {}, messages: [{ at: Date.now(), from: "slack:U_ANA", author: "claude", kind: "text", text: "pregunta " + id }],
+  const envelope = (id: string) => ({
+    id, subject: "subject " + id, state: "pending", createdAt: Date.now(), lastActivityAt: Date.now(),
+    from: { sessionId: "slack:U_ANA", name: "Ana", cwd: "(other machine)", human: "Ana", slackUser: "U_ANA" },
+    to: { sessionId: "slack:U_ME", name: "me", cwd: "(this machine)", slackUser: "U_ME" },
+    context: {}, messages: [{ at: Date.now(), from: "slack:U_ANA", author: "claude", kind: "text", text: "question " + id }],
   });
-  for (let i = 0; i < 6; i++) writeFileSync(join(HOME2, "threads", "c" + i + ".json"), JSON.stringify(sobre("c" + i)));
+  for (let i = 0; i < 6; i++) writeFileSync(join(HOME2, "threads", "c" + i + ".json"), JSON.stringify(envelope("c" + i)));
 
   const d2 = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: bin2 + ":" + process.env.PATH, SPOOCHIE_HOME: HOME2, SPOOCHIE_WINDOW: "background", SPOOCHIE_NOTICE: join(bin2, "dialogo") }, stdio: "ignore",
+    env: { ...process.env, PATH: bin2 + ":" + process.env.PATH, SPOOCHIE_HOME: HOME2, SPOOCHIE_WINDOW: "background", SPOOCHIE_NOTICE: join(bin2, "dialog") }, stdio: "ignore",
   });
   try {
     for (let i = 0; i < 60 && !existsSync(join(HOME2, "daemon.sock")); i++) await sleep(100);
@@ -201,13 +203,13 @@ test("con varios spoochies a la vez solo se abre un aviso; el resto espera turno
       c.on("connect", () => c.write(JSON.stringify({ op: "claim", sessionId: "S" }) + "\n"));
       c.on("data", () => { c.destroy(); res(); });
     });
-    const cuenta = () => leer(join(HOME2, "avisos.txt")).trim().split("\n").filter(Boolean).length;
-    expect(await hasta(() => cuenta() >= 1)).toBe(true);
-    // Y sigue siendo uno: los otros cinco esperan a que este se conteste.
+    const count = () => read(join(HOME2, "notices.txt")).trim().split("\n").filter(Boolean).length;
+    expect(await hasta(() => count() >= 1)).toBe(true);
+    // And it stays one: the other five wait for this one to be answered.
     await sleep(1500);
-    expect(cuenta()).toBe(1);
+    expect(count()).toBe(1);
   } finally {
     d2.kill("SIGKILL");
-    caja.server.close();
+    box.server.close();
   }
 }, plazo(30_000));

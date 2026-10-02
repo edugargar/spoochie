@@ -1,45 +1,45 @@
 /**
- * El transcript de un spoochie, en HTML, listo para publicarse como Artifact.
+ * A spoochie's transcript, as HTML, ready to publish as an Artifact.
  *
- * El demonio genera el fichero; NO lo publica. Publicar un Artifact es una
- * herramienta de la sesion de Claude, no de un proceso suelto, asi que el
- * demonio deja el HTML en disco y la CLI le dice a Claude que lo publique y
- * que devuelva la URL con `spoochie transcript <id> --url <url>`.
- * El Artifact pertenece a quien abre el spoochie y se comparte con el otro lado:
- * dos transcripts del mismo hilo serian dos versiones de la misma conversacion.
+ * The daemon writes the file; it does NOT publish it. Publishing an Artifact is a
+ * tool of the Claude session, not of a standalone process, so the daemon leaves the
+ * HTML on disk and the CLI tells Claude to publish it and report the URL back with
+ * `spoochie transcript <id> --url <url>`.
+ * The Artifact belongs to whoever opens the spoochie and is shared with the other side:
+ * two transcripts of the same thread would be two versions of the same conversation.
  */
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT } from "./paths.ts";
-import type { Thread, Msg } from "./threads.ts";
+import { verdictLabel, type Thread, type Msg } from "./threads.ts";
 
 export const TRANSCRIPTS_DIR = join(ROOT, "transcripts");
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+const hhmm = (ms: number) => new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
 
-/** Un bloque parece codigo si la mayoria de sus lineas lo parecen. No hay forma
- *  perfecta de saberlo, pero un hook de 15 lineas puesto como prosa con <br> pierde
- *  la sangria y la monoespaciada, y deja de leerse. Ante la duda, prosa. */
-function pareceCodigo(bloque: string): boolean {
-  const lineas = bloque.split("\n").filter(l => l.trim());
-  if (lineas.length < 2) return false;
-  const pistas = /^\s{2,}\S|[{};]\s*$|=>|\b(function|const|let|var|import|export|return|async|await|if|for|class|def|interface|type)\b|^[+-]\s|^@@/;
-  return lineas.filter(l => pistas.test(l)).length >= Math.ceil(lineas.length * 0.6);
+/** A block looks like code if most of its lines do. There is no perfect way to
+ *  tell, but a 15-line hook rendered as prose with <br> loses its indentation and
+ *  monospace, and stops being readable. When in doubt, prose. */
+function looksLikeCode(block: string): boolean {
+  const lines = block.split("\n").filter(l => l.trim());
+  if (lines.length < 2) return false;
+  const hints = /^\s{2,}\S|[{};]\s*$|=>|\b(function|const|let|var|import|export|return|async|await|if|for|class|def|interface|type)\b|^[+-]\s|^@@/;
+  return lines.filter(l => hints.test(l)).length >= Math.ceil(lines.length * 0.6);
 }
 
-/** El cuerpo de un mensaje: parrafos de prosa y bloques de codigo, no una sola
- *  parrafada con saltos de linea. */
-function cuerpoHtml(text: string): string {
-  // Un bloque cercado gana siempre: si quien escribe lo marca, se respeta.
-  const partes = text.split(/```/);
-  return partes.map((parte, i) => {
-    if (i % 2 === 1) return `<pre class="code">${esc(parte.replace(/^\n|\n$/g, ""))}</pre>`;
-    return parte
+/** A message body: prose paragraphs and code blocks, not one big paragraph with
+ *  line breaks. */
+function bodyHtml(text: string): string {
+  // A fenced block always wins: if the writer marked it, that is respected.
+  const parts = text.split(/```/);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) return `<pre class="code">${esc(part.replace(/^\n|\n$/g, ""))}</pre>`;
+    return part
       .split(/\n\s*\n/)
       .map(b => b.trim())
       .filter(Boolean)
-      .map(b => pareceCodigo(b) ? `<pre class="code">${esc(b)}</pre>` : `<p>${esc(b).replace(/\n/g, "<br>")}</p>`)
+      .map(b => looksLikeCode(b) ? `<pre class="code">${esc(b)}</pre>` : `<p>${esc(b).replace(/\n/g, "<br>")}</p>`)
       .join("");
   }).join("");
 }
@@ -49,11 +49,11 @@ function msgHtml(t: Thread, m: Msg): string {
   const side = mine ? t.from : t.to;
   const who = esc(side.human ?? side.name);
   const chips = [
-    m.author === "human" ? `<span class="chip">en persona</span>` : "",
-    m.kind === "patch" ? `<span class="chip">parche</span>` : "",
-    m.kind === "branch" ? `<span class="chip">rama</span>` : "",
+    m.author === "human" ? `<span class="chip">in person</span>` : "",
+    m.kind === "patch" ? `<span class="chip">patch</span>` : "",
+    m.kind === "branch" ? `<span class="chip">branch</span>` : "",
     m.offTopic && m.offTopic.verdict !== "dentro"
-      ? `<span class="chip warn">${esc(m.offTopic.verdict)} del asunto</span>` : "",
+      ? `<span class="chip warn">${esc(verdictLabel(m.offTopic.verdict))}</span>` : "",
   ].filter(Boolean).join(" ");
 
   const diff = (d: string) => esc(d).split("\n").map(l =>
@@ -64,7 +64,7 @@ function msgHtml(t: Thread, m: Msg): string {
     ? `<pre class="diff">${diff(m.text)}</pre>`
     : m.kind === "branch"
       ? `<p><code>${esc(m.text)}</code></p>`
-      : cuerpoHtml(m.text);
+      : bodyHtml(m.text);
   const files = m.files?.length
     ? `<ul class="files">${m.files.map(f => `<li><code>${esc(f)}</code></li>`).join("")}</ul>` : "";
 
@@ -78,7 +78,7 @@ export function renderHtml(t: Thread): string {
   const ctx = [
     t.context.branch ? `<code>${esc(t.context.branch)}</code>` : null,
     t.context.sha ? `<code>${esc(t.context.sha.slice(0, 7))}</code>` : null,
-    t.context.files?.length ? `${t.context.files.length} ficheros tocados` : null,
+    t.context.files?.length ? `${t.context.files.length} files touched` : null,
   ].filter(Boolean).join(" · ");
 
   const a = esc(t.from.human ?? t.from.name);
@@ -88,8 +88,8 @@ export function renderHtml(t: Thread): string {
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
-  /* Dos canales y una espina: el hilo es el tunel, y cada mensaje cuelga del lado
-     que lo dijo. Los colores no son acento y neutro, son A y B. */
+  /* Two lanes and a spine: the thread is the tunnel, and each message hangs off the
+     side that said it. The colors are not accent and neutral, they are A and B. */
   :root{
     --ground:#f1f4f6; --surface:#ffffff; --ink:#171a1d; --dim:#5d666f; --line:#dce2e8;
     --a:#1d5fbf; --a-soft:#e8f0fc; --b:#b0541f; --b-soft:#fbeee4; --warn:#8a6100; --warn-soft:#fbf2dd;
@@ -123,7 +123,7 @@ export function renderHtml(t: Thread): string {
   .ctx{font-size:.82rem;color:var(--dim)}
   .ctx code{background:var(--surface);border:1px solid var(--line);border-radius:2px;padding:.05rem .3rem;font-size:.95em}
 
-  /* La espina */
+  /* The spine */
   .thread{position:relative;display:flex;flex-direction:column;gap:.9rem;padding-left:1.35rem}
   .thread::before{content:"";position:absolute;left:.32rem;top:.4rem;bottom:.4rem;width:1px;background:var(--line)}
   .msg{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:3px;padding:.8rem .95rem}
@@ -158,7 +158,7 @@ export function renderHtml(t: Thread): string {
     <h1>${esc(t.subject)}</h1>
     <div class="who">
       <span class="pill ${esc(t.state)}">${esc(t.state)}</span>
-      <b class="na">${a}</b> <span>y</span> <b class="nb">${b}</b>
+      <b class="na">${a}</b> <span>and</span> <b class="nb">${b}</b>
     </div>
     ${ctx ? `<div class="ctx">${ctx}</div>` : ""}
   </header>
@@ -167,14 +167,14 @@ ${t.messages.map(m => msgHtml(t, m)).join("\n")}
   </div>
   <footer>
     <span class="id">spoochie ${esc(t.id)}</span>
-    ${t.closeReason ? `<span>cerrado: ${esc(t.closeReason)}</span>` : "<span>en curso</span>"}
+    ${t.closeReason ? `<span>closed: ${esc(t.closeReason)}</span>` : "<span>ongoing</span>"}
   </footer>
 </main>`;
 }
 
 export const transcriptPath = (id: string) => join(TRANSCRIPTS_DIR, `${id}.html`);
 
-/** Escribe el HTML y devuelve su ruta. La URL la pone la sesion de Claude al publicarlo. */
+/** Writes the HTML and returns its path. The Claude session sets the URL when it publishes. */
 export function writeTranscript(t: Thread): string {
   mkdirSync(TRANSCRIPTS_DIR, { recursive: true, mode: 0o700 });
   const p = join(TRANSCRIPTS_DIR, `${t.id}.html`);
@@ -182,8 +182,8 @@ export function writeTranscript(t: Thread): string {
   return p;
 }
 
-/** Lo llama el demonio en cada turno. Mantiene el fichero al dia; republicar es
- *  cosa de la sesion que lo publico. */
+/** The daemon calls this on every turn. It keeps the file current; republishing is
+ *  up to the session that published it. */
 export async function publishTranscript(t: Thread): Promise<string | null> {
   writeTranscript(t);
   return t.transcriptUrl ?? null;

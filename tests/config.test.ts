@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { plazo } from "./wait.ts";
 
-test("un nombre de contacto ya ocupado por otro id no se pisa: va con sufijo", async () => {
+test("a contact name already taken by another id is not overwritten: it gets a suffix", async () => {
   const Cfg = await import("../src/config.ts");
   const c: any = { guardian: false, transcript: false, contacts: {} };
   Cfg.addContact(c, { id: "U_EDU_REAL", name: "Edu", pk: "pk-real" });
@@ -10,22 +10,22 @@ test("un nombre de contacto ya ocupado por otro id no se pisa: va con sufijo", a
   expect(Cfg.contact(c, "edu")!.pk).toBe("pk-real");
   expect(Cfg.contactById(c, "U_IMPOSTOR")!.name).toBe("Edu");
   expect(Object.keys(c.contacts)).toContain("edu-stor");
-  // El mismo id con otro nombre si se renombra, sin duplicar.
+  // The same id with another name does get renamed, without duplicating.
   Cfg.addContact(c, { id: "U_EDU_REAL", name: "Eduardo" });
   expect(Cfg.contact(c, "eduardo")!.pk).toBe("pk-real");
   expect(Cfg.contact(c, "edu")).toBeNull();
 });
 
 /**
- * Lo peor que hay aqui no necesita un atacante: basta morir a mitad de escribir.
+ * The worst thing in here needs no attacker: dying halfway through a write is enough.
  *
- * `save` truncaba y escribia, asi que un SIGKILL, un apagon o el OOM dejaban el fichero
- * por la mitad. Sonda: con el fichero cortado a la mitad, `load` devolvia la config por
- * defecto sin decir nada (clave de firma: no, agenda: vacia) y el siguiente `save` lo
- * escribia encima. Se perdian la clave de firma, la clave Nostr, el token del bot y
- * todos los contactos, en silencio y sin vuelta atras.
+ * `save` used to truncate and write, so a SIGKILL, a power cut or the OOM killer left the
+ * file half written. Probe: with the file cut in half, `load` returned the default config
+ * without a word (signing key: none, contacts: empty) and the next `save` wrote over it.
+ * The signing key, the Nostr key, the bot token and every contact were lost, silently and
+ * for good.
  */
-test("una config a medias no se lleva por delante tus claves ni tu agenda", async () => {
+test("a half-written config does not take your keys or your contacts with it", async () => {
   const Cfg = await import("../src/config.ts");
   const { writeFileSync, readFileSync, existsSync } = await import("node:fs");
   const { join } = await import("node:path");
@@ -37,11 +37,11 @@ test("una config a medias no se lleva por delante tus claves ni tu agenda", asyn
   c.keys = { pub: "PUB", priv: "PRIV-DE-FIRMA" } as any;
   Cfg.addContact(c, { id: "U_ATOM", name: "Sam", pk: "PK-DE-SAM" } as any);
   Cfg.save(c);
-  Cfg.save(Cfg.load());            // una segunda para que exista la copia
+  Cfg.save(Cfg.load());            // a second one so the backup exists
 
-  // Lo que deja un proceso muerto a mitad de escribir.
-  const entero = readFileSync(F, "utf8");
-  writeFileSync(F, entero.slice(0, Math.floor(entero.length / 2)));
+  // What a process killed halfway through a write leaves behind.
+  const whole = readFileSync(F, "utf8");
+  writeFileSync(F, whole.slice(0, Math.floor(whole.length / 2)));
 
   const d = Cfg.load();
   expect(d.human).toBe("Edu");
@@ -49,69 +49,68 @@ test("una config a medias no se lleva por delante tus claves ni tu agenda", asyn
   expect(Cfg.contactById(d, "U_ATOM")?.name).toBe("Sam");
   expect(Cfg.unreadableConfig()).toBe(false);
 
-  // Y si tampoco hay copia, se dice y NO se escribe encima: cambiar "no se leerla" por
-  // "no existe" es perder las tres claves para siempre.
-  writeFileSync(`${F}.bak`, "{ esto tampoco");
+  // And if there is no backup either, it says so and does NOT write over it: turning
+  // "cannot read it" into "it does not exist" is losing the three keys for good.
+  writeFileSync(`${F}.bak`, "{ this one neither");
   const e = Cfg.load();
   expect(Cfg.unreadableConfig()).toBe(true);
-  const antes = readFileSync(F, "utf8");
+  const before = readFileSync(F, "utf8");
   Cfg.save(e);
-  expect(readFileSync(F, "utf8")).toBe(antes);
+  expect(readFileSync(F, "utf8")).toBe(before);
   expect(existsSync(`${F}.nuevo`)).toBe(false);
 
-  // Se deja como estaba para los demas tests del fichero.
-  writeFileSync(F, entero);
+  // Put it back as it was for the other tests in the file.
+  writeFileSync(F, whole);
   Cfg.forgetBroken();
   expect(Cfg.load().human).toBe("Edu");
 });
 
 /**
- * Dos procesos guardando la config a la vez.
+ * Two processes saving the config at once.
  *
- * El demonio apunta un contacto en cada mensaje que entra (`tocarContacto`) y fija
- * claves; la CLI escribe en `join`, `contacts`, `confiar`, `rotar` y `olvidar`. Los dos
- * hacen leer-cambiar-guardar sobre el fichero entero, asi que el ultimo en guardar
- * borraba lo del otro. Medido con dos procesos de verdad: antes quedaba uno solo de los
- * dos contactos, o sea que una clave recien fijada (o las tuyas, recien creadas por
- * `join`) desaparecian sin decir nada.
+ * The daemon records a contact on every incoming message (`touchContact`) and pins keys;
+ * the CLI writes in `join`, `contacts`, `trust`, `rotate` and `forget`. Both do
+ * read-modify-save on the whole file, so the last one to save erased the other's work.
+ * Measured with two real processes: only one of the two contacts was left, so a freshly
+ * pinned key (or your own, just created by `join`) disappeared without a word.
  *
- * Tienen que ser dos procesos: dentro de uno, los dos `load` comparten el mismo estado y
- * la carrera no existe.
+ * It has to be two processes: inside one, both `load` calls share the same state and the
+ * race does not exist.
  */
-test("dos procesos guardando a la vez no se borran el contacto del otro", async () => {
+test("two processes saving at once do not erase each other's contact", async () => {
   const { mkdtempSync, writeFileSync, readFileSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
-  const casa = mkdtempSync(join(tmpdir(), "sp-carrera-"));
-  const raiz = join(import.meta.dir, "..");
-  const guion = join(casa, "uno.ts");
-  writeFileSync(guion, `
-const Cfg = await import(${JSON.stringify(join(raiz, "src", "config.ts"))});
+  const home = mkdtempSync(join(tmpdir(), "sp-carrera-"));
+  const root = join(import.meta.dir, "..");
+  const script = join(home, "uno.ts");
+  writeFileSync(script, `
+const Cfg = await import(${JSON.stringify(join(root, "src", "config.ts"))});
 const c = Cfg.load();
-await new Promise(r => setTimeout(r, Number(process.env.ESPERA)));
-Cfg.addContact(c, { id: process.env.ID, name: process.env.NOMBRE, pk: "PK-" + process.env.NOMBRE });
+await new Promise(r => setTimeout(r, Number(process.env.WAIT_MS)));
+Cfg.addContact(c, { id: process.env.ID, name: process.env.NAME, pk: "PK-" + process.env.NAME });
 Cfg.save(c);
 `);
-  const env = { ...process.env, SPOOCHIE_HOME: casa };
-  Bun.spawnSync(["bun", "-e", `const C = await import(${JSON.stringify(join(raiz, "src", "config.ts"))}); const c = C.load(); c.human = "Edu"; C.save(c);`], { env, cwd: raiz });
+  const env = { ...process.env, SPOOCHIE_HOME: home };
+  Bun.spawnSync(["bun", "-e", `const C = await import(${JSON.stringify(join(root, "src", "config.ts"))}); const c = C.load(); c.human = "Edu"; C.save(c);`], { env, cwd: root });
 
-  // A lee, B lee, B guarda, A guarda encima: el caso que perdia a B.
-  const a = Bun.spawn(["bun", "run", guion], { env: { ...env, ID: "U_CA", NOMBRE: "Ana", ESPERA: "400" }, cwd: raiz });
-  const b = Bun.spawn(["bun", "run", guion], { env: { ...env, ID: "U_CB", NOMBRE: "Bea", ESPERA: "200" }, cwd: raiz });
+  // A reads, B reads, B saves, A saves on top: the case that lost B.
+  const a = Bun.spawn(["bun", "run", script], { env: { ...env, ID: "U_CA", NAME: "Ana", WAIT_MS: "400" }, cwd: root });
+  const b = Bun.spawn(["bun", "run", script], { env: { ...env, ID: "U_CB", NAME: "Bea", WAIT_MS: "200" }, cwd: root });
   await Promise.all([a.exited, b.exited]);
 
-  const fin = JSON.parse(readFileSync(join(casa, "config.json"), "utf8"));
-  expect(Object.keys(fin.contacts ?? {}).sort()).toEqual(["ana", "bea"]);
-  // Y ninguna de las dos claves se ha quedado por el camino.
-  expect(fin.contacts.ana.pk).toBe("PK-Ana");
-  expect(fin.contacts.bea.pk).toBe("PK-Bea");
+  const end = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
+  expect(Object.keys(end.contacts ?? {}).sort()).toEqual(["ana", "bea"]);
+  // And neither key got lost on the way.
+  expect(end.contacts.ana.pk).toBe("PK-Ana");
+  expect(end.contacts.bea.pk).toBe("PK-Bea");
 }, plazo(20_000));
 
 /**
- * Lo que se conserva es lo que apareció mientras teniamos nuestra copia en la mano, no
- * todo lo que haya en disco: si no, `spoochie olvidar` no olvidaria nunca.
+ * What is kept is what appeared while we had our copy in hand, not everything on disk:
+ * otherwise `spoochie forget` would never forget.
  */
-test("olvidar sigue olvidando aunque otro proceso haya escrito en medio", async () => {
+test("forget still forgets even if another process wrote in between", async () => {
   const Cfg = await import("../src/config.ts");
   const c = Cfg.load();
   Cfg.addContact(c, { id: "U_OLV", name: "Olvidable", pk: "PK" } as any);

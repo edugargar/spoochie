@@ -39,10 +39,10 @@ _clear() {
 banner() {
   _clear
   printf '\n%s%s  %s%s\n' "$BOLD" "$BLUE" "$1" "$RESET"
-  printf '%s  %s pasos%s\n\n' "$DIM" "$TOTAL_STAGES" "$RESET"
-  printf '%s  Te va diciendo que hacer paso a paso. Puedes cortar con Ctrl-C y volver\n' "$DIM"
-  printf '  a lanzarlo cuando quieras: no se pierde nada de lo que ya este hecho.%s\n' "$RESET"
-  pause "¿Empezamos?"
+  printf '%s  %s steps%s\n\n' "$DIM" "$TOTAL_STAGES" "$RESET"
+  printf '%s  It tells you what to do, step by step. You can stop with Ctrl-C and run it\n' "$DIM"
+  printf '  again whenever you like: nothing already done gets lost.%s\n' "$RESET"
+  pause "Ready to start?"
 }
 
 # stage "Name" — clear the screen, then announce a stage and show progress.
@@ -50,7 +50,7 @@ banner() {
 stage() {
   _clear
   _STAGE_INDEX=$((_STAGE_INDEX + 1))
-  printf '\n%s%s▸ Paso %s/%s · %s%s\n' \
+  printf '\n%s%s▸ Step %s/%s · %s%s\n' \
     "$BOLD" "$BLUE" "$_STAGE_INDEX" "$TOTAL_STAGES" "$1" "$RESET"
 }
 
@@ -75,7 +75,7 @@ open_url() {
 
 # pause "msg" — wait for the human to confirm they've done the manual part.
 pause() {
-  printf '  %s%s%s ' "$DIM" "${1:-Pulsa Enter para seguir}" "$RESET"
+  printf '  %s%s%s ' "$DIM" "${1:-Press Enter to continue}" "$RESET"
   read -r _ || true
 }
 
@@ -183,74 +183,73 @@ finish() {
 # ──────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────
-# Alta de una persona en spoochie. Lo corre quien se instala, en su maquina.
+# Signing a person up for spoochie. Run by whoever is installing, on their machine.
 #
-# Antes esto eran cinco pasos, con dos tokens copiados a mano de una pantalla de
-# Slack a la que hace falta acceso de admin. Sobraba: el token de usuario solo
-# servia para buscar personas, y eso lo hace el bot. Ahora quien te da de alta te
-# manda una linea y esto la pega.
+# This used to be five steps, with two tokens copied by hand from a Slack screen that
+# needs admin access. Too much: the user token was only there to look people up, and
+# the bot does that. Now whoever signs you up sends you one line and this pastes it.
 
 TOTAL_STAGES=4
 SPOOCHIE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 sp() { bun run "$SPOOCHIE/src/cli.ts" "$@"; }
 
-banner "spoochie — darte de alta"
+banner "spoochie — sign up"
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
-stage "Requisitos"
-say "spoochie necesita Bun y una version de Claude Code con buzon de sesion."
-falta=0
-if command -v bun >/dev/null 2>&1; then step "bun $(bun --version)"; else step "FALTA bun — https://bun.sh"; falta=1; fi
-if command -v claude >/dev/null 2>&1; then step "claude $(claude --version 2>/dev/null | head -1)"; else step "FALTA claude"; falta=1; fi
+stage "Requirements"
+say "spoochie needs Bun and a Claude Code version with a session inbox."
+missing=0
+if command -v bun >/dev/null 2>&1; then step "bun $(bun --version)"; else step "MISSING bun — https://bun.sh"; missing=1; fi
+if command -v claude >/dev/null 2>&1; then step "claude $(claude --version 2>/dev/null | head -1)"; else step "MISSING claude"; missing=1; fi
 if [ -n "${CLAUDE_CODE_MESSAGING_SOCKET:-}" ]; then
-  step "buzon de esta sesion: $CLAUDE_CODE_MESSAGING_SOCKET"
+  step "this session's inbox: $CLAUDE_CODE_MESSAGING_SOCKET"
 else
-  step "esta sesion no tiene buzon; el hook lo arregla al reiniciar Claude Code"
+  step "this session has no inbox; the hook fixes that when Claude Code restarts"
 fi
-[ "$falta" = 1 ] && { say ""; say "Instala lo que falta y vuelve a lanzarlo."; exit 1; }
+[ "$missing" = 1 ] && { say ""; say "Install what is missing and run this again."; exit 1; }
 pause
 
 # ── 2 ─────────────────────────────────────────────────────────────────────
-stage "Pegar la invitacion"
-say "Quien te da de alta ha corrido 'spoochie invite' y te ha pasado una linea que"
-say "empieza por 'spoochie join'. Pegala entera aqui, con su --email o su --user."
+stage "Paste the invitation"
+say "Whoever signs you up ran 'spoochie invite' and sent you a line that starts"
+say "with 'spoochie join'. Paste it here in full, with its --email or its --user."
 say ""
-say "No hace falta que instales nada en Slack ni que tengas ningun token tuyo:"
-say "la invitacion trae el del bot, que es de la app y no de nadie."
+say "You don't need to install anything in Slack or have any token of your own:"
+say "the invitation carries the bot's, which belongs to the app and not to anyone."
 say ""
-ask LINEA "Pega la linea completa:"
-LINEA="${LINEA#spoochie }"
-case "$LINEA" in
+ask LINE "Paste the full line:"
+LINE="${LINE#spoochie }"
+case "$LINE" in
   join\ *) : ;;
-  *) say ""; say "Eso no parece una invitacion. Tiene que empezar por 'spoochie join'."; exit 1 ;;
+  *) say ""; say "That doesn't look like an invitation. It has to start with 'spoochie join'."; exit 1 ;;
 esac
 # shellcheck disable=SC2086
-sp $LINEA || { say ""; say "No ha entrado. Pide una invitacion nueva y vuelve a intentarlo."; exit 1; }
+sp $LINE || { say ""; say "It didn't go through. Ask for a new invitation and try again."; exit 1; }
 pause
 
 # ── 3 ─────────────────────────────────────────────────────────────────────
-stage "Engancharlo a tus sesiones de Claude"
-say "spoochie se registra solo al arrancar una sesion, con un hook. Con el plugin"
-say "no hay que tocar ningun fichero a mano."
+stage "Hook it into your Claude sessions"
+say "spoochie registers itself when a session starts, with a hook. With the plugin"
+say "there is no file to edit by hand."
 say ""
-step "En Claude Code:  /plugin marketplace add edugargar/spoochie"
-step "Y despues:       /plugin install spoochie@edugargar"
+step "In Claude Code:  /plugin marketplace add edugargar/spoochie"
+step "Then:            /plugin install spoochie@edugargar"
 say ""
-say "Si prefieres no usar el marketplace, anade a tu ~/.claude/settings.json:"
+say "If you'd rather not use the marketplace, add this to your ~/.claude/settings.json:"
 say "  \"SessionStart\": [{\"hooks\":[{\"type\":\"command\",\"command\":\"bun run $SPOOCHIE/src/cli.ts register\"}]}]"
 say "  \"SessionEnd\":   [{\"hooks\":[{\"type\":\"command\",\"command\":\"bun run $SPOOCHIE/src/cli.ts unregister\"}]}]"
 pause
 
 # ── 4 ─────────────────────────────────────────────────────────────────────
-stage "Comprobar que entrega de verdad"
-say "Dos comprobaciones. La primera no toca Slack ni necesita a nadie."
+stage "Check that it really delivers"
+say "Two checks. The first one doesn't touch Slack or need anyone."
 say ""
 sp selftest || true
 say ""
 sp doctor || true
 say ""
-say "Cuando alguien te abra un spoochie te llegara un DM del bot. Contesta en el hilo"
-say "para aceptarlo, o dile a tu Claude:  spoochie accept <id>"
+say "When someone opens a spoochie with you, the bot sends you a DM. Reply in the thread"
+say "to accept it, or tell your Claude:  spoochie accept <id>"
 say ""
-say "Y para usarlo no tienes que aprenderte comandos: dile a tu Claude en cristiano"
-say "'abre un spoochie con Edu sobre el error de guardado del modal'."
+say "And you don't have to learn any commands to use it: tell your Claude in plain words"
+say "'open a spoochie with Edu about the modal save error'."

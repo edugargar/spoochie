@@ -8,14 +8,15 @@ import { allowedTools, firstTurn } from "../src/aside.ts";
 import { hasta, plazo } from "./wait.ts";
 
 /**
- * El Claude aparte de verdad es `claude -p`. Aqui hay uno falso en el PATH que apunta
- * cada turno que le entra por stdin. Con eso se prueba el reparto: el aparte recibe la
- * conversacion, la sesion interactiva solo el aviso. El registro lo hace el demonio.
+ * The real aside Claude is `claude -p`. Here there is a fake one on the PATH that
+ * records every turn coming in on stdin. That tests the split: the aside gets the
+ * conversation, the interactive session only the notice. The daemon does the
+ * registering.
  */
-const HOME = mkdtempSync(join(tmpdir(), "spoochie-ap-"));
+const HOME = mkdtempSync(join(tmpdir(), "spoochie-aside-"));
 const DAEMON_SOCK = join(HOME, "daemon.sock");
-const RECIBIDO = join(HOME, "aparte-recibido.txt");
-// Directorios de verdad: el aparte se lanza con cwd ahi, y un cwd que no existe es ENOENT.
+const RECEIVED = join(HOME, "aside-received.txt");
+// Real directories: the aside is launched with its cwd there, and a cwd that does not exist is ENOENT.
 const REPO_A = mkdtempSync(join(tmpdir(), "repo-pa-")), REPO_B = mkdtempSync(join(tmpdir(), "repo-pb-"));
 
 function fakeInbox(name: string) {
@@ -45,18 +46,18 @@ function rpc(req: any): Promise<any> {
   });
 }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-const recibido = () => existsSync(RECIBIDO) ? readFileSync(RECIBIDO, "utf8") : "";
+const received = () => existsSync(RECEIVED) ? readFileSync(RECEIVED, "utf8") : "";
 
 const A = fakeInbox("apa"), B = fakeInbox("apb");
 let daemon: ChildProcess;
 afterAll(() => { daemon?.kill(); A.server.close(); B.server.close(); });
 
-test("el aparte solo puede leer, hablar por el tunel y cerrar", () => {
+test("the aside can only read, talk through the tunnel and close", () => {
   const h = allowedTools("/x/spoochie", false);
   expect(h.join(" ")).not.toContain("rtk");
-  const conRtk = allowedTools("/x/spoochie", true);
-  expect(conRtk).toContain("Bash(rtk git diff:*)");
-  expect(conRtk).toContain("Bash(rtk /x/spoochie say:*)");
+  const withRtk = allowedTools("/x/spoochie", true);
+  expect(withRtk).toContain("Bash(rtk git diff:*)");
+  expect(withRtk).toContain("Bash(rtk /x/spoochie say:*)");
   expect(h).toContain("Read");
   expect(h).toContain("Bash(/x/spoochie say:*)");
   expect(h).toContain("Bash(git diff:*)");
@@ -65,11 +66,11 @@ test("el aparte solo puede leer, hablar por el tunel y cerrar", () => {
   expect(h.join(" ")).not.toMatch(/Edit|Write|accept|release|discard|Bash\(sh|Bash\(git push/);
 });
 
-test("al aceptar, la conversacion va al Claude aparte y la sesion solo recibe el aviso", async () => {
+test("on accept, the conversation goes to the aside Claude and the session only gets the notice", async () => {
   const bin = mkdtempSync(join(tmpdir(), "sp-claude-ap-"));
   writeFileSync(join(bin, "claude"), `#!/bin/sh
-# El registro lo hace el demonio al lanzarlo. Aqui solo se apunta lo que entra por stdin.
-while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aparte-recibido.txt"; done
+# The daemon registers it when it launches it. Here we only record what comes in on stdin.
+while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aside-received.txt"; done
 `);
 
   chmodSync(join(bin, "claude"), 0o755);
@@ -87,77 +88,77 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aparte-rec
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   expect((await rpc({ op: "ping" })).pid).toBe(daemon.pid!);
 
-  const open = await rpc({ op: "open", sessionId: "PA", to: "repo-pb", subject: "el boton", body: "mira tu Button" });
+  const open = await rpc({ op: "open", sessionId: "PA", to: "repo-pb", subject: "the button", body: "look at your Button" });
   expect(open.ok).toBe(true);
-  // La invitacion si entra en la sesion: es el humano quien acepta.
+  // The invitation does go into the session: the human is the one who accepts.
   expect(await hasta(() => B.got.some(x => x.includes(`spoochie accept ${open.id}`)))).toBe(true);
 
-  const antes = B.got.length;
+  const before = B.got.length;
   const acc = await rpc({ op: "accept", sessionId: "PB", id: open.id, by: "Edu" });
   expect(acc.ok).toBe(true);
   expect(acc.aparte).toBe(REPO_B);
   expect(acc.ventana).toBe(false);
-  // El aparte nace en el directorio de la sesion que acepto y recibe el primer turno con el asunto.
-  expect(await hasta(() => recibido().includes("Asunto: el boton") && recibido().includes("mira tu Button"))).toBe(true);
-  // Aceptar otra vez, o tomarlo desde el mismo repo, no relanza nada: un solo primer turno.
+  // The aside is born in the directory of the session that accepted and gets the first turn with the subject.
+  expect(await hasta(() => received().includes("Subject: the button") && received().includes("look at your Button"))).toBe(true);
+  // Accepting again, or taking it from the same repo, relaunches nothing: a single first turn.
   expect((await rpc({ op: "accept", sessionId: "PB", id: open.id, by: "Edu" })).already).toBe(true);
   const take = await rpc({ op: "take", sessionId: "PB", id: open.id });
   expect(take.ok).toBe(true);
   expect(take.already).toBe(true);
   await sleep(500);
-  expect(recibido().split("Asunto: el boton").length - 1).toBe(1);
+  expect(received().split("Subject: the button").length - 1).toBe(1);
 
-  // Lo que dice A ahora va al aparte, no a la sesion B. Y a B no le ha llegado NADA
-  // desde la invitacion: ni "abierto", ni "lo atiende", ni la conversacion.
-  const say = await rpc({ op: "say", sessionId: "PA", id: open.id, text: "es el min-width del contenedor, seguro" });
+  // What A says now goes to the aside, not to session B. And B has received NOTHING
+  // since the invitation: no "opened", no "handled by", no conversation.
+  const say = await rpc({ op: "say", sessionId: "PA", id: open.id, text: "it is the container min-width, for sure" });
   expect(say.delivered).toBe(true);
-  expect(await hasta(() => recibido().includes("min-width del contenedor"))).toBe(true);
+  expect(await hasta(() => received().includes("container min-width"))).toBe(true);
   await sleep(300);
-  expect(B.got.slice(antes)).toEqual([]);
+  expect(B.got.slice(before)).toEqual([]);
 
-  // Un aparte nunca es candidato para otro spoochie.
+  // An aside is never a candidate for another spoochie.
   const s = await rpc({ op: "sessions" });
   expect(s.sessions.find((x: any) => x.aparte === open.id)).toBeTruthy();
-  const otro = await rpc({ op: "open", sessionId: "PA", to: "repo-pb", subject: "otro", body: "otra cosa" });
-  expect(otro.ok).toBe(true);
-  expect(await hasta(() => B.got.some(x => x.includes(`spoochie accept ${otro.id}`)))).toBe(true);
+  const another = await rpc({ op: "open", sessionId: "PA", to: "repo-pb", subject: "another", body: "something else" });
+  expect(another.ok).toBe(true);
+  expect(await hasta(() => B.got.some(x => x.includes(`spoochie accept ${another.id}`)))).toBe(true);
 
-  // Cerrar avisa al aparte por el mismo camino.
-  await rpc({ op: "close", sessionId: "PA", id: open.id, reason: "resuelto" });
-  expect(await hasta(() => recibido().includes("cerrado (resuelto)"))).toBe(true);
+  // Closing tells the aside the same way.
+  await rpc({ op: "close", sessionId: "PA", id: open.id, reason: "resolved" });
+  expect(await hasta(() => received().includes("cerrado (resolved)"))).toBe(true);
 }, plazo(30_000));
 
-test("el primer turno lleva quien es, como contestar y lo dicho hasta ahora", () => {
-  const t: any = { id: "z9", subject: "el boton", from: { sessionId: "A", name: "a", cwd: "/a", human: "Ana" }, to: { sessionId: "ap-z9", name: "aparte", cwd: "/b", human: "Edu" }, context: {}, state: "open",
-    messages: [{ at: 1, from: "A", author: "claude", kind: "text", text: "mira tu Button" }, { at: 2, from: "A", author: "claude", kind: "text", text: "esto no", retenido: "si" }] };
+test("the first turn carries who it is, how to answer and what was said so far", () => {
+  const t: any = { id: "z9", subject: "the button", from: { sessionId: "A", name: "a", cwd: "/a", human: "Ana" }, to: { sessionId: "ap-z9", name: "aside", cwd: "/b", human: "Edu" }, context: {}, state: "open",
+    messages: [{ at: 1, from: "A", author: "claude", kind: "text", text: "look at your Button" }, { at: 2, from: "A", author: "claude", kind: "text", text: "not this one", retenido: "si" }] };
   const p = firstTurn(t, "ap-z9", "/x/spoochie");
   expect(p).toContain("/x/spoochie say z9");
-  expect(p).toContain("mira tu Button");
-  expect(p).not.toContain("esto no");
+  expect(p).toContain("look at your Button");
+  expect(p).not.toContain("not this one");
   expect(p).toContain("Ana");
 });
 
-test("el entorno de un hijo no lleva el buzon de la sesion que lo arranco", async () => {
+test("a child's environment does not carry the inbox of the session that started it", async () => {
   const { cleanEnv } = await import("../src/paths.ts");
   const base = {
-    // Lo que hay de verdad en una sesion de Claude Code que arranca la CLI.
+    // What a Claude Code session that starts the CLI really has.
     CLAUDE_CODE_MESSAGING_SOCKET: "/tmp/cc-socks/123.sock",
-    CLAUDE_CODE_MESSAGING_TOKEN: "secreto",
+    CLAUDE_CODE_MESSAGING_TOKEN: "secret",
     CLAUDE_CODE_ENTRYPOINT: "cli",
     AWS_SECRET_ACCESS_KEY: "no",
-    GITHUB_TOKEN: "tampoco",
+    GITHUB_TOKEN: "nor-this",
     PATH: "/usr/bin", HOME: "/Users/x", TERM: "xterm-256color",
     SPOOCHIE_HOME: "/tmp/sp", ANTHROPIC_API_KEY: "sk-ant-x", CLAUDE_CONFIG_DIR: "/Users/x/.claude",
   };
   const env = cleanEnv({ SPOOCHIE_ASIDE: "v1" }, base as any);
-  // La llave del buzon donde trabaja la persona no viaja al proceso que atiende a otra.
+  // The key to the inbox where the person works does not travel to the process serving someone else.
   expect(env.CLAUDE_CODE_MESSAGING_SOCKET).toBeUndefined();
   expect(env.CLAUDE_CODE_MESSAGING_TOKEN).toBeUndefined();
   expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
-  // Ni credenciales de otras cosas que esten sueltas en la terminal.
+  // Nor credentials for other things lying around in the terminal.
   expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
   expect(env.GITHUB_TOKEN).toBeUndefined();
-  // Lo que si hace falta para que el hijo arranque y encuentre lo suyo.
+  // What the child does need to start and find its own things.
   expect(env.PATH).toBe("/usr/bin");
   expect(env.HOME).toBe("/Users/x");
   expect(env.SPOOCHIE_HOME).toBe("/tmp/sp");

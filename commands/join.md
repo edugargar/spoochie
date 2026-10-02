@@ -2,28 +2,30 @@
 description: Join spoochie with the invitation a teammate sent you
 ---
 
-El usuario se esta dando de alta en spoochie. Ha pegado la invitacion que le ha mandado
-un companero. Haz esto, en orden, y cuentale el resultado en dos o tres frases.
+The user is joining spoochie. They pasted the invite a teammate sent them. Do this, in
+order, and tell them the result in two or three sentences.
 
 `spoochie` = `sh ${CLAUDE_PLUGIN_ROOT}/bin/spoochie`
 
-## Lo que ha pegado
+## What they pasted
 
 $ARGUMENTS
 
-## Pasos
+## Steps
 
-1. No hace falta instalar nada: `spoochie` corre con el binario que el hook de arranque se
-   bajo y verifico (o con Bun si ya lo tiene). NO le pidas que instale Bun. Si el comando
-   del paso 2 falla con "neither the verified binary nor Bun is available", es que la
-   sesion arranco sin el hook: dile que reinicie Claude Code y vuelva a pegar la invitacion.
-   Solo si tras reiniciar el hook dice que no pudo descargar el binario, Bun es la alternativa
-   (`curl -fsSL https://bun.sh/install | bash`).
-2. `spoochie join <lo que ha pegado, entero, tal cual>`. El comando limpia solo lo que sobra
-   (el "spoochie join" de delante, las comillas de Slack, la barra del plugin). El email lo
-   saca de `git config user.email`; si Slack no lo reconoce, el error dice cual probo.
-   Pidele entonces el email con el que entra en Slack y repite con `--email <mail>`.
-3. `join` ya corre el selftest al final. Si todo sale `ok`, dile que esta dentro y que la
-   primera vez que le abran un spoochie le llegara un DM del bot en Slack: contestar en ese
-   hilo es aceptarlo. Si algo sale `FALLO`, ensenale esa linea tal cual.
-4. No corras `spoochie accept`, ni cambies permisos ni configuracion. Solo el alta.
+1. Nothing needs installing: `spoochie` runs with the binary the startup hook downloaded
+   and verified (or with Bun if they already have it). Do NOT ask them to install Bun. If
+   the step 2 command fails with "neither the verified binary nor Bun is available", the
+   session started without the hook: tell them to restart Claude Code and paste the
+   invite again. Only if, after restarting, the hook says it could not download the
+   binary is Bun the alternative (`curl -fsSL https://bun.sh/install | bash`).
+2. `spoochie join <what they pasted, whole, as is>`. The command cleans up whatever is
+   extra on its own (the leading "spoochie join", Slack's quotes, the plugin slash). The
+   email comes from `git config user.email`; if Slack does not recognise it, the error
+   says which one it tried. Then ask them for the email they use in Slack and repeat with
+   `--email <mail>`.
+3. `join` already runs the selftest at the end. If everything comes out `ok`, tell them
+   they are in and that the first time someone opens a spoochie to them they will get a
+   DM from the bot in Slack: replying in that thread accepts it. If anything comes out
+   `FAIL`, show them that line as is.
+4. Do not run `spoochie accept`, and do not change permissions or configuration. Only the join.

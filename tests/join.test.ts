@@ -2,69 +2,69 @@ import { test, expect } from "bun:test";
 import { newKeys } from "../src/signing.ts";
 import { cleanString, readInvite, createInvite, inviteData } from "../src/join.ts";
 
-// Una invitacion vale por las claves publicas de quien invita, no por ningun secreto.
-const YO = { id: "U0EDU001", name: "Edu", np: "a".repeat(64) };
-const blob = Buffer.from(JSON.stringify({ t: "Equipo", i: YO })).toString("base64url");
+// An invite is worth the inviter's public keys, not any secret.
+const ME = { id: "U0EDU001", name: "Edu", np: "a".repeat(64) };
+const blob = Buffer.from(JSON.stringify({ t: "Equipo", i: ME })).toString("base64url");
 
-test("la cadena se saca del comando entero pegado", () => {
+test("the string is pulled out of the whole pasted command", () => {
   expect(cleanString(`spoochie join ${blob} --email ana@example.com`)).toBe(blob);
 });
 
-test("la cadena se saca de la barra del plugin y de las comillas de Slack", () => {
+test("the string is pulled out of the plugin slash command and Slack backticks", () => {
   expect(cleanString("/spoochie:join `" + blob + "`")).toBe(blob);
 });
 
-test("la cadena suelta vale tal cual", () => {
+test("the bare string works as is", () => {
   expect(cleanString(blob)).toBe(blob);
 });
 
-test("sin cadena no se inventa una", () => {
+test("with no string, none is made up", () => {
   expect(cleanString("spoochie join --email ana@example.com")).toBeNull();
   expect(cleanString("")).toBeNull();
 });
 
-test("una bandera larga no se confunde con la cadena", () => {
+test("a long flag is not mistaken for the string", () => {
   expect(cleanString(`--${"x".repeat(60)} ${blob}`)).toBe(blob);
 });
 
-test("la invitacion trae la clave de quien invita, y ningun secreto", () => {
+test("the invite carries the inviter's key, and no secret", () => {
   expect(readInvite(blob)?.i?.np).toBe("a".repeat(64));
   expect(readInvite(blob)?.t).toBe("Equipo");
   expect(Buffer.from(blob, "base64url").toString()).not.toContain("xoxb-");
 });
 
-test("lo que no es una invitacion no cuela", () => {
-  expect(readInvite("no-es-base64-de-nada")).toBeNull();
+test("what is not an invite does not get through", () => {
+  expect(readInvite("not-base64-of-anything")).toBeNull();
   expect(readInvite(Buffer.from(JSON.stringify({ t: "Equipo" })).toString("base64url"))).toBeNull();
-  // Un token suelto ya no hace valida una cadena: sin clave Nostr no es una invitacion.
+  // A bare token no longer makes a string valid: with no Nostr key it is not an invite.
   expect(readInvite(Buffer.from(JSON.stringify({ b: "xoxb-" + "z".repeat(40) })).toString("base64url"))).toBeNull();
 });
 
 import { createInvite, inviteText } from "../src/join.ts";
 import * as Cfg from "../src/config.ts";
 
-test("la invitacion dirigida lleva para quien es y quien invita, y sobrevive al pegado", () => {
-  const blob = createInvite({ t: "Equipo", u: "U0SAM001", n: "Sam", i: YO });
-  const leida = readInvite(cleanString(inviteText(blob, "Edu"))!);
-  expect(leida?.u).toBe("U0SAM001");
-  expect(leida?.n).toBe("Sam");
-  expect(leida?.i).toEqual({ id: "U0EDU001", name: "Edu", np: "a".repeat(64) });
+test("an addressed invite carries who it is for and who invites, and survives pasting", () => {
+  const blob = createInvite({ t: "Equipo", u: "U0SAM001", n: "Sam", i: ME });
+  const read = readInvite(cleanString(inviteText(blob, "Edu"))!);
+  expect(read?.u).toBe("U0SAM001");
+  expect(read?.n).toBe("Sam");
+  expect(read?.i).toEqual({ id: "U0EDU001", name: "Edu", np: "a".repeat(64) });
 });
 
-test("un destinatario que no parece un id de Slack se ignora", () => {
-  const blob = createInvite({ i: YO, u: "../etc" as any });
+test("a recipient that does not look like a Slack id is ignored", () => {
+  const blob = createInvite({ i: ME, u: "../etc" as any });
   expect(readInvite(blob)?.u).toBeUndefined();
 });
 
-test("el DM lleva los cuatro pasos y la cadena entera", () => {
-  const blob = createInvite({ i: YO });
+test("the DM carries the four steps and the whole string", () => {
+  const blob = createInvite({ i: ME });
   const t = inviteText(blob, "Edu");
   expect(t).toContain("/plugin marketplace add edugargar/spoochie");
   expect(t).toContain("/plugin install spoochie@edugargar");
   expect(t).toContain(`/spoochie:join ${blob}`);
 });
 
-test("la agenda resuelve @nombre sin distinguir mayusculas ni espacios", () => {
+test("the contacts resolve @name ignoring case and spaces", () => {
   const c: Cfg.Config = { guardian: true, transcript: false };
   Cfg.addContact(c, { id: "U0EDU001", name: "Edu Garcia" });
   expect(Cfg.contact(c, "edugarcia")?.id).toBe("U0EDU001");
@@ -72,45 +72,45 @@ test("la agenda resuelve @nombre sin distinguir mayusculas ni espacios", () => {
   expect(Cfg.contact(c, "sam")).toBeNull();
 });
 
-test("no hay forma de meter el token del bot en una invitacion", async () => {
+test("there is no way to put the bot token in an invite", async () => {
   const { inviteData, createInvite, readInvite, inviteText } = await import("../src/join.ts");
   const yo = { id: "U0EDU001", name: "Edu", np: "a".repeat(64), r: ["wss://x"] };
   const inv = inviteData({ team: "Equipo", dest: { id: "U0SAM001", name: "Sam" }, yo });
   expect(inv.u).toBe("U0SAM001");
   expect(inv.i?.np).toBe("a".repeat(64));
-  // Cualquiera abre la cadena con un decodificador de base64: dentro no hay token, y ya
-  // no queda ninguna bandera que lo vuelva a meter. Antes la habia: --con-slack.
+  // Anyone can open the string with a base64 decoder: there is no token inside, and no
+  // flag is left that puts it back. There used to be one: --con-slack.
   const blob = createInvite(inv);
-  const dentro = Buffer.from(blob, "base64url").toString();
-  expect(dentro).not.toContain("xoxb-");
-  expect(dentro).not.toContain("xoxp-");
-  expect(JSON.parse(dentro).b).toBeUndefined();
+  const inside = Buffer.from(blob, "base64url").toString();
+  expect(inside).not.toContain("xoxb-");
+  expect(inside).not.toContain("xoxp-");
+  expect(JSON.parse(inside).b).toBeUndefined();
   expect(readInvite(blob)?.u).toBe("U0SAM001");
-  expect(inviteText(blob, "Edu")).toContain("No hay ninguna contrasena dentro");
+  expect(inviteText(blob, "Edu")).toContain("There is no password inside");
   expect(inviteText(blob, "Edu")).not.toContain("token");
 });
 
-test("una invitacion vieja con token dentro se lee, pero el token se tira y se dice", async () => {
+test("an old invite with a token inside is read, but the token is dropped and reported", async () => {
   const { createInvite, readInvite } = await import("../src/join.ts");
-  // Lo que mandaba `spoochie invite --con-slack` hasta 0.9.8.
-  const vieja = createInvite({ t: "Equipo", u: "U0SAM001", i: YO, ...({ b: "xoxb-" + "z".repeat(40) } as any) });
-  const leida = readInvite(vieja);
-  expect(leida?.u).toBe("U0SAM001");
-  expect(leida?.traiaToken).toBe(true);
-  expect(JSON.stringify(leida)).not.toContain("xoxb-");
+  // What `spoochie invite --con-slack` sent up to 0.9.8.
+  const old = createInvite({ t: "Equipo", u: "U0SAM001", i: ME, ...({ b: "xoxb-" + "z".repeat(40) } as any) });
+  const read = readInvite(old);
+  expect(read?.u).toBe("U0SAM001");
+  expect(read?.traiaToken).toBe(true);
+  expect(JSON.stringify(read)).not.toContain("xoxb-");
 });
 
 /**
- * La costura entre las dos mitades del alta.
+ * The seam between the two halves of the join.
  *
- * El nonce de un solo uso tenia sus tests (`claves.test.ts`) y la cadena tenia los suyos,
- * pero nadie probaba el viaje entero: `leerInvitacion` no copiaba `k`, asi que `join`
- * mandaba el hola con el nonce a undefined y del otro lado `canjearInvitacion` devolvia
- * null. El hola de alguien nuevo caia siempre en "sin invitacion valida y clave
- * desconocida" y el alta por Nostr no funcionaba: habia que anadir a mano con `--npub`,
- * que es el camino de repuesto, no el normal.
+ * The single-use nonce had its tests (`keys.test.ts`) and the string had its own, but
+ * nobody tested the whole trip: `readInvite` did not copy `k`, so `join` sent the hello
+ * with the nonce undefined and on the other side `redeemInvite` returned null. A
+ * newcomer's hello always landed in "no valid invite and unknown key" and joining over
+ * Nostr did not work: you had to add them by hand with `--npub`, which is the fallback
+ * path, not the normal one.
  */
-test("el nonce sobrevive el viaje entero: se apunta al invitar, viaja en la cadena y se canjea", async () => {
+test("the nonce survives the whole trip: recorded on invite, carried in the string, and redeemed", async () => {
   const { newInvite, redeemInvite } = await import("../src/keys.ts");
   const c: any = {};
   const k = newInvite(c, { id: "U_SAM", name: "Sam" }, 1000);
@@ -119,20 +119,20 @@ test("el nonce sobrevive el viaje entero: se apunta al invitar, viaja en la cade
     team: "Equipo", dest: { id: "U_SAM", name: "Sam" },
     yo: { id: "U_EDU", name: "Edu", np: "a".repeat(64), r: ["wss://uno"] }, k,
   }));
-  const leida = readInvite(blob);
-  expect(leida?.k).toBe(k);
-  // Y con ese nonce, quien invito reconoce a quien entra.
-  expect(redeemInvite(c, leida!.k, 2000)).toEqual({ id: "U_SAM", name: "Sam" });
+  const read = readInvite(blob);
+  expect(read?.k).toBe(k);
+  // And with that nonce, the inviter recognises who is joining.
+  expect(redeemInvite(c, read!.k, 2000)).toEqual({ id: "U_SAM", name: "Sam" });
 });
 
-test("lo que viene en la cadena tiene forma y tamano, o no entra", () => {
+test("what comes in the string has a shape and a size, or it does not get in", () => {
   const base = (i: any) => readInvite(createInvite({ i: { np: "b".repeat(64), ...i } } as any));
-  // El nombre acaba en la agenda y en el titular del aviso: quien invita no elige cuanto ocupa.
+  // The name ends up in the contacts and in the notice headline: the inviter does not choose how much room it takes.
   expect(base({ id: "U1", name: "N".repeat(5000) })?.i?.name.length).toBe(60);
-  // La clave ed25519 es un SPKI en base64. Una cadena cualquiera se fijaba igual, y a
-  // partir de ahi todo sobre firmado de esa persona daba "mala" sin que nadie supiera por que.
-  expect(base({ id: "U1", name: "x", pk: "no soy una clave" })?.i?.pk).toBeUndefined();
+  // The ed25519 key is an SPKI in base64. Any string used to get pinned anyway, and from
+  // then on every signed envelope from that person came out "mala" without anyone knowing why.
+  expect(base({ id: "U1", name: "x", pk: "not a key" })?.i?.pk).toBeUndefined();
   expect(base({ id: "U1", name: "x", pk: newKeys().pub })?.i?.pk).toBeString();
-  // Y un nonce que no tiene forma de nonce tampoco viaja.
-  expect(readInvite(createInvite({ k: "corto", i: { id: "U1", name: "x", np: "b".repeat(64) } } as any))?.k).toBeUndefined();
+  // And a nonce that does not look like a nonce does not travel either.
+  expect(readInvite(createInvite({ k: "short", i: { id: "U1", name: "x", np: "b".repeat(64) } } as any))?.k).toBeUndefined();
 });

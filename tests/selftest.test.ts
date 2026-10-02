@@ -3,19 +3,19 @@ import { selftest } from "../src/selftest.ts";
 import { plazo } from "./wait.ts";
 
 /**
- * Un paso en verde porque nunca llego a ejecutarse es peor que un fallo: te hace
- * creer que algo funciona. Aqui se rompe lo primero de todo (que arranque el
- * demonio) y se comprueba que nada de lo que viene detras sale en verde.
+ * A step that is green because it never ran is worse than a failure: it makes you
+ * believe something works. Here the very first thing breaks (the daemon starting) and
+ * the test checks that nothing after it comes out green.
  */
-test("con el demonio roto, ni un solo paso sale en verde", async () => {
-  // No se rompe el PATH: Bun resuelve "bun" a si mismo aunque no este en el PATH,
-  // y eso hacia que este test pasara o fallara segun el orden de la suite.
+test("with the daemon broken, not a single step comes out green", async () => {
+  // PATH is not broken: Bun resolves "bun" to itself even when it is not on PATH, and
+  // that made this test pass or fail depending on the suite order.
   process.env.SPOOCHIE_DAEMON_CMD = "/nonexistent/bun run daemon.ts";
   try {
-    const pasos = await selftest();
-    expect(pasos.length).toBeGreaterThan(0);
-    expect(pasos.filter(p => p.ok)).toEqual([]);
-    expect(pasos.some(p => p.detalle === "no se ha llegado a probar" || p.que === "la prueba se rompio")).toBe(true);
+    const steps = await selftest();
+    expect(steps.length).toBeGreaterThan(0);
+    expect(steps.filter(p => p.ok)).toEqual([]);
+    expect(steps.some(p => p.detalle === "never got to test it" || p.que === "the test broke")).toBe(true);
   } finally {
     delete process.env.SPOOCHIE_DAEMON_CMD;
   }

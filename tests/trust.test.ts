@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { levelOf, autoAccepts, trust, setLevel, repoName } from "../src/trust.ts";
 import type * as Cfg from "../src/config.ts";
 
-const agenda = (): Cfg.Config => ({
+const contacts = (): Cfg.Config => ({
   guardian: true, transcript: false,
   contacts: {
     sam: { id: "U_SAM", name: "Sam", npub: "a".repeat(64) },
@@ -10,44 +10,44 @@ const agenda = (): Cfg.Config => ({
   },
 });
 
-test("por defecto todo el mundo es confianza normal y nada entra solo", () => {
-  const c = agenda();
+test("by default everyone gets normal trust and nothing gets in on its own", () => {
+  const c = contacts();
   expect(levelOf(c, { slackUser: "U_SAM" })).toBe("normal");
   expect(autoAccepts(c, { slackUser: "U_SAM" }, "/Users/x/repos/anthias")).toBe(false);
-  // Alguien que no esta en la agenda no gana nada por preguntar.
+  // Someone not in the contacts gains nothing by asking.
   expect(levelOf(c, { slackUser: "U_NADIE" })).toBe("normal");
   expect(autoAccepts(c, { slackUser: "U_NADIE" }, "/x/anthias")).toBe(false);
 });
 
-test("el consentimiento es por persona Y por repo, nunca global", () => {
-  const c = agenda();
+test("consent is per person AND per repo, never global", () => {
+  const c = contacts();
   expect(trust(c, "Sam", "anthias").ok).toBe(true);
   expect(autoAccepts(c, { slackUser: "U_SAM" }, "/Users/x/repos/anthias")).toBe(true);
-  // Otro repo del mismo Sam: no.
+  // Another repo from the same Sam: no.
   expect(autoAccepts(c, { slackUser: "U_SAM" }, "/Users/x/repos/website")).toBe(false);
-  // El mismo repo de otra persona: tampoco.
+  // The same repo from another person: no either.
   expect(autoAccepts(c, { slackUser: "U_ANA" }, "/Users/x/repos/anthias")).toBe(false);
-  // Y se puede quitar.
+  // And it can be removed.
   expect(trust(c, "Sam", "anthias", true).ok).toBe(true);
   expect(autoAccepts(c, { slackUser: "U_SAM" }, "/Users/x/repos/anthias")).toBe(false);
 });
 
-test("el contacto se encuentra tambien por su clave Nostr, que es como llega sin Slack", () => {
-  const c = agenda();
+test("the contact is also found by their Nostr key, which is how they arrive without Slack", () => {
+  const c = contacts();
   trust(c, "Sam", "anthias");
   expect(autoAccepts(c, { npub: "a".repeat(64) }, "/x/anthias")).toBe(true);
   expect(autoAccepts(c, { npub: "b".repeat(64) }, "/x/anthias")).toBe(false);
 });
 
-test("confiar en quien no esta en la agenda no lo mete en la agenda", () => {
-  const c = agenda();
+test("trusting someone not in the contacts does not add them to the contacts", () => {
+  const c = contacts();
   const r = trust(c, "Intruso", "anthias");
   expect(r.ok).toBe(false);
   expect(Object.keys(c.contacts ?? {})).toEqual(["sam", "ana"]);
 });
 
-test("el nivel alto se pone y se quita, y no toca nada mas del contacto", () => {
-  const c = agenda();
+test("the high level is set and removed, and touches nothing else on the contact", () => {
+  const c = contacts();
   expect(setLevel(c, "Sam", "alto").ok).toBe(true);
   expect(levelOf(c, { slackUser: "U_SAM" })).toBe("alto");
   expect(c.contacts!.sam.npub).toBe("a".repeat(64));
@@ -56,39 +56,41 @@ test("el nivel alto se pone y se quita, y no toca nada mas del contacto", () => 
   expect(c.contacts!.sam.nivel).toBeUndefined();
 });
 
-test("el nombre del repo es el ultimo trozo de la ruta, con o sin barra final", () => {
+test("the repo name is the last chunk of the path, with or without a trailing slash", () => {
   expect(repoName("/Users/x/repos/anthias")).toBe("anthias");
   expect(repoName("/Users/x/repos/anthias/")).toBe("anthias");
 });
 
-test("de un contacto se guarda cuando se le oyo, no si esta ahi ahora", async () => {
+test("what is stored about a contact is when they were heard from, not whether they are there now", async () => {
   const Cfg = await import("../src/config.ts");
   const { ago } = await import("../src/trust.ts");
   Cfg.save({ guardian: false, transcript: false, contacts: { sam: { id: "U_SAM", name: "Sam", npub: "c".repeat(64) } } });
   Cfg.touchContact({ id: "U_SAM" }, 1_000_000);
   expect((Cfg.contactById(Cfg.load(), "U_SAM") as any).visto).toBe(1_000_000);
-  // Tambien por clave Nostr, que es como llega sin Slack.
+  // Also by Nostr key, which is how they arrive without Slack.
   Cfg.touchContact({ npub: "c".repeat(64) }, 2_000_000);
   expect((Cfg.contactById(Cfg.load(), "U_SAM") as any).visto).toBe(2_000_000);
-  // Y un desconocido no entra en la agenda por escribir.
+  // And a stranger does not get into the contacts by writing.
   Cfg.touchContact({ id: "U_NADIE" }, 3_000_000);
   expect(Cfg.contactById(Cfg.load(), "U_NADIE")).toBeNull();
 
   const t0 = 1_700_000_000_000;
-  expect(ago(t0, t0 + 30_000)).toBe("ahora mismo");
-  expect(ago(t0, t0 + 4 * 60_000)).toBe("hace 4 min");
-  expect(ago(t0, t0 + 3 * 3600_000)).toBe("hace 3 h");
-  expect(ago(t0, t0 + 5 * 24 * 3600_000)).toBe("hace 5 dias");
+  expect(ago(t0, t0 + 30_000)).toBe("just now");
+  expect(ago(t0, t0 + 4 * 60_000)).toBe("4 min ago");
+  expect(ago(t0, t0 + 3 * 3600_000)).toBe("3 h ago");
+  expect(ago(t0, t0 + 5 * 24 * 3600_000)).toBe("5 days ago");
 });
 
-test("olvidar cierra lo suyo y deja de conocerle, y sin servidor no hay mas que eso", async () => {
-  const fuente = await Bun.file(new URL("../src/daemon.ts", import.meta.url)).text();
-  const f = fuente.slice(fuente.indexOf('case "olvidar"'), fuente.indexOf('// Cerrar de una vez los N tuneles'));
-  // Cierra los spoochies vivos con esa persona, por los dos transportes.
+test("forget closes their spoochies and stops knowing them, and with no server that is all there is", async () => {
+  const source = await Bun.file(new URL("../src/daemon.ts", import.meta.url)).text();
+  // "olvidar" is the RPC op name, which stays as is.
+  const f = source.slice(source.indexOf('case "olvidar"'), source.indexOf('case "close-grupo"'));
+  expect(f.length).toBeGreaterThan(0);
+  // Closes the live spoochies with that person, over both transports.
   expect(f).toContain("t.from.slackUser === x.id || t.to.slackUser === x.id || t.nostr?.otro === x.npub");
   expect(f).toContain("await closeThread(t");
-  // Y la borra entera, clave incluida: no es lo mismo que --olvidar-clave.
-  expect(f).toContain("delete c.contacts![clave]");
-  // Queda apuntado en el registro, que es donde se mira despues.
+  // And deletes them entirely, key included: not the same as --forget-key.
+  expect(f).toContain("delete c.contacts![key]");
+  // It is recorded in the log, which is where people look afterwards.
   expect(f).toContain('Aud.record("confianza"');
 });

@@ -1,89 +1,88 @@
 /**
- * Cuanta confianza le tienes a cada contacto, y que cambia eso.
+ * How much you trust each contact, and what that changes.
  *
- * Hasta ahora la agenda era plana: un contacto era un id, un nombre y unas claves, y
- * todos valian igual. Tu companero de tres anos y quien entro ayer recibian el mismo
- * trato, que es a la vez demasiado estricto para el primero y una falsa tranquilidad
- * con el segundo.
+ * Until now the contacts were flat: a contact was an id, a name and some keys, and they
+ * all counted the same. Your teammate of three years and someone who joined yesterday got
+ * the same treatment, which is too strict for the first and false comfort with the second.
  *
- * Lo que la confianza SI cambia:
+ * What trust DOES change:
  *
- *   nivel "alto"   las etiquetas de "fuera del asunto" no se publican en el hilo. Son
- *                  ruido cuando la persona ya sabe con quien habla, y el ruido acaba
- *                  en que nadie lee los avisos que si importan.
- *   auto <repo>    un spoochie de esa persona sobre ese repo se acepta sin sacar el
- *                  dialogo. Es consentimiento permanente y acotado: por persona y por
- *                  repo, nunca global.
+ *   level "alto"   the "off topic" labels are not posted in the thread. They are noise
+ *                  when the person already knows who they are talking to, and noise ends
+ *                  with nobody reading the notices that do matter.
+ *   auto <repo>    a spoochie from that person about that repo is accepted without
+ *                  showing the dialog. It is standing, scoped consent: per person and per
+ *                  repo, never global.
  *
- * Lo que la confianza NO cambia, y no va a cambiar: la retencion de un mensaje que pide
- * actuar. La regla del vigilante es que el que envia no tiene por que ser de fiar, y eso
- * es justo porque la cuenta de alguien de confianza es la que mas caro sale cuando se la
- * quedan. Un nivel de confianza que abriera esa puerta convertiria la agenda en la
- * superficie de ataque, que es lo contrario de para lo que existe.
+ * What trust does NOT change, and will not: holding back a message that asks to act. The
+ * guardian's rule is that the sender need not be trustworthy, and that is precisely
+ * because a trusted person's account is the most expensive one when someone takes it
+ * over. A trust level that opened that door would turn the contacts into the attack
+ * route, the opposite of what they exist for.
  */
 import * as Cfg from "./config.ts";
 
 export type Level = "alto" | "normal";
 
-/** El contacto que hay detras de un remitente, sea id de Slack o clave Nostr. */
-export function contactOf(c: Cfg.Config, remitente: { slackUser?: string; npub?: string }): { name: string; nivel?: Level; auto?: string[] } | null {
-  if (remitente.slackUser) {
-    const porId = Cfg.contactById(c, remitente.slackUser);
-    if (porId) return porId as { name: string; nivel?: Level; auto?: string[] };
+/** The contact behind a sender, whether Slack id or Nostr key. */
+export function contactOf(c: Cfg.Config, sender: { slackUser?: string; npub?: string }): { name: string; nivel?: Level; auto?: string[] } | null {
+  if (sender.slackUser) {
+    const byId = Cfg.contactById(c, sender.slackUser);
+    if (byId) return byId as { name: string; nivel?: Level; auto?: string[] };
   }
-  if (remitente.npub) {
-    const porClave = Cfg.contactByNpub(c, remitente.npub);
-    if (porClave) return porClave as { name: string; nivel?: Level; auto?: string[] };
+  if (sender.npub) {
+    const byKey = Cfg.contactByNpub(c, sender.npub);
+    if (byKey) return byKey as { name: string; nivel?: Level; auto?: string[] };
   }
   return null;
 }
 
-export function levelOf(c: Cfg.Config, remitente: { slackUser?: string; npub?: string }): Level {
-  return contactOf(c, remitente)?.nivel === "alto" ? "alto" : "normal";
+export function levelOf(c: Cfg.Config, sender: { slackUser?: string; npub?: string }): Level {
+  return contactOf(c, sender)?.nivel === "alto" ? "alto" : "normal";
 }
 
-/** El nombre corto de un repo: el ultimo trozo de su ruta. Es lo que escribe la
- *  persona al dar el consentimiento, y lo que ve en `spoochie contacts`. */
+/** A repo's short name: the last chunk of its path. It is what the person types when
+ *  giving consent, and what they see in `spoochie contacts`. */
 export const repoName = (cwd: string) => cwd.replace(/\/+$/, "").split("/").pop() ?? "";
 
 /**
- * Si un spoochie de esta persona sobre este repo entra sin sacar el dialogo.
+ * Whether a spoochie from this person about this repo gets in without showing the dialog.
  *
- * Solo con las dos cosas a la vez. Sin repo no hay consentimiento: "confio en Sam" a
- * secas seria una llave maestra a todas las maquinas donde trabajas, y el repo es
- * justo lo que acota que puede leer el Claude que conteste.
+ * Only with both at once. Without a repo there is no consent: a bare "I trust Sam" would
+ * be a master key to every machine you work on, and the repo is exactly what limits what
+ * the answering Claude can read.
  */
-export function autoAccepts(c: Cfg.Config, remitente: { slackUser?: string; npub?: string }, cwd: string): boolean {
-  const contacto = contactOf(c, remitente);
-  if (!contacto?.auto?.length) return false;
-  return contacto.auto.includes(repoName(cwd));
+export function autoAccepts(c: Cfg.Config, sender: { slackUser?: string; npub?: string }, cwd: string): boolean {
+  const contact = contactOf(c, sender);
+  if (!contact?.auto?.length) return false;
+  return contact.auto.includes(repoName(cwd));
 }
 
-/** Da o quita el consentimiento permanente de un contacto para un repo. */
-export function trust(c: Cfg.Config, nombre: string, repo: string, quitar = false): { ok: false; error: string } | { ok: true; repos: string[] } {
-  const clave = Cfg.contactKey(nombre);
-  const contacto = c.contacts?.[clave] as { auto?: string[] } | undefined;
-  if (!contacto) return { ok: false, error: `no tengo a "${nombre}" en la agenda` };
-  const repos = new Set(contacto.auto ?? []);
-  if (quitar) repos.delete(repo); else repos.add(repo);
-  contacto.auto = [...repos].sort();
-  return { ok: true, repos: contacto.auto };
+/** Grants or removes a contact's standing consent for a repo. */
+export function trust(c: Cfg.Config, name: string, repo: string, remove = false): { ok: false; error: string } | { ok: true; repos: string[] } {
+  const key = Cfg.contactKey(name);
+  const contact = c.contacts?.[key] as { auto?: string[] } | undefined;
+  if (!contact) return { ok: false, error: `"${name}" is not in your contacts` };
+  const repos = new Set(contact.auto ?? []);
+  if (remove) repos.delete(repo); else repos.add(repo);
+  contact.auto = [...repos].sort();
+  return { ok: true, repos: contact.auto };
 }
 
-export function setLevel(c: Cfg.Config, nombre: string, nivel: Level): { ok: false; error: string } | { ok: true } {
-  const clave = Cfg.contactKey(nombre);
-  const contacto = c.contacts?.[clave] as { nivel?: Level } | undefined;
-  if (!contacto) return { ok: false, error: `no tengo a "${nombre}" en la agenda` };
-  if (nivel === "normal") delete contacto.nivel; else contacto.nivel = nivel;
+export function setLevel(c: Cfg.Config, name: string, level: Level): { ok: false; error: string } | { ok: true } {
+  const key = Cfg.contactKey(name);
+  const contact = c.contacts?.[key] as { nivel?: Level } | undefined;
+  if (!contact) return { ok: false, error: `"${name}" is not in your contacts` };
+  if (level === "normal") delete contact.nivel; else contact.nivel = level;
   return { ok: true };
 }
 
-/** "hace 4 min", "hace 3 h", "hace 2 dias". Sin decimales: es una orientacion, no un dato. */
-export function ago(cuando: number, ahora = Date.now()): string {
-  const min = Math.floor((ahora - cuando) / 60000);
-  if (min < 1) return "ahora mismo";
-  if (min < 60) return `hace ${min} min`;
+/** "4 min ago", "3 h ago", "2 days ago". No decimals: it is a rough guide, not a measurement. */
+export function ago(when: number, now = Date.now()): string {
+  const min = Math.floor((now - when) / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
   const h = Math.round(min / 60);
-  if (h < 48) return `hace ${h} h`;
-  return `hace ${Math.round(h / 24)} dias`;
+  if (h < 48) return `${h} h ago`;
+  return `${Math.round(h / 24)} days ago`;
 }

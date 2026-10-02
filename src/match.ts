@@ -1,9 +1,9 @@
 import { execFileSync } from "node:child_process";
 
 /**
- * Una sesion encaja con un spoochie que llega de fuera si su checkout conoce la rama
- * del sobre. Sin rama no hay con que decidir, y no se reparte a ciegas: se queda en
- * cola hasta que arranque una sesion que si encaje, o hasta que caduquen las 4h.
+ * A session matches a spoochie coming from outside if its checkout knows the envelope's
+ * branch. Without a branch there is nothing to decide with, and nothing is handed out
+ * blind: it stays queued until a session that does match starts, or until the 4 h expire.
  */
 export function repoMatches(cwd: string, branch?: string): boolean {
   if (!branch) return false;

@@ -5,50 +5,56 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { plazo } from "./wait.ts";
 
-/** Un repo de prueba con el comprobador dentro, para que `git ls-files` lo vea como en el real. */
+/** A test repo with the checker inside, so `git ls-files` sees it as in the real one. */
 function repo() {
-  const dir = mkdtempSync(join(tmpdir(), "sp-fugas-"));
+  const dir = mkdtempSync(join(tmpdir(), "sp-leaks-"));
   const git = (...a: string[]) => execFileSync("git", a, { cwd: dir, encoding: "utf8", env: { ...process.env, GIT_AUTHOR_NAME: "x", GIT_COMMITTER_NAME: "x" } });
   git("init", "-q");
   mkdirSync(join(dir, "scripts"));
   copyFileSync(join(import.meta.dir, "..", "scripts", "leaks.ts"), join(dir, "scripts", "leaks.ts"));
-  const commit = (msg: string, correo: string) => { git("add", "-A"); git("-c", `user.email=${correo}`, "-c", "user.name=x", "commit", "-q", "-m", msg); };
-  const correr = (lista = "", desde?: string) => spawnSync("bun", ["scripts/leaks.ts", ...(desde ? ["--desde", desde] : [])], { cwd: dir, encoding: "utf8", env: { ...process.env, SPOOCHIE_FORBIDDEN_WORDS: lista } });
-  return { dir, git, commit, correr };
+  const commit = (msg: string, email: string) => { git("add", "-A"); git("-c", `user.email=${email}`, "-c", "user.name=x", "commit", "-q", "-m", msg); };
+  const run = (list = "", since?: string, flag = "--since") => spawnSync("bun", ["scripts/leaks.ts", ...(since ? [flag, since] : [])], { cwd: dir, encoding: "utf8", env: { ...process.env, SPOOCHIE_FORBIDDEN_WORDS: list } });
+  return { dir, git, commit, run };
 }
 
-test("el comprobador de fugas deja pasar un repo limpio y para uno con ids, tokens, correos o palabras prohibidas", () => {
+test("the leak checker lets a clean repo through and stops one with ids, tokens, emails or forbidden words", () => {
   const r = repo();
   writeFileSync(join(r.dir, "README.md"), "spoochie invite --to sam@example.com  # or --to U01234567\nnpub keys are fine: " + "npub1" + "x".repeat(58) + "\n");
-  r.commit("Limpio", "yo@gmail.com");
-  const ok = r.correr("acme,lopez");
-  expect(ok.stdout + ok.stderr).toContain("nada en 1 commit");
+  r.commit("Clean", "me@gmail.com");
+  const ok = r.run("acme,lopez");
+  expect(ok.stdout + ok.stderr).toContain("nothing in 1 commit");
   expect(ok.status).toBe(0);
 
-  // Todo lo que no puede entrar, en un fichero, un nombre de fichero, un mensaje y un correo de autor.
-  writeFileSync(join(r.dir, "notas.md"), [
-    // Los datos de prueba se montan a trozos: el propio comprobador lee este fichero.
-    "el id de Ana es U0" + "9ABCDE7XYZ",
+  // Everything that must not get in, in a file, a file name, a message and an author email.
+  writeFileSync(join(r.dir, "notes.md"), [
+    // The test data is built in pieces: the checker itself reads this file.
+    "Ana's id is U0" + "9ABCDE7XYZ",
     "token xoxb-" + "1234567890-ABCDEFGHIJKLMN-abcdefghijklmnop",
-    "clave " + "0123456789abcdef".repeat(4),
-    "escribe a ana@" + "acme-corp.com",
-    "lo dijo Lopez en la reunion",
+    "key " + "0123456789abcdef".repeat(4),
+    "write to ana@" + "acme-corp.com",
+    "Lopez said it in the meeting",
   ].join("\n"));
-  writeFileSync(join(r.dir, "para-lopez.md"), "hola\n");
-  r.commit("Notas de la reunion con ACME", "yo@" + "acme-corp.com");
-  const mal = r.correr("acme,lopez", r.git("rev-parse", "HEAD~1").trim());
-  expect(mal.status).toBe(1);
-  const salida = mal.stderr;
-  expect(salida).toContain("notas.md:1: id de Slack real");
-  expect(salida).toContain("notas.md:2: token de Slack");
-  expect(salida).toContain("notas.md:3: clave hex de 64");
-  expect(salida).toContain("notas.md:4: correo fuera de la lista (acme-corp.com)");
-  expect(salida).toContain("notas.md:4: palabra prohibida n.º 1");
-  expect(salida).toContain("notas.md:5: palabra prohibida n.º 2");
-  expect(salida).toContain("para-lopez.md: palabra prohibida n.º 2 en el nombre del fichero");
-  expect(salida).toMatch(/commit [0-9a-f]{7} \(mensaje\):1: palabra prohibida n.º 1/);
-  expect(salida).toMatch(/commit [0-9a-f]{7}: autor con correo fuera de la lista \(acme-corp.com\)/);
-  // El informe nunca escribe la palabra prohibida.
-  expect(salida.toLowerCase()).not.toContain("lopez.md: palabra prohibida n.º 2 en el nombre del fichero: lopez");
-  expect(salida).not.toContain("acme,lopez");
+  writeFileSync(join(r.dir, "for-lopez.md"), "hi\n");
+  r.commit("Notes from the meeting with ACME", "me@" + "acme-corp.com");
+  const base = r.git("rev-parse", "HEAD~1").trim();
+  const bad = r.run("acme,lopez", base);
+  expect(bad.status).toBe(1);
+  const out = bad.stderr;
+  expect(out).toContain("notes.md:1: real Slack id");
+  expect(out).toContain("notes.md:2: Slack token");
+  expect(out).toContain("notes.md:3: 64-char hex key");
+  expect(out).toContain("notes.md:4: email outside the list (acme-corp.com)");
+  expect(out).toContain("notes.md:4: forbidden word #1");
+  expect(out).toContain("notes.md:5: forbidden word #2");
+  expect(out).toContain("for-lopez.md: forbidden word #2 in the file name");
+  expect(out).toMatch(/commit [0-9a-f]{7} \(message\):1: forbidden word #1/);
+  expect(out).toMatch(/commit [0-9a-f]{7}: author with an email outside the list \(acme-corp.com\)/);
+  // The report never writes the forbidden word.
+  expect(out.toLowerCase()).not.toContain("lopez.md: forbidden word #2 in the file name: lopez");
+  expect(out).not.toContain("acme,lopez");
+
+  // --desde, the old name of --since, still works: .githooks/pre-push and CI used it.
+  const old = r.run("acme,lopez", base, "--desde");
+  expect(old.status).toBe(1);
+  expect(old.stderr).toBe(out);
 }, plazo(20_000));

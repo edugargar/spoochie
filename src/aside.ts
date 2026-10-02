@@ -1,20 +1,19 @@
 /**
- * El Claude aparte.
+ * The aside Claude.
  *
- * Un spoochie que entra en la sesion donde estas trabajando te emborrona la pantalla
- * con una conversacion que no es la tuya. Asi que la sesion interactiva solo recibe
- * la invitacion, y la conversacion la atiende un Claude propio en una VENTANA NUEVA
- * de la terminal, abierta por el demonio en el repo que toque, con permisos de solo
- * lectura y la CLI de spoochie. Lo ves trabajar ahi y puedes escribirle. Vive lo que
- * vive el spoochie.
+ * A spoochie that lands in the session where you are working smears your screen with a
+ * conversation that is not yours. So the interactive session only gets the invitation,
+ * and the conversation goes to a Claude of its own in a NEW terminal WINDOW, opened by
+ * the daemon in the right repo, with read-only permissions and the spoochie CLI. You
+ * watch it work there and you can type to it. It lives as long as the spoochie does.
  *
- * Si no hay forma de abrir una ventana (Linux sin escritorio, tests, o la ventana no
- * se registra a tiempo) el aparte corre en segundo plano como `claude -p`, con su log
- * en ~/.claude/spoochie/aparte/<id>.log. Mismo Claude, misma correa, sin pantalla.
+ * If there is no way to open a window (Linux without a desktop, tests, or the window
+ * does not register in time) the aside runs in the background as `claude -p`, with its
+ * log in ~/.claude/spoochie/aparte/<id>.log. Same Claude, same leash, no screen.
  *
- * Solo lectura de verdad: no hay Edit ni Write ni un Bash suelto. Lo unico que puede
- * correr es git de lectura y los subcomandos de spoochie que no abren ni sueltan nada.
- * En la ventana, cualquier otra cosa le pide permiso al humano que la mira.
+ * Read-only for real: no Edit, no Write, no loose Bash. All it can run is read-only git
+ * and the spoochie subcommands that neither open nor release anything. In the window,
+ * anything else asks the human watching it for permission.
  */
 import { spawn, spawnSync, execFileSync, type ChildProcess } from "node:child_process";
 import { chmodSync, mkdirSync, openSync, writeFileSync, rmSync } from "node:fs";
@@ -25,103 +24,104 @@ import * as T from "./threads.ts";
 import { register, type SessionRecord } from "./registry.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+// "aparte" is a directory on disk, shared with 0.9.10 installs.
 export const ASIDE_DIR = join(ROOT, "aparte");
 
-/** Como invoca spoochie el Claude aparte: el mismo ejecutable que lleva este demonio. */
+/** How the aside Claude invokes spoochie: the same executable this daemon runs. */
 export function cliCommand(): string {
   if (import.meta.path.includes("$bunfs")) return process.execPath;
   return `${process.execPath} run ${join(HERE, "cli.ts")}`;
 }
 
-/** Lo unico que el Claude aparte puede ejecutar sin preguntar.
- *  Si la maquina tiene rtk (un proxy que reescribe cada comando a `rtk <cmd>` con un
- *  hook), los mismos comandos con `rtk` delante tambien: si no, cada git preguntaba. */
-export function allowedTools(cli = cliCommand(), conRtk = Boolean(Bun.which("rtk"))): string[] {
-  // `git branch` a secas admite -D y -f; solo se permite listar. El patron de
-  // allowedTools casa por prefijo y no mira los argumentos, asi que esta lista por si
-  // sola dejaba pasar `git diff --output=<fichero>`, que escribe. Quien mira los
-  // argumentos es el portero (portero.ts), enganchado como hook PreToolUse en
-  // `ajustesAparte`. Esta lista decide QUE programa; el portero decide COMO.
+/** The only things the aside Claude can run without asking.
+ *  If the machine has rtk (a proxy that rewrites every command to `rtk <cmd>` with a
+ *  hook), the same commands with `rtk` in front too: without them, every git asked. */
+export function allowedTools(cli = cliCommand(), withRtk = Boolean(Bun.which("rtk"))): string[] {
+  // Plain `git branch` takes -D and -f; only listing is allowed. The allowedTools
+  // pattern matches by prefix and ignores the arguments, so this list on its own let
+  // `git diff --output=<file>` through, which writes. The one that reads the arguments
+  // is the gatekeeper (gatekeeper.ts), hooked in as PreToolUse in `asideSettings`. This
+  // list decides WHICH program; the gatekeeper decides HOW.
   const git = ["diff", "log", "show", "status", "branch --list", "blame", "grep", "ls-files"].map(g => `git ${g}`);
   const sp = ["say", "patch", "branch", "show", "list", "close", "transcript"].map(c => `${cli} ${c}`);
   const cmds = [...git, ...sp];
-  const bash = [...cmds, ...(conRtk ? cmds.map(c => `rtk ${c}`) : [])].map(c => `Bash(${c}:*)`);
-  // Artifact: el aparte publica el transcript de los spoochies que llegan, que el demonio
-  // no puede publicar y la sesion interactiva no debe ver.
+  const bash = [...cmds, ...(withRtk ? cmds.map(c => `rtk ${c}`) : [])].map(c => `Bash(${c}:*)`);
+  // Artifact: the aside publishes the transcript of incoming spoochies, which the daemon
+  // cannot publish and the interactive session must not see.
   return ["Read", "Grep", "Glob", "Artifact", ...bash];
 }
 
-/** Lo que el Claude aparte no puede hacer ni aunque el modo de permisos lo dejara:
- *  las reglas de denegacion mandan sobre cualquier modo. Sin MultiEdit: Claude Code ya no
- *  la tiene, y la regla salia como aviso en la ventana que mira la persona
- *  ("matches no known tool", Claude Code 2.1.286, prueba real del 01-10). */
+/** What the aside Claude cannot do even if the permission mode allowed it: deny rules
+ *  win over any mode. No MultiEdit: Claude Code no longer has it, and the rule showed up
+ *  as a warning in the window the person watches ("matches no known tool", Claude Code
+ *  2.1.286, real test of 01-10). */
 export const FORBIDDEN_TOOLS = ["Edit", "Write", "NotebookEdit", "Bash(git push:*)", "Bash(git commit:*)", "Bash(git checkout:*)", "Bash(git reset:*)", "Bash(rm:*)"];
 
-/** Los ajustes con los que arranca el Claude aparte.
+/** The settings the aside Claude starts with.
  *
- *  `crossSessionInbound: accept` es lo que hace que el tunel le entregue los turnos.
- *  Se miro si se podia acotar a un remitente concreto: NO se puede. El ajuste solo
- *  admite "accept", "hold" o "refuse" (los tres estan en los mensajes del propio
- *  binario de Claude Code), y no hay lista de remitentes. "hold" rompe el tunel: los
- *  turnos se quedarian esperando una aprobacion que nadie va a dar en una ventana que
- *  existe justo para no molestar a nadie. Quien autentica al que escribe es el propio
- *  buzon, que exige el token del registro (0600) y ademas verifica el pid del proceso
- *  que se conecta.
- *  El hook `PreToolUse` es el portero: la lista blanca de arriba casa por prefijo y no
- *  mira los argumentos, asi que `git diff --output=fichero` la pasaba. El portero ve la
- *  linea entera antes de ejecutarla. Los dos modos (ventana y fondo) usan estos mismos
- *  ajustes: un aparte que se comporta distinto segun donde corre no es un control. */
+ *  `crossSessionInbound: accept` is what makes the tunnel hand it the turns. We looked
+ *  at whether it could be narrowed to one sender: it CANNOT. The setting only takes
+ *  "accept", "hold" or "refuse" (all three are in the Claude Code binary's own
+ *  messages), and there is no sender list. "hold" breaks the tunnel: the turns would
+ *  sit waiting for an approval nobody will give, in a window that exists precisely so
+ *  nobody gets bothered. What authenticates the writer is the inbox itself, which
+ *  demands the registry token (0600) and also checks the pid of the connecting process.
+ *  The `PreToolUse` hook is the gatekeeper: the allowlist above matches by prefix and
+ *  ignores the arguments, so `git diff --output=file` got through. The gatekeeper sees
+ *  the whole line before it runs. Both modes (window and background) use these same
+ *  settings: an aside that behaves differently depending on where it runs is not a
+ *  control. */
 
-/** Las herramientas que pasan por el portero.
+/** The tools that go through the gatekeeper.
  *
- *  El `matcher` de un hook PreToolUse es una expresion regular contra el nombre de la
- *  herramienta, y aqui ponia "Bash" a secas. O sea que el portero solo veia los Bash:
- *  toda su parte de acotar Read, Grep y Glob al worktree estaba escrita, probada por su
- *  cuenta, y no se ejecutaba nunca. Un aparte podia leer ~/.ssh y contarlo por el tunel,
- *  que es justo lo que ese codigo iba a impedir.
+ *  A PreToolUse hook's `matcher` is a regular expression against the tool name, and
+ *  here it said plain "Bash". So the gatekeeper only saw Bash calls: its whole part
+ *  about keeping Read, Grep and Glob inside the worktree was written, tested on its own,
+ *  and never ran. An aside could read ~/.ssh and tell it through the tunnel, which is
+ *  exactly what that code was meant to stop.
  *
- *  Hay un test que compara esta lista con la que juzga `portero()`: si una crece y la
- *  otra no, salta. */
+ *  A test compares this list with the one `gatekeeper()` judges: if one grows and the
+ *  other does not, it fails. */
 export const GATEKEEPER_TOOLS = ["Bash", "Read", "Grep", "Glob", "NotebookRead", "Artifact"];
 export function asideSettings(cli = cliCommand()): Record<string, unknown> {
   return {
     crossSessionInbound: "accept",
     hooks: {
       PreToolUse: [
-        { matcher: GATEKEEPER_TOOLS.join("|"), hooks: [{ type: "command", command: `${cli} portero` }] },
+        { matcher: GATEKEEPER_TOOLS.join("|"), hooks: [{ type: "command", command: `${cli} gatekeeper` }] },
       ],
-      // El centinela: un aparte que termina su turno sin haber contestado por el tunel
-      // deja al otro lado en silencio hasta que el reloj cierra el spoochie.
+      // The sentinel: an aside that ends its turn without answering through the tunnel
+      // leaves the other side in silence until the clock closes the spoochie.
       Stop: [
-        { hooks: [{ type: "command", command: `${cli} centinela` }] },
+        { hooks: [{ type: "command", command: `${cli} sentinel` }] },
       ],
     },
   };
 }
 
-/** Las banderas con las que arranca el Claude aparte, iguales en ventana y en fondo.
+/** The flags the aside Claude starts with, the same in window and background.
  *
- *  Se penso declarar el aparte como un agente del plugin (un fichero con su lista de
- *  herramientas, revisable en un diff) en vez de como banderas. DESCARTADO al mirar que
- *  es `--agents`: define SUBagentes a los que la sesion puede despachar, no la persona
- *  de la sesion principal. El aparte es la sesion principal de su propio proceso
- *  `claude`, asi que mover ahi la lista dejaria sin restringir justo al que lee el repo
- *  y contesta. La frontera son estas banderas y los hooks, y por eso siguen aqui. Lo
- *  que si valia de esa idea (que no se pueda desarmar tocando una cadena) esta resuelto
- *  con esta funcion y su test de paridad.
+ *  We thought about declaring the aside as a plugin agent (a file with its tool list,
+ *  reviewable in a diff) instead of as flags. DROPPED after looking at what `--agents`
+ *  is: it defines SUBagents the session can dispatch to, not the persona of the main
+ *  session. The aside is the main session of its own `claude` process, so moving the
+ *  list there would leave unrestricted exactly the one that reads the repo and answers.
+ *  The boundary is these flags and the hooks, and that is why they stay here. The good
+ *  part of that idea (that nobody can disarm it by editing one string) is covered by
+ *  this function and its parity test.
  *
- *  Van en la linea de comando y por tanto se ven en `ps`. Se penso moverlas a un
- *  fichero de ajustes a 0700 y se DESCARTA: dentro no hay ningun secreto. La lista de
- *  herramientas es una politica, no una credencial, y esta ademas publicada en este
- *  repo; lo unico que revela es la ruta del binario, que cualquier proceso del mismo
- *  usuario ya puede leer del disco. Y el control de verdad no es esta lista sino el
- *  portero, que mira los argumentos: esconder el mapa no serviria de nada si el mapa
- *  no abre ninguna puerta.
+ *  They go on the command line and so show up in `ps`. We thought about moving them to
+ *  a settings file at 0700 and DROPPED it: there is no secret inside. The tool list is a
+ *  policy, not a credential, and it is published in this repo anyway; all it reveals is
+ *  the binary's path, which any process of the same user can already read from disk.
+ *  And the real control is not this list but the gatekeeper, which reads the arguments:
+ *  hiding the map would be pointless when the map opens no door.
  *
- *  Estaban escritas dos veces y ya habian divergido: la ventana usaba `modoPermisos()`
- *  y el fondo tenia `"default"` a mano, asi que el mismo mensaje se juzgaba distinto
- *  segun donde corriera el aparte, y el modo sin pantalla era ademas el que no puede
- *  preguntar a nadie. Un solo sitio decide, y hay un test que compara las dos listas. */
+ *  They used to be written twice and had already drifted: the window used
+ *  `permissionMode()` and the background had `"default"` hardcoded, so the same message
+ *  was judged differently depending on where the aside ran, and the screenless mode was
+ *  also the one with nobody to ask. One place decides, and a test compares the two
+ *  lists. */
 export function asideFlags(id: string, cli = cliCommand()): string[] {
   return [
     "--name", `spoochie-${id}`,
@@ -134,17 +134,17 @@ export function asideFlags(id: string, cli = cliCommand()): string[] {
 }
 
 /**
- * Cuanto puede gastarse un aparte en contestar una pregunta.
+ * How much an aside can spend answering one question.
  *
- * `--max-budget-usd` solo funciona con `--print`, o sea en modo fondo, que es el que
- * corre sin que nadie lo mire: en un servidor sin escritorio, o cuando la ventana no
- * se pudo abrir. Ahi nada impedia que se pusiera a leer el repo entero en bucle
- * mientras el otro lado espera. En modo ventana el freno es que hay una persona
- * delante viendolo, mas los dos relojes del spoochie (10 min de silencio, 4 h sin
- * aceptar), asi que no hace falta.
+ * `--max-budget-usd` only works with `--print`, that is in background mode, which is
+ * the one that runs with nobody watching: on a server without a desktop, or when the
+ * window could not be opened. There nothing stopped it from reading the whole repo in a
+ * loop while the other side waits. In window mode the brake is a person sitting in
+ * front of it, plus the spoochie's two clocks (10 min of silence, 4 h unaccepted), so
+ * it is not needed.
  *
- * Un dolar es de sobra para leer unos ficheros y contestar. SPOOCHIE_APARTE_PRESUPUESTO
- * lo cambia; "0" lo quita.
+ * One dollar is plenty to read a few files and answer. SPOOCHIE_ASIDE_BUDGET changes
+ * it; "0" removes it.
  */
 export const ASIDE_BUDGET = "1.00";
 export function asideBudget(): string | null {
@@ -153,82 +153,87 @@ export function asideBudget(): string | null {
 }
 
 /**
- * Con que modelo contesta el Claude aparte.
+ * Which model the aside Claude answers with.
  *
- * Fijado, y no el que tenga puesto la persona, por una razon de dinero que no es suya:
- * el aparte corre en TU maquina para contestar la pregunta de OTRO. Si tu sesion esta
- * en Opus, la pregunta de un companero se lleva Opus sin que tu lo hayas decidido.
- * Sonnet lee un repo y contesta con hechos de los ficheros, que es todo lo que hace.
- * El vigilante ya iba fijado a Haiku por lo mismo (guardian.ts).
+ * Pinned, and not whatever the person has set, for a money reason that is not theirs:
+ * the aside runs on YOUR machine to answer SOMEONE ELSE's question. If your session is
+ * on Opus, a teammate's question burns Opus without you deciding it. Sonnet reads a
+ * repo and answers with facts from the files, which is all it does. The watcher was
+ * already pinned to Haiku for the same reason (guardian.ts).
  *
- * SPOOCHIE_APARTE_MODELO lo cambia, para quien quiera lo contrario.
+ * SPOOCHIE_ASIDE_MODEL changes it, for whoever wants the opposite.
  */
 export const ASIDE_MODEL = "claude-sonnet-5";
 export function asideModel(): string {
   return envVar("SPOOCHIE_ASIDE_MODEL", "SPOOCHIE_APARTE_MODELO") || ASIDE_MODEL;
 }
 
-/** Con que modo de permisos arranca el aparte, en ventana y en fondo. "auto" por defecto: lo que no esta en la
- *  lista blanca lo decide el clasificador de Claude Code en vez de parar a preguntar; la
- *  primera prueba real dejo la ventana esperando un "ls" mientras la persona estaba en
- *  una reunion. SPOOCHIE_APARTE_PERMISOS=default vuelve a preguntar por todo. */
+/** The permission mode the aside starts with, in window and in background. "auto" by
+ *  default: what is not on the allowlist gets decided by Claude Code's classifier
+ *  instead of stopping to ask; the first real test left the window waiting on an "ls"
+ *  while the person was in a meeting. SPOOCHIE_ASIDE_PERMISSIONS=default asks about
+ *  everything again. */
 export function permissionMode(): string {
   const v = envVar("SPOOCHIE_ASIDE_PERMISSIONS", "SPOOCHIE_APARTE_PERMISOS");
   return v === "default" || v === "auto" ? v : "auto";
 }
 
-/** El primer turno: quien es, que spoochie atiende, lo dicho hasta ahora, y como contestar. */
-export function firstTurn(t: T.Thread, sessionId: string, cli = cliCommand(), cwd = process.cwd(), origen?: string): string {
-  const otro = T.otherSide(t, sessionId);
-  const donde = origen
-    ? `desde ${cwd}, que es una COPIA LIMPIA de ${origen} en su HEAD (git worktree). Lo que alli no este commiteado (cambios locales, .env) aqui no esta: si te preguntan por eso, dilo.`
-    : `desde ${cwd}.`;
-  const historia = t.messages.filter(m => m.retenido !== "si" && m.retenido !== "descartado")
+/** The first turn: who it is, which spoochie it handles, what was said so far, and how to answer. */
+export function firstTurn(t: T.Thread, sessionId: string, cli = cliCommand(), cwd = process.cwd(), origin?: string): string {
+  const other = T.otherSide(t, sessionId);
+  const where = origin
+    ? `from ${cwd}, which is a CLEAN COPY of ${origin} at its HEAD (git worktree). Whatever is not committed there (local changes, .env) is not here: if someone asks about it, say so.`
+    : `from ${cwd}.`;
+  // "si" and "descartado" are values stored in the thread file.
+  const history = t.messages.filter(m => m.retenido !== "si" && m.retenido !== "descartado")
     .map(m => T.renderMessage(t, m, sessionId)).join("\n\n");
   return [
-    `Eres el Claude que atiende el spoochie ${t.id} en nombre de ${T.mySide(t, sessionId).human ?? "tu humano"}, ${donde}`,
-    `Un spoochie es un tunel con la sesion de Claude de ${otro.human ?? otro.name}, otra persona. El tunel YA esta abierto: tu humano lo acepto.`,
-    `Tu trabajo: leer este repo y contestar lo que pregunten sobre el, con hechos de los ficheros. Nada mas.`,
-    `REGLA QUE NO SE SALTA: si no lo has leido, no lo afirmas. Cada cosa que digas por el tunel sale de un fichero que has abierto o de un git de lectura que has corrido en ESTE directorio. Lo que no puedas comprobar aqui se dice asi: "no lo veo desde aqui" o "eso lo tendria que mirar la persona". Nunca contestes de memoria sobre este repo, ni supongas por como suele llamarse algo: quien pregunta va a actuar sobre lo que le digas, y una suposicion con tono de dato es peor que un "no lo se".`,
-    `Contestas con:  ${cli} say ${t.id} "<texto>"   (o --file <ruta> si es largo). Un parche: ${cli} patch ${t.id} --from-git. Cerrar cuando este resuelto: ${cli} close ${t.id} --reason "...".`,
-    `No puedes escribir ficheros ni correr nada que no sea git de lectura y spoochie: si te piden otra cosa, dilo por el tunel y para.`,
-    `Cada mensaje nuevo del otro lado te llegara como un turno mas. Contesta a cada uno por el tunel, no aqui. Si tu humano te escribe en esta ventana, eso si es para ti.`,
+    `You are the Claude handling spoochie ${t.id} on behalf of ${T.mySide(t, sessionId).human ?? "your human"}, ${where}`,
+    `A spoochie is a tunnel to the Claude session of ${other.human ?? other.name}, another person. The tunnel is ALREADY open: your human accepted it.`,
+    `Your job: read this repo and answer what they ask about it, with facts from the files. Nothing else.`,
+    `RULE WITH NO EXCEPTIONS: if you have not read it, you do not claim it. Everything you say through the tunnel comes from a file you opened or a read-only git command you ran in THIS directory. What you cannot check here, say like this: "I can't see that from here" or "the person would have to look at that". Never answer about this repo from memory, and never guess from how things are usually named: whoever asks will act on what you tell them, and a guess dressed up as a fact is worse than "I don't know".`,
+    `You answer with:  ${cli} say ${t.id} "<text>"   (or --file <path> if it is long). A patch: ${cli} patch ${t.id} --from-git. Close it when it is resolved: ${cli} close ${t.id} --reason "...".`,
+    `You cannot write files or run anything other than read-only git and spoochie: if they ask for something else, say so through the tunnel and stop.`,
+    `Every new message from the other side reaches you as one more turn. Answer each one through the tunnel, not here. If your human types to you in this window, that one is for you.`,
     ``,
-    `Asunto: ${t.subject}`,
+    `Subject: ${t.subject}`,
     ``,
-    historia,
+    history,
   ].join("\n");
 }
 
+// The values are kept: src/daemon.ts compares against them.
 export type Mode = "ventana" | "fondo";
 export type Aside = {
   id: string; cwd: string; modo: Mode; sess: SessionRecord;
-  /** Si `cwd` es una copia de trabajo, el checkout del que sale. */
+  /** If `cwd` is a worktree copy, the checkout it comes from. */
   origen?: string;
-  /** Solo en modo fondo: el `claude -p` cuyo stdin es nuestro. */
+  /** Background mode only: the `claude -p` whose stdin we own. */
   child?: ChildProcess;
-  /** Modo ventana: lo que llego antes de que la ventana se registrara. */
+  /** Window mode: what arrived before the window registered. */
   cola: string[];
-  /** Modo ventana: el hook de su sesion ya escribio el registro con socket. */
+  /** Window mode: its session's hook already wrote the record with a socket. */
   listo: boolean;
-  /** Modo fondo: el proceso ha muerto. */
+  /** Background mode: the process has died. */
   muerto: boolean;
 };
 
-/** El id de sesion de un aparte. Uno por lanzamiento: si el spoochie se mueve de repo
- *  con `take`, la ventana vieja y la nueva no comparten registro, y cerrar la vieja
- *  no cierra el spoochie. La CLI que corre dentro lo sabe por SPOOCHIE_APARTE_SESION. */
+/** An aside's session id. One per launch: if the spoochie moves repo with `take`, the
+ *  old window and the new one do not share a record, and closing the old one does not
+ *  close the spoochie. The CLI running inside learns it from SPOOCHIE_ASIDE_SESSION.
+ *  The `aparte-` prefix is kept: it is on disk in sessions/*.json and the daemon matches it. */
 export const asideSession = (id: string) => `aparte-${id}-${Date.now().toString(36)}`;
 export const asideName = (id: string) => `aparte-${id}`;
-/** El socket del registro provisional que escribe el demonio en modo ventana, hasta
- *  que el hook SessionStart de la ventana lo sustituya por el de verdad. */
+/** The socket of the provisional record the daemon writes in window mode, until the
+ *  window's SessionStart hook replaces it with the real one. Kept in Spanish: it is
+ *  written to sessions/*.json. */
 export const PENDING_SOCKET = "(esperando a la ventana)";
 
 /**
- * Como se abre el aparte.
- *   SPOOCHIE_VENTANA=fondo      siempre en segundo plano (tests, servidores)
- *   SPOOCHIE_VENTANA=<programa> ese programa recibe el script y lo corre donde quiera (tests)
- *   sin nada                   ventana en macOS, fondo en el resto
+ * How the aside opens.
+ *   SPOOCHIE_WINDOW=background   always in the background (tests, servers)
+ *   SPOOCHIE_WINDOW=<program>    that program gets the script and runs it wherever it likes (tests)
+ *   unset                        window on macOS, background elsewhere
  */
 export function asideMode(): Mode {
   const v = envVar("SPOOCHIE_WINDOW", "SPOOCHIE_VENTANA");
@@ -239,14 +244,14 @@ export function asideMode(): Mode {
 
 const sq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`;
 
-/** El script que corre la ventana nueva: entra en el repo y arranca claude con la correa.
- *  Rutas absolutas y PATH del demonio, porque una ventana abierta por AppleScript no
- *  pasa por el perfil de la shell y `claude` no estaria en su PATH. */
+/** The script the new window runs: it enters the repo and starts claude on its leash.
+ *  Absolute paths and the daemon's PATH, because a window opened by AppleScript does
+ *  not go through the shell profile and `claude` would not be on its PATH. */
 export function windowScript(t: T.Thread, cwd: string, sessionId: string): string {
   const claude = Bun.which("claude") ?? "claude";
-  // Un demonio que corre desde un checkout de desarrollo (no desde el plugin instalado
-  // ni compilado) le presta su propio plugin a la ventana, para que el hook que la
-  // registra sea de la misma version que el demonio que la espera.
+  // A daemon running from a development checkout (not from the installed or compiled
+  // plugin) lends its own plugin to the window, so the hook that registers it is the
+  // same version as the daemon waiting for it.
   const dev = !import.meta.path.includes("$bunfs") && !HERE.includes("/plugins/cache/") ? join(HERE, "..") : null;
   return [
     `#!/bin/sh`,
@@ -258,17 +263,17 @@ export function windowScript(t: T.Thread, cwd: string, sessionId: string): strin
     `cd ${sq(cwd)} || exit 1`,
     `printf '\\033]0;spoochie ${t.id}\\007'`,
     `echo ${sq(`spoochie ${t.id} · ${t.subject}`)}`,
-    `echo ${sq(`Claude aparte: solo lectura + spoochie say. Puedes escribirle aqui. Cerrar la ventana cierra el spoochie.`)}`,
+    `echo ${sq(`Aside Claude: read-only + spoochie say. You can type to it here. Closing the window closes the spoochie.`)}`,
     `exec ${sq(claude)} ${asideFlags(t.id).map(sq).join(" ")}${dev ? ` --plugin-dir ${sq(dev)}` : ""}`,
     ``,
   ].join("\n");
 }
 
-/** Abre una ventana de terminal que corre el script. Devuelve como lo hizo, o null.
- *  En macOS es Terminal.app con `open`, que no pide permisos. iTerm por AppleScript
- *  se probo: desde el demonio de launchd falla por el permiso de Automatizacion, y
- *  desde una shell se queda colgado esperando el dialogo. Un `.command` en Terminal
- *  abrio la ventana en 4 s sin preguntar nada. */
+/** Opens a terminal window that runs the script. Returns how it did it, or null.
+ *  On macOS it is Terminal.app via `open`, which asks for no permission. iTerm through
+ *  AppleScript was tried: from the launchd daemon it fails on the Automation
+ *  permission, and from a shell it hangs waiting on the dialog. A `.command` in Terminal
+ *  opened the window in 4 s without asking anything. */
 export function openWindow(script: string): string | null {
   const custom = envVar("SPOOCHIE_WINDOW", "SPOOCHIE_VENTANA");
   if (custom && custom !== "window") {
@@ -283,39 +288,39 @@ export function openWindow(script: string): string | null {
 }
 
 /**
- * Lanza el Claude aparte para un spoochie en un directorio.
+ * Launches the aside Claude for a spoochie in a directory.
  *
- * En modo ventana el demonio escribe un registro provisional (para que el spoochie
- * apunte ya al aparte y nada mas caiga en la sesion interactiva) y abre la ventana;
- * el hook SessionStart de esa ventana sobreescribe el registro con su socket, y
- * entonces se le entrega lo acumulado. En modo fondo el registro lo hace el demonio
- * y la entrega va por stdin, sin socket.
+ * In window mode the daemon writes a provisional record (so the spoochie already points
+ * at the aside and nothing else falls into the interactive session) and opens the
+ * window; that window's SessionStart hook overwrites the record with its socket, and
+ * then whatever piled up gets delivered. In background mode the daemon writes the
+ * record and delivery goes through stdin, no socket.
  */
-export function launch(t: T.Thread, cwd: string, como: Mode = asideMode()): Aside | null {
+export function launch(t: T.Thread, cwd: string, how: Mode = asideMode()): Aside | null {
   ensureDirs();
   mkdirSync(ASIDE_DIR, { recursive: true, mode: 0o700 });
   const base = { sessionId: asideSession(t.id), name: asideName(t.id), cwd, startedAt: Date.now(), aparte: t.id };
   const env = cleanEnv({ SPOOCHIE_ASIDE: t.id, SPOOCHIE_ASIDE_SESSION: base.sessionId });
 
-  if (como === "ventana") {
+  if (how === "ventana") {
     const script = join(ASIDE_DIR, `${t.id}.command`);
     writeFileSync(script, windowScript(t, cwd, base.sessionId), { mode: 0o700 });
     chmodSync(script, 0o700);
     const sess: SessionRecord = { ...base, socket: PENDING_SOCKET, token: "", pid: process.pid };
     register(sess);
-    const con = openWindow(script);
-    if (!con) return null;
+    const opener = openWindow(script);
+    if (!opener) return null;
     return { id: t.id, cwd, modo: "ventana", sess, cola: [], listo: false, muerto: false };
   }
 
   const out = openSync(join(ASIDE_DIR, `${t.id}.log`), "a");
-  const presupuesto = asideBudget();
+  const budget = asideBudget();
   const child = spawn("claude", [
     "-p", "--verbose",
     "--input-format", "stream-json", "--output-format", "stream-json",
-    // Solo aqui: `--max-budget-usd` no vale sin `--print`, y en la ventana el freno es
-    // la persona que la esta mirando.
-    ...(presupuesto ? ["--max-budget-usd", presupuesto] : []),
+    // Only here: `--max-budget-usd` does nothing without `--print`, and in the window the
+    // brake is the person watching it.
+    ...(budget ? ["--max-budget-usd", budget] : []),
     ...asideFlags(t.id),
   ], { cwd, env, stdio: ["pipe", out, out] });
   child.on("error", () => {});
@@ -326,16 +331,16 @@ export function launch(t: T.Thread, cwd: string, como: Mode = asideMode()): Asid
   return a;
 }
 
-/** Un turno por la entrada estandar del aparte en modo fondo. */
+/** One turn through the background aside's standard input. */
 export function stdinTurn(a: Aside, content: string): boolean {
   const c = a.child;
   if (!c || !c.stdin || c.stdin.destroyed || c.exitCode !== null) return false;
   return c.stdin.write(JSON.stringify({ type: "user", message: { role: "user", content } }) + "\n");
 }
 
-/** El registro de verdad que deja el hook de la ventana, si ya esta. */
-export function windowRecord(a: Aside, vivas: SessionRecord[]): SessionRecord | undefined {
-  return vivas.find(s => s.aparte === a.id && s.socket !== PENDING_SOCKET && s.socket !== "(stdin)");
+/** The real record the window's hook leaves, if it is there yet. */
+export function windowRecord(a: Aside, live: SessionRecord[]): SessionRecord | undefined {
+  return live.find(s => s.aparte === a.id && s.socket !== PENDING_SOCKET && s.socket !== "(stdin)");
 }
 
 export function alive(a: Aside): boolean {
@@ -347,24 +352,25 @@ export function killAside(a: Aside) {
 }
 
 /**
- * Una copia limpia del repo para que el aparte trabaje en ella: `git worktree add
- * --detach` de HEAD en ~/.claude/spoochie/aparte/<id>-copia. Comparte objetos con el
- * checkout (no duplica el .git), tarda lo que tarda un checkout, y lo que no esta
- * commiteado no viaja. Si el directorio no es un repo git, null: se atiende en el sitio.
+ * A clean copy of the repo for the aside to work in: `git worktree add --detach` of
+ * HEAD in ~/.claude/spoochie/aparte/<id>-copia. It shares objects with the checkout
+ * (no duplicate .git), takes as long as a checkout, and nothing uncommitted travels.
+ * If the directory is not a git repo, null: it is handled in place. The `-copia` suffix
+ * stays as it is on disk.
  */
 export function worktreeCopy(cwd: string, id: string): string | null {
   try { execFileSync("git", ["-C", cwd, "rev-parse", "--git-dir"], { stdio: "ignore" }); } catch { return null; }
   mkdirSync(ASIDE_DIR, { recursive: true, mode: 0o700 });
-  const destino = join(ASIDE_DIR, `${id}-copia`);
+  const dest = join(ASIDE_DIR, `${id}-copia`);
   try {
-    rmSync(destino, { recursive: true, force: true });
+    rmSync(dest, { recursive: true, force: true });
     execFileSync("git", ["-C", cwd, "worktree", "prune"], { stdio: "ignore" });
-    execFileSync("git", ["-C", cwd, "worktree", "add", "--detach", destino, "HEAD"], { stdio: "ignore" });
-    return destino;
+    execFileSync("git", ["-C", cwd, "worktree", "add", "--detach", dest, "HEAD"], { stdio: "ignore" });
+    return dest;
   } catch { return null; }
 }
 
-export function removeCopy(origen: string, copia: string) {
-  try { execFileSync("git", ["-C", origen, "worktree", "remove", "--force", copia], { stdio: "ignore" }); }
-  catch { rmSync(copia, { recursive: true, force: true }); }
+export function removeCopy(origin: string, copy: string) {
+  try { execFileSync("git", ["-C", origin, "worktree", "remove", "--force", copy], { stdio: "ignore" }); }
+  catch { rmSync(copy, { recursive: true, force: true }); }
 }

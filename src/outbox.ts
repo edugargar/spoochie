@@ -1,18 +1,18 @@
 /**
- * Buzon de salida con union, y en disco.
+ * Outbox with merging, kept on disk.
  *
- * Un Claude que cree que el canal corta manda su respuesta en 23 mensajes seguidos, y
- * en Slack eso es una pared de trozos numerados. Los mensajes de texto del mismo lado
- * que caen en la misma ventana salen como uno solo. Dos segundos y medio no se notan
- * al lado de lo que tarda un modelo en pensar.
+ * A Claude that thinks the channel truncates sends its answer as 23 messages in a row, and
+ * in Slack that is a wall of numbered chunks. Text messages from the same side that
+ * land in the same window go out as one. Two and a half seconds go unnoticed
+ * next to how long a model takes to think.
  *
- * Lo pendiente se apunta en ~/.claude/spoochie/outbox.json: un reinicio del demonio (una
- * actualizacion, un launchd que lo relanza) ya no se lleva los mensajes que estaban
- * esperando su ventana, ni los que Slack rechazo; al arrancar se reanudan, y lo que
- * falla se reintenta cada minuto hasta que sale.
+ * What is pending is written to ~/.claude/spoochie/outbox.json: a daemon restart (an
+ * update, launchd relaunching it) no longer loses the messages that were
+ * waiting for their window, nor the ones Slack rejected; on startup they resume, and what
+ * fails is retried every minute until it goes out.
  *
- * Vive aparte del demonio porque importar daemon.ts levanta un demonio, y esto se
- * prueba mejor sin uno.
+ * It lives apart from the daemon because importing daemon.ts starts a daemon, and this is
+ * easier to test without one.
  */
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import * as T from "./threads.ts";
@@ -23,83 +23,84 @@ export const RETRY_MS = 60_000;
 
 export type Send = (t: T.Thread, m: T.Msg) => Promise<boolean | void>;
 
-type Caja = { msgs: T.Msg[]; timer: ReturnType<typeof setTimeout> | null; fallos: number };
-const outbox = new Map<string, Caja>();
-let salidaPorDefecto: Send | null = null;
-let reintento: ReturnType<typeof setInterval> | null = null;
+type Box = { msgs: T.Msg[]; timer: ReturnType<typeof setTimeout> | null; fails: number };
+const outbox = new Map<string, Box>();
+let defaultSend: Send | null = null;
+let retry: ReturnType<typeof setInterval> | null = null;
 
-function guardar() {
+function persist() {
   ensureDirs();
-  const datos = [...outbox].map(([key, c]) => ({ key, msgs: c.msgs, fallos: c.fallos }));
+  // `fallos` is the key already on users' disks: it stays.
+  const data = [...outbox].map(([key, b]) => ({ key, msgs: b.msgs, fallos: b.fails }));
   try {
-    if (datos.length) writeAtomic(OUTBOX_FILE, JSON.stringify(datos));
+    if (data.length) writeAtomic(OUTBOX_FILE, JSON.stringify(data));
     else if (existsSync(OUTBOX_FILE)) unlinkSync(OUTBOX_FILE);
   } catch {}
 }
 
-function unir(msgs: T.Msg[]): T.Msg {
-  const unido: T.Msg = {
+function merge(msgs: T.Msg[]): T.Msg {
+  const merged: T.Msg = {
     ...msgs[0],
     text: msgs.map(x => x.text).join("\n\n"),
-    // Los ficheros de TODOS los mensajes unidos, no solo los del primero:
-    // al juntar se perdian los adjuntos de los que venian detras.
+    // The files of ALL merged messages, not just the first one's:
+    // merging used to drop the attachments of the ones that came after.
     files: msgs.flatMap(x => x.files ?? []).filter((f, i, a) => a.indexOf(f) === i),
   };
-  if (!unido.files?.length) delete unido.files;
-  return unido;
+  if (!merged.files?.length) delete merged.files;
+  return merged;
 }
 
-async function sacar(key: string, salida: Send) {
-  const caja = outbox.get(key);
-  if (!caja) return;
-  caja.timer = null;
-  const fresco = T.load(key.split(":")[0]);
-  if (!fresco) { outbox.delete(key); guardar(); return; }
+async function flush(key: string, send: Send) {
+  const box = outbox.get(key);
+  if (!box) return;
+  box.timer = null;
+  const fresh = T.load(key.split(":")[0]);
+  if (!fresh) { outbox.delete(key); persist(); return; }
   let ok: boolean | void = false;
-  try { ok = await salida(fresco, unir(caja.msgs)); } catch { ok = false; }
-  if (ok === false) { caja.fallos++; guardar(); return; }
+  try { ok = await send(fresh, merge(box.msgs)); } catch { ok = false; }
+  if (ok === false) { box.fails++; persist(); return; }
   outbox.delete(key);
-  guardar();
+  persist();
 }
 
-/** Cola un mensaje; sale solo cuando pasa la ventana de union sin que llegue otro. */
-export function enqueue(t: T.Thread, m: T.Msg, salida: Send, ventanaMs = MERGE_MS) {
+/** Queues a message; it goes out only once the merge window passes with no other arriving. */
+export function enqueue(t: T.Thread, m: T.Msg, send: Send, windowMs = MERGE_MS) {
   const key = `${t.id}:${m.from}`;
-  // Un parche o una rama no se unen con nada: van tal cual.
-  if (m.kind !== "text") { void salida(t, m); return; }
-  const caja = outbox.get(key) ?? { msgs: [], timer: null, fallos: 0 };
-  if (caja.timer) clearTimeout(caja.timer);
-  caja.msgs.push(m);
-  outbox.set(key, caja);
-  guardar();
-  caja.timer = setTimeout(() => { void sacar(key, salida); }, ventanaMs);
+  // A patch or a branch merges with nothing: it goes as is.
+  if (m.kind !== "text") { void send(t, m); return; }
+  const box = outbox.get(key) ?? { msgs: [], timer: null, fails: 0 };
+  if (box.timer) clearTimeout(box.timer);
+  box.msgs.push(m);
+  outbox.set(key, box);
+  persist();
+  box.timer = setTimeout(() => { void flush(key, send); }, windowMs);
 }
 
-/** Lo que quedo en disco de un demonio anterior sale ahora; lo que falle, cada minuto. */
-export function resume(salida: Send): number {
-  salidaPorDefecto = salida;
+/** What a previous daemon left on disk goes out now; what fails, every minute. */
+export function resume(send: Send): number {
+  defaultSend = send;
   let n = 0;
   if (existsSync(OUTBOX_FILE)) {
     try {
       for (const d of JSON.parse(readFileSync(OUTBOX_FILE, "utf8")) as { key: string; msgs: T.Msg[]; fallos?: number }[]) {
         if (!d.msgs?.length || outbox.has(d.key)) continue;
-        outbox.set(d.key, { msgs: d.msgs, timer: null, fallos: d.fallos ?? 0 });
+        outbox.set(d.key, { msgs: d.msgs, timer: null, fails: d.fallos ?? 0 });
         n++;
       }
     } catch {}
-    for (const key of [...outbox.keys()]) void sacar(key, salida);
+    for (const key of [...outbox.keys()]) void flush(key, send);
   }
-  if (!reintento) {
-    reintento = setInterval(() => {
-      if (!salidaPorDefecto) return;
-      for (const [key, c] of outbox) if (!c.timer) void sacar(key, salidaPorDefecto);
+  if (!retry) {
+    retry = setInterval(() => {
+      if (!defaultSend) return;
+      for (const [key, b] of outbox) if (!b.timer) void flush(key, defaultSend);
     }, RETRY_MS);
-    reintento.unref();
+    retry.unref();
   }
   return n;
 }
 
-/** Para los tests y `doctor`: cuantos mensajes esperan salir. */
+/** For tests and `doctor`: how many messages are waiting to go out. */
 export function pending(): number {
-  return [...outbox.values()].reduce((a, c) => a + c.msgs.length, 0);
+  return [...outbox.values()].reduce((a, b) => a + b.msgs.length, 0);
 }

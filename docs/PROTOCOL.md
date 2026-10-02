@@ -144,7 +144,7 @@ notice, which the guardian never reads.
 - `kind: "rota"` announces a **new** ed25519 key, signed with the old one; the signed
   text is the new public key. A contact with no pinned key cannot rotate.
 - A key already in your contacts is never replaced by a hola. Only by a rotation, or by
-  hand (`spoochie contacts --olvidar-clave`).
+  hand (`spoochie contacts --forget-key`).
 
 ## Transports
 

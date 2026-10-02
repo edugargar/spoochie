@@ -4,60 +4,60 @@ import { signedRotation } from "../src/slack.ts";
 import { incomingRotation } from "../src/keys.ts";
 import * as Cfg from "../src/config.ts";
 
-const conAgenda = (pk?: string) => {
+const withContacts = (pk?: string) => {
   Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_YO", pollMs: 20_000 }, contacts: { sam: { id: "U_SAM", name: "Sam", ...(pk ? { pk } : {}) } } });
   return Cfg.load();
 };
 
-test("una rotacion firmada con la clave vieja cambia la clave fijada", () => {
-  const vieja = newKeys(), nueva = newKeys();
-  const c = conAgenda(vieja.pub);
-  const env = signedRotation("U_SAM", "U_YO", "Sam", nueva.pub, vieja.priv, vieja.pub);
-  // El texto firmado es la clave nueva: sin eso, la firma no ata lo que se anuncia.
-  const veredicto = verifyEnvelope(env as any, nueva.pub);
-  expect(veredicto).toBe("ok");
-  const r = incomingRotation(c, "U_SAM", nueva.pub, veredicto);
+test("a rotation signed with the old key changes the pinned key", () => {
+  const old = newKeys(), fresh = newKeys();
+  const c = withContacts(old.pub);
+  const env = signedRotation("U_SAM", "U_YO", "Sam", fresh.pub, old.priv, old.pub);
+  // The signed text is the new key: without that, the signature does not bind what is announced.
+  const verdict = verifyEnvelope(env as any, fresh.pub);
+  expect(verdict).toBe("ok");
+  const r = incomingRotation(c, "U_SAM", fresh.pub, verdict);
   expect(r.ok).toBe(true);
-  expect(Cfg.contactById(c, "U_SAM")?.pk).toBe(nueva.pub);
+  expect(Cfg.contactById(c, "U_SAM")?.pk).toBe(fresh.pub);
 });
 
-test("firmada con otra clave, no", () => {
-  const vieja = newKeys(), nueva = newKeys(), impostor = newKeys();
-  const c = conAgenda(vieja.pub);
-  const env = signedRotation("U_SAM", "U_YO", "Sam", nueva.pub, impostor.priv, impostor.pub);
-  const veredicto = verifyEnvelope(env as any, nueva.pub);
-  expect(veredicto).toBe("mala");
-  expect(incomingRotation(c, "U_SAM", nueva.pub, veredicto).ok).toBe(false);
-  expect(Cfg.contactById(c, "U_SAM")?.pk).toBe(vieja.pub);
+test("signed with another key, it does not", () => {
+  const old = newKeys(), fresh = newKeys(), impostor = newKeys();
+  const c = withContacts(old.pub);
+  const env = signedRotation("U_SAM", "U_YO", "Sam", fresh.pub, impostor.priv, impostor.pub);
+  const verdict = verifyEnvelope(env as any, fresh.pub);
+  expect(verdict).toBe("mala");
+  expect(incomingRotation(c, "U_SAM", fresh.pub, verdict).ok).toBe(false);
+  expect(Cfg.contactById(c, "U_SAM")?.pk).toBe(old.pub);
 });
 
-test("de alguien sin clave fijada no se acepta una rotacion", () => {
-  // Seria alguien de quien no sabiamos nada estrenandose con un cambio de clave. Se
-  // para dos veces: por el veredicto ("nueva" no es "ok") y, por si acaso, mirando
-  // que hubiera una clave que sustituir.
-  const c = conAgenda();
-  const porVeredicto = incomingRotation(c, "U_SAM", newKeys().pub, "nueva");
-  expect(porVeredicto.ok).toBe(false);
-  if (porVeredicto.ok) throw new Error("imposible");
-  expect(porVeredicto.por).toContain("no cuadra con la clave fijada");
+test("a rotation from someone with no pinned key is not accepted", () => {
+  // It would be someone we knew nothing about debuting with a key change. It is stopped
+  // twice: by the verdict ("nueva" is not "ok") and, just in case, by checking there was
+  // a key to replace.
+  const c = withContacts();
+  const byVerdict = incomingRotation(c, "U_SAM", newKeys().pub, "nueva");
+  expect(byVerdict.ok).toBe(false);
+  if (byVerdict.ok) throw new Error("impossible");
+  expect(byVerdict.por).toContain("does not match the pinned key");
 
-  const porFaltaDeClave = incomingRotation(c, "U_SAM", newKeys().pub, "ok");
-  expect(porFaltaDeClave.ok).toBe(false);
-  if (porFaltaDeClave.ok) throw new Error("imposible");
-  expect(porFaltaDeClave.por).toContain("no tenia ninguna clave fijada");
+  const byMissingKey = incomingRotation(c, "U_SAM", newKeys().pub, "ok");
+  expect(byMissingKey.ok).toBe(false);
+  if (byMissingKey.ok) throw new Error("impossible");
+  expect(byMissingKey.por).toContain("there was no key pinned");
 });
 
-test("una rotacion a la misma clave, o a algo que no es una clave, se rechaza", () => {
-  const vieja = newKeys();
-  const c = conAgenda(vieja.pub);
-  expect(incomingRotation(c, "U_SAM", vieja.pub, "ok").ok).toBe(false);
+test("a rotation to the same key, or to something that is not a key, is rejected", () => {
+  const old = newKeys();
+  const c = withContacts(old.pub);
+  expect(incomingRotation(c, "U_SAM", old.pub, "ok").ok).toBe(false);
   expect(incomingRotation(c, "U_SAM", "no", "ok").ok).toBe(false);
 });
 
-test("el aviso de rotacion se lee en el DM, no solo en el sobre", async () => {
+test("the rotation notice is read in the DM, not only in the envelope", async () => {
   const slack = await Bun.file(new URL("../src/slack.ts", import.meta.url)).text();
   const f = slack.slice(slack.indexOf("async rotar("), slack.indexOf("onRota:"));
-  // Si te robaron la clave vieja, el ladron tambien puede firmar la rotacion. Lo unico
-  // que queda es que la persona lo vea escrito y pregunte por otro sitio.
-  expect(f).toContain("preguntaselo por otro sitio");
+  // If your old key was stolen, the thief can sign the rotation too. All that is left is
+  // for the person to see it written and ask through some other channel.
+  expect(f).toContain("ask them through some other channel");
 });

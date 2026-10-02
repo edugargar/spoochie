@@ -1,28 +1,30 @@
 #!/bin/sh
-# Registra esta sesion en spoochie y arranca el demonio si no lo esta.
-# Claude Code exporta CLAUDE_CODE_MESSAGING_SOCKET y _TOKEN antes de correr ningun hook.
+# Registers this session with spoochie and starts the daemon if it is not running.
+# Claude Code exports CLAUDE_CODE_MESSAGING_SOCKET and _TOKEN before running any hook.
 #
-# Sin Bun, se baja el binario de la release DE ESTA VERSION del plugin (no "latest"),
-# se comprueba su SHA-256 contra el SHA256SUMS de la misma release, y se guarda con la
-# version en el nombre: asi actualizar el plugin actualiza el binario, y un binario
-# manipulado en el camino no se ejecuta. Lo que imprime este hook entra en el contexto
-# de la sesion, asi que si algo falta el Claude de esa persona se lo dice.
+# Without Bun, it downloads the binary from the release for THIS plugin version (not
+# "latest"), checks its SHA-256 against the same release's SHA256SUMS, and keeps it with
+# the version in its name: that way updating the plugin updates the binary, and a binary
+# tampered with on the way does not run. What this hook prints goes into the session's
+# context, so if something is missing that person's Claude tells them.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 HOME_SP="${SPOOCHIE_HOME:-$HOME/.claude/spoochie}"
 DIR="$HOME_SP/bin"
-# Lo que este hook imprime entra en el contexto de ESA sesion y ahi se queda. Si falla
-# y la persona reinicia, no queda ni rastro: el spoochie que le abran no llegara y nadie
-# sabra por que. Asi que cada arranque deja tambien una linea en disco, que lee `doctor`.
-ESTADO="$HOME_SP/arranque.txt"
-apuntar() {
+# What this hook prints goes into THAT session's context and stays there. If it fails
+# and the person restarts, no trace is left: the spoochie someone opens to them will not
+# arrive and nobody will know why. So every start also leaves a line on disk, which
+# `doctor` reads. The file name and the status word ("ok" or "fallo") stay as they are:
+# doctor parses them.
+STATUS="$HOME_SP/arranque.txt"
+note() {
   mkdir -p "$HOME_SP" 2>/dev/null && chmod 700 "$HOME_SP" 2>/dev/null
-  printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" > "$ESTADO" 2>/dev/null
-  chmod 600 "$ESTADO" 2>/dev/null
+  printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" > "$STATUS" 2>/dev/null
+  chmod 600 "$STATUS" 2>/dev/null
 }
 VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$ROOT/.claude-plugin/plugin.json" | head -1)
 BIN="$DIR/spoochie-$VERSION"
-# El repo del que bajar el binario: el mismo del que se instalo el plugin. Un fork lo
-# cambia en .claude-plugin/marketplace.json ("origin") y aqui no hay que tocar nada.
+# The repo to download the binary from: the same one the plugin was installed from. A
+# fork changes it in .claude-plugin/marketplace.json ("origin") and nothing here changes.
 REPO=$(sed -n 's/.*"origin" *: *"\([^"]*\)".*/\1/p' "$ROOT/.claude-plugin/marketplace.json" | head -1)
 [ -n "$REPO" ] || REPO="edugargar/spoochie"
 REPO="${SPOOCHIE_ORIGIN:-${SPOOCHIE_ORIGEN:-$REPO}}"
@@ -40,23 +42,23 @@ if [ ! -x "$BIN" ] && ! command -v bun >/dev/null 2>&1; then
     rm -f "$BIN.sums"
     if [ -n "$want" ] && [ "$want" = "$got" ]; then
       chmod +x "$BIN.tmp" && mv "$BIN.tmp" "$BIN"
-      # Los binarios de versiones anteriores ya no hacen falta.
+      # Binaries from earlier versions are no longer needed.
       for old in "$DIR"/spoochie-*; do [ "$old" = "$BIN" ] || rm -f "$old"; done
       rm -f "$DIR/spoochie"
-      apuntar ok "binario $VERSION para $os-$arch bajado y verificado"
+      note ok "binary $VERSION for $os-$arch downloaded and verified"
       echo "spoochie: downloaded and verified the spoochie $VERSION binary for $os-$arch, no Bun needed."
     else
       rm -f "$BIN.tmp"
-      apuntar fallo "el binario $VERSION para $os-$arch no cuadra con el SHA256SUMS de la release (salio ${got:-nada}, se esperaba ${want:-nada}); no se ejecuta"
+      note fallo "the $VERSION binary for $os-$arch does not match the release SHA256SUMS (got ${got:-nothing}, expected ${want:-nothing}); not running it"
       echo "spoochie: the downloaded binary for $os-$arch did NOT match the release checksum (got ${got:-nothing}, expected ${want:-nothing}). Not running it. Tell the user; installing Bun (curl -fsSL https://bun.sh/install | bash) works as an alternative."
       exit 0
     fi
   else
     rm -f "$BIN.tmp" "$BIN.sums"
-    apuntar fallo "sin Bun y sin poder bajar el binario $VERSION para $os-$arch de $base"
+    note fallo "no Bun, and could not download the $VERSION binary for $os-$arch from $base"
     echo "spoochie: Bun is not installed and the $VERSION binary for $os-$arch could not be downloaded from $base. Tell the user to install Bun (curl -fsSL https://bun.sh/install | bash) and restart Claude Code."
     exit 0
   fi
 fi
-apuntar ok "sesion registrada con spoochie $VERSION"
+note ok "session registered with spoochie $VERSION"
 exec "$ROOT/bin/spoochie" register

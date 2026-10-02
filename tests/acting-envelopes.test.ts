@@ -4,42 +4,42 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 /**
- * Los dos sobres que hacen algo ellos solos: `accept` y `close`.
+ * The two envelopes that do something on their own: `accept` and `close`.
  *
- * El resto de un hilo lo lee una persona. Estos dos no: `accept` abre el tunel y lanza
- * el Claude aparte, y `close` cierra el spoochie y purga lo que hubiera guardado. Se
- * atendian ANTES de mirar la firma, y por Slack los dos lados postean con el mismo token
- * de bot, asi que quien tuviera ese token podia abrir o cerrar tuneles haciendose pasar
- * por la otra persona. Es exactamente el atacante para el que existe la firma, y esta
- * escrito asi en docs/PROTOCOL.md.
+ * The rest of a thread is read by a person. Not these two: `accept` opens the tunnel and launches
+ * the aside Claude, and `close` closes the spoochie and purges whatever it kept. They were
+ * handled BEFORE checking the signature, and over Slack both sides post with the same bot
+ * token, so whoever had that token could open or close tunnels posing as
+ * the other person. That's exactly the attacker the signature exists for, and it's
+ * written that way in docs/PROTOCOL.md.
  *
- * Medido antes de tocar nada, con `pollThread` y un Slack de mentira: un sobre sin `sig`
- * ni `pk` con `from` ajeno daba aceptado=true con kind=accept y cerraba el hilo con
+ * Measured before touching anything, with `pollThread` and a fake Slack: an envelope without `sig`
+ * or `pk` with someone else's `from` gave accepted=true with kind=accept and closed the thread with
  * kind=close.
  */
-// El HOME lo fija tests/setup.ts antes de que nadie importe paths.ts, y ROOT se
-// calcula una sola vez al importarlo. Poner aqui otro SPOOCHIE_HOME no mueve ROOT: solo
-// deja la config escrita donde nadie la lee. Se escribe en el ROOT que ya hay.
+// tests/setup.ts sets HOME before anyone imports paths.ts, and ROOT is
+// computed once on import. Setting another SPOOCHIE_HOME here doesn't move ROOT: it only
+// leaves the config written where nobody reads it. It's written to the ROOT that already exists.
 let HOME = "";
 
-let SlackBridge: any, EVENT: string, T: any, firmar: any, nuevasClaves: any, Cfg: any;
+let SlackBridge: any, EVENT: string, T: any, sign: any, newKeys: any, Cfg: any;
 
-const OTRO = "U_OTRO", YO = "U_ME", SIN_CLAVE = "U_BEA";
-let claveOtro: { pub: string; priv: string };
+const OTHER = "U_OTHER", ME = "U_ME", NO_KEY = "U_BEA";
+let otherKey: { pub: string; priv: string };
 
 beforeAll(async () => {
   HOME = (await import("../src/paths.ts")).ROOT;
   mkdirSync(join(HOME, "threads"), { recursive: true, mode: 0o700 });
-  ({ newKeys: nuevasClaves, makeSignature: firmar } = await import("../src/signing.ts"));
-  claveOtro = nuevasClaves();
+  ({ newKeys, makeSignature: sign } = await import("../src/signing.ts"));
+  otherKey = newKeys();
   writeFileSync(join(HOME, "config.json"), JSON.stringify({
     guardian: false, transcript: false, aparte: false, human: "Edu",
-    slack: { userId: YO, botToken: "xoxb-de-mentira" },
-    // El otro lado esta en la agenda y con su clave ya fijada: es el caso normal.
+    slack: { userId: ME, botToken: "xoxb-fake" },
+    // The other side is in the contacts with its key already pinned: the normal case.
     contacts: {
-      ana: { id: OTRO, name: "Ana", pk: claveOtro.pub },
-      // Bea esta en la agenda pero nunca ha firmado nada: no tengo clave suya.
-      bea: { id: SIN_CLAVE, name: "Bea" },
+      ana: { id: OTHER, name: "Ana", pk: otherKey.pub },
+      // Bea is in the contacts but has never signed anything: I have no key of hers.
+      bea: { id: NO_KEY, name: "Bea" },
     },
   }), { mode: 0o600 });
   ({ SlackBridge, EVENT } = await import("../src/slack.ts"));
@@ -47,112 +47,113 @@ beforeAll(async () => {
   Cfg = await import("../src/config.ts");
 });
 
-/** Un puente con Slack de mentira, y lo que le llega del hilo. */
-function puente(reply: any) {
-  const hecho = { aceptado: false, cerrado: "", avisos: [] as string[] };
+/** A bridge with a fake Slack, and what reaches it from the thread. */
+function bridge(reply: any) {
+  const seen = { accepted: false, closed: "", notices: [] as string[] };
   const b = SlackBridge.fromConfig(
-    async () => {}, async () => {}, async () => { hecho.aceptado = true; },
+    async () => {}, async () => {}, async () => { seen.accepted = true; },
   )!;
-  b.onCierre = async (_t: any, m: string) => { hecho.cerrado = m; };
+  b.onCierre = async (_t: any, m: string) => { seen.closed = m; };
   b.get = async (m: string) => m === "conversations.replies" ? { ok: true, messages: [reply] } : { ok: true };
-  b.call = async (_m: string, body: any) => { hecho.avisos.push(String(body?.text ?? "")); return { ok: true, ts: "9.0" }; };
-  return { b, hecho };
+  b.call = async (_m: string, body: any) => { seen.notices.push(String(body?.text ?? "")); return { ok: true, ts: "9.0" }; };
+  return { b, seen };
 }
 
-function hilo(id: string) {
+function thread(id: string) {
   const t: any = {
     id, subject: "s", state: "pending", createdAt: Date.now(), lastActivityAt: Date.now(),
-    from: { sessionId: `slack:${OTRO}`, name: "Ana", cwd: "(otra)", human: "Ana", slackUser: OTRO },
-    to: { sessionId: `slack:${YO}`, name: "yo", cwd: "(esta)", slackUser: YO },
+    from: { sessionId: `slack:${OTHER}`, name: "Ana", cwd: "(other)", human: "Ana", slackUser: OTHER },
+    to: { sessionId: `slack:${ME}`, name: "me", cwd: "(this)", slackUser: ME },
     context: {}, messages: [], slack: { channel: "C1", ts: "1.0" },
   };
   T.save(t);
   return t;
 }
 
-const TEXTO = "cerrado (por Ana)";
-const sobre = (id: string, kind: string, extra: any = {}) => ({
-  ts: "2.0", text: TEXTO,
-  metadata: { event_type: EVENT, event_payload: { v: 1, id, kind, from: OTRO, fromName: "Ana", ...extra } },
+// "cerrado (" is how a 0.9.10 peer writes a close: the receiver reads the reason from it.
+const TEXT = "cerrado (by Ana)";
+const envelope = (id: string, kind: string, extra: any = {}) => ({
+  ts: "2.0", text: TEXT,
+  metadata: { event_type: EVENT, event_payload: { v: 1, id, kind, from: OTHER, fromName: "Ana", ...extra } },
 });
-/** Firmado como lo firma el emisor de verdad: sobre el cuerpo que reconstruye el receptor. */
-function firmado(id: string, kind: string) {
-  const env: any = { v: 1, id, kind, from: OTRO, to: YO, ts: Math.floor(Date.now() / 1000), sv: 2, app: "0.9.9", pk: claveOtro.pub };
-  env.sig = firmar(claveOtro.priv, env, TEXTO);
-  return sobre(id, kind, env);
+/** Signed the way the real sender signs: over the body the receiver rebuilds. */
+function signed(id: string, kind: string) {
+  const env: any = { v: 1, id, kind, from: OTHER, to: ME, ts: Math.floor(Date.now() / 1000), sv: 2, app: "0.9.9", pk: otherKey.pub };
+  env.sig = sign(otherKey.priv, env, TEXT);
+  return envelope(id, kind, env);
 }
 
-test("un accept sin firma de quien ya tiene clave fijada no abre el tunel", async () => {
-  hilo("s1");
-  const { b, hecho } = puente(sobre("s1", "accept"));
+test("an unsigned accept from someone with a pinned key doesn't open the tunnel", async () => {
+  thread("s1");
+  const { b, seen } = bridge(envelope("s1", "accept"));
   await b.pollThread(T.load("s1"));
-  expect(hecho.aceptado).toBe(false);
-  expect(hecho.avisos.join(" ")).toContain("Descartado");
+  expect(seen.accepted).toBe(false);
+  expect(seen.notices.join(" ")).toContain("Dropped");
 });
 
 /**
- * El caso que abre el agujero de verdad. Un sobre sin firma de un id del que no tengo
- * clave se ENTREGA, marcado como sin firmar: es la regla escrita en docs/PROTOCOL.md, y
- * para un mensaje esta bien, porque quien lo lee es una persona que ve la marca. Un
- * `accept` no lo lee nadie. Aqui "no rechazada" no basta: hace falta firma.
+ * The case that really opens the hole. An unsigned envelope from an id I have no
+ * key for is DELIVERED, marked unsigned: that's the rule written in docs/PROTOCOL.md, and
+ * for a message it's fine, because whoever reads it is a person who sees the mark. Nobody
+ * reads an `accept`. Here "not rejected" isn't enough: it needs a signature.
  */
-test("y un accept sin firma de quien no tiene clave fijada tampoco, aunque un mensaje suyo si entraria", async () => {
-  const t: any = hilo("s1b");
-  t.from = { sessionId: `slack:${SIN_CLAVE}`, name: "Bea", cwd: "(otra)", human: "Bea", slackUser: SIN_CLAVE };
+test("nor does an unsigned accept from someone without a pinned key, even though a message of theirs would get in", async () => {
+  const t: any = thread("s1b");
+  t.from = { sessionId: `slack:${NO_KEY}`, name: "Bea", cwd: "(other)", human: "Bea", slackUser: NO_KEY };
   T.save(t);
-  const rep = sobre("s1b", "accept");
-  rep.metadata.event_payload.from = SIN_CLAVE;
-  const { b, hecho } = puente(rep);
+  const rep = envelope("s1b", "accept");
+  rep.metadata.event_payload.from = NO_KEY;
+  const { b, seen } = bridge(rep);
   await b.pollThread(T.load("s1b"));
-  expect(hecho.aceptado).toBe(false);
-  expect(hecho.avisos.join(" ")).toContain("sin firmar");
+  expect(seen.accepted).toBe(false);
+  expect(seen.notices.join(" ")).toContain("came unsigned");
 });
 
-test("un close sin firma no cierra ni purga el hilo", async () => {
-  hilo("s2");
-  const { b, hecho } = puente(sobre("s2", "close"));
+test("an unsigned close neither closes nor purges the thread", async () => {
+  thread("s2");
+  const { b, seen } = bridge(envelope("s2", "close"));
   await b.pollThread(T.load("s2"));
-  expect(hecho.cerrado).toBe("");
+  expect(seen.closed).toBe("");
   expect(T.load("s2").state).toBe("pending");
 });
 
-test("una firma que no es de esa clave tampoco vale", async () => {
-  hilo("s3");
-  const otra = nuevasClaves();
-  const env: any = { v: 1, id: "s3", kind: "accept", from: OTRO, to: YO, ts: Math.floor(Date.now() / 1000), sv: 2, pk: claveOtro.pub };
-  env.sig = firmar(otra.priv, env, TEXTO);   // firmado con una clave que no es la suya
-  const { b, hecho } = puente(sobre("s3", "accept", env));
+test("a signature that isn't from that key doesn't count either", async () => {
+  thread("s3");
+  const wrong = newKeys();
+  const env: any = { v: 1, id: "s3", kind: "accept", from: OTHER, to: ME, ts: Math.floor(Date.now() / 1000), sv: 2, pk: otherKey.pub };
+  env.sig = sign(wrong.priv, env, TEXT);   // signed with a key that isn't theirs
+  const { b, seen } = bridge(envelope("s3", "accept", env));
   await b.pollThread(T.load("s3"));
-  expect(hecho.aceptado).toBe(false);
+  expect(seen.accepted).toBe(false);
 });
 
-test("y el accept firmado de verdad si abre el tunel", async () => {
-  hilo("s4");
-  const { b, hecho } = puente(firmado("s4", "accept"));
+test("and the really signed accept does open the tunnel", async () => {
+  thread("s4");
+  const { b, seen } = bridge(signed("s4", "accept"));
   await b.pollThread(T.load("s4"));
-  expect(hecho.aceptado).toBe(true);
+  expect(seen.accepted).toBe(true);
 });
 
-test("y el close firmado de verdad si cierra", async () => {
-  hilo("s5");
-  const { b, hecho } = puente(firmado("s5", "close"));
+test("and the really signed close does close", async () => {
+  thread("s5");
+  const { b, seen } = bridge(signed("s5", "close"));
   await b.pollThread(T.load("s5"));
-  expect(hecho.cerrado).toBe("por Ana");
+  expect(seen.closed).toBe("by Ana");
 });
 
 /**
- * La firma v1 no vale para abrir ni cerrar.
+ * A v1 signature isn't enough to open or close.
  *
- * No firma ni la hora ni el destinatario, asi que un sobre suyo vale para siempre y en
- * cualquier hilo. Y no rompe compatibilidad con nadie: comprobado en el arbol de la
- * 0.9.8, `post` solo firmaba la invitacion y los mensajes, nunca un accept ni un close.
+ * It signs neither the time nor the recipient, so an envelope of theirs is valid forever and in
+ * any thread. And it breaks compatibility with nobody: checked in the 0.9.8 tree,
+ * `post` only signed the invite and the messages, never an accept or a close.
  */
-test("una firma de la v1 no abre el tunel aunque sea valida", async () => {
+test("a v1 signature doesn't open the tunnel even if it's valid", async () => {
   const { makeSignatureV1 } = await import("../src/signing.ts");
-  hilo("s6");
-  const env: any = { v: 1, id: "s6", kind: "accept", from: OTRO, fromName: "Ana", pk: claveOtro.pub };
-  env.sig = makeSignatureV1(claveOtro.priv, "s6", "accept", OTRO, TEXTO);
-  const { b, hecho } = puente(sobre("s6", "accept", env));
+  thread("s6");
+  const env: any = { v: 1, id: "s6", kind: "accept", from: OTHER, fromName: "Ana", pk: otherKey.pub };
+  env.sig = makeSignatureV1(otherKey.priv, "s6", "accept", OTHER, TEXT);
+  const { b, seen } = bridge(envelope("s6", "accept", env));
   await b.pollThread(T.load("s6"));
-  expect(hecho.aceptado).toBe(false);
+  expect(seen.accepted).toBe(false);
 });

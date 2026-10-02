@@ -1,16 +1,16 @@
 import { expect, test } from "bun:test";
 import { helloDue, forgetHello, HELLO_EVERY_MS } from "../src/hellos.ts";
 
-test("la clave se manda por Slack como mucho una vez al dia por contacto, y lo recuerda entre arranques", () => {
+test("the key goes over Slack at most once a day per contact, and it is remembered across restarts", () => {
   const t0 = 1_700_000_000_000;
   expect(helloDue("U_UNO", t0)).toBe(true);
-  // El mismo arranque, u otro: no se repite hasta pasado un dia.
+  // Same start or another one: no repeat until a day has passed.
   expect(helloDue("U_UNO", t0 + 35_000)).toBe(false);
   expect(helloDue("U_UNO", t0 + HELLO_EVERY_MS - 1)).toBe(false);
   expect(helloDue("U_UNO", t0 + HELLO_EVERY_MS)).toBe(true);
-  // Otro contacto va por su cuenta.
+  // Another contact goes on its own.
   expect(helloDue("U_DOS", t0)).toBe(true);
-  // Si se olvida (ya tiene clave y la pierde), vuelve a tocar.
+  // If it is forgotten (they had a key and lost it), it is due again.
   forgetHello("U_UNO");
   expect(helloDue("U_UNO", t0 + HELLO_EVERY_MS + 1)).toBe(true);
 });

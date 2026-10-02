@@ -7,9 +7,9 @@ import { join } from "node:path";
 import { hasta, plazo } from "./wait.ts";
 
 /**
- * Dos demonios de verdad, dos estados, cero Slack y cero reles: el "pool" es un directorio
- * compartido. Ana abre un spoochie con @bea, el demonio de Bea lo recibe, Bea acepta,
- * contesta, Ana cierra, y en los dos lados queda solo el sobre.
+ * Two real daemons, two states, zero Slack and zero relays: the "pool" is a shared
+ * directory. Ana opens a spoochie with @bea, Bea's daemon receives it, Bea accepts,
+ * answers, Ana closes, and on both sides only the envelope remains.
  */
 const BASE = mkdtempSync(join(tmpdir(), "sp-2m-"));
 const HOME_A = join(BASE, "a"), HOME_B = join(BASE, "b"), NOSTR = join(BASE, "reles");
@@ -34,93 +34,94 @@ function rpc(home: string, req: any): Promise<any> {
     c.on("data", d => { buf += d.toString(); const i = buf.indexOf("\n"); if (i >= 0) { c.destroy(); resolve(JSON.parse(buf.slice(0, i))); } });
   });
 }
-const hilo = (home: string, id: string) => { const p = join(home, "threads", `${id}.json`); return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null; };
+const thread = (home: string, id: string) => { const p = join(home, "threads", `${id}.json`); return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null; };
 
 const A = fakeInbox("2ma"), B = fakeInbox("2mb");
-const demonios: ChildProcess[] = [];
-afterAll(() => { for (const d of demonios) d.kill(); A.server.close(); B.server.close(); });
+const daemons: ChildProcess[] = [];
+afterAll(() => { for (const d of daemons) d.kill(); A.server.close(); B.server.close(); });
 
-test("dos maquinas por Nostr: abrir, aceptar, contestar, cerrar, y solo queda el sobre", async () => {
+test("two machines over Nostr: open, accept, answer, close, and only the envelope remains", async () => {
   const { myKeys } = await import("../src/nostr.ts");
   const ka = myKeys({} as any), kb = myKeys({} as any);
-  for (const [home, box, k, otro, yo, otroNombre, id] of [[HOME_A, A, ka, kb, "Ana", "Bea", "U_A"], [HOME_B, B, kb, ka, "Bea", "Ana", "U_B"]] as const) {
+  for (const [home, box, k, other, me, otherName, id] of [[HOME_A, A, ka, kb, "Ana", "Bea", "U_A"], [HOME_B, B, kb, ka, "Bea", "Ana", "U_B"]] as const) {
     mkdirSync(join(home, "sessions"), { recursive: true, mode: 0o700 });
     mkdirSync(join(home, "threads"), { recursive: true, mode: 0o700 });
     writeFileSync(join(home, "config.json"), JSON.stringify({
-      guardian: false, transcript: false, aparte: false, human: yo,
+      guardian: false, transcript: false, aparte: false, human: me,
       nostr: { sk: k.sk, pk: k.pk, relays: ["wss://x"] },
-      contacts: { [otroNombre.toLowerCase()]: { id: otroNombre === "Ana" ? "U_A" : "U_B", name: otroNombre, npub: otro.pk, relays: ["wss://x"] } },
+      contacts: { [otherName.toLowerCase()]: { id: otherName === "Ana" ? "U_A" : "U_B", name: otherName, npub: other.pk, relays: ["wss://x"] } },
     }), { mode: 0o600 });
-    writeFileSync(join(home, "sessions", `${id}.json`), JSON.stringify({ sessionId: id, name: `repo-${yo.toLowerCase()}`, cwd: home, socket: box.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
+    writeFileSync(join(home, "sessions", `${id}.json`), JSON.stringify({ sessionId: id, name: `repo-${me.toLowerCase()}`, cwd: home, socket: box.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
     const d = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], { env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOSTR_DIR: NOSTR, SPOOCHIE_NOTICE: "terminal", SPOOCHIE_WINDOW: "background" }, stdio: "ignore" });
-    demonios.push(d);
+    daemons.push(d);
   }
   for (let i = 0; i < 60 && !(existsSync(join(HOME_A, "daemon.sock")) && existsSync(join(HOME_B, "daemon.sock"))); i++) await sleep(100);
   expect((await rpc(HOME_A, { op: "ping" })).nostr).toBe(true);
   expect((await rpc(HOME_B, { op: "ping" })).nostr).toBe(true);
 
-  // Ana abre con @bea. Sin Slack en ninguna de las dos maquinas.
-  const open = await rpc(HOME_A, { op: "open", sessionId: "U_A", to: "@bea", subject: "el boton", body: "mira tu Button" });
+  // Ana opens with @bea. No Slack on either machine.
+  const open = await rpc(HOME_A, { op: "open", sessionId: "U_A", to: "@bea", subject: "the button", body: "look at your Button" });
   expect(open.ok).toBe(true);
-  expect(hilo(HOME_A, open.id).transporte).toBe("nostr");
+  expect(thread(HOME_A, open.id).transporte).toBe("nostr");
 
-  // A Bea le llega la invitacion entera en su sesion (modo terminal en el test).
-  expect(await hasta(() => B.got.some(x => x.includes(`spoochie accept ${open.id}`) && x.includes("mira tu Button")))).toBe(true);
-  expect(hilo(HOME_B, open.id).from.human).toBe("Ana");
+  // Bea gets the whole invite in her session (terminal mode in the test).
+  expect(await hasta(() => B.got.some(x => x.includes(`spoochie accept ${open.id}`) && x.includes("look at your Button")))).toBe(true);
+  expect(thread(HOME_B, open.id).from.human).toBe("Ana");
 
-  // Bea acepta: Ana se entera.
+  // Bea accepts: Ana finds out. The accept notice still carries the Spanish marker
+  // (threads.ts renderAccepted), which the bridges look for.
   expect((await rpc(HOME_B, { op: "accept", sessionId: "U_B", id: open.id, by: "Bea", aqui: true })).ok).toBe(true);
   expect(await hasta(() => A.got.some(x => x.includes("ha aceptado el tunel")))).toBe(true);
 
-  // Bea contesta: le llega a Ana como turno.
-  const say = await rpc(HOME_B, { op: "say", sessionId: "U_B", id: open.id, text: "es el min-width del contenedor" });
+  // Bea answers: it reaches Ana as a turn.
+  const say = await rpc(HOME_B, { op: "say", sessionId: "U_B", id: open.id, text: "it's the container's min-width" });
   expect(["publicado", "encolado", true]).toContain(say.delivered);
-  expect(await hasta(() => A.got.some(x => x.includes("min-width del contenedor")))).toBe(true);
+  expect(await hasta(() => A.got.some(x => x.includes("container's min-width")))).toBe(true);
 
-  // Bea adjunta una captura de 45 KB: va en tres sobres y Ana la tiene en su spool, byte a byte.
-  const captura = join(HOME_B, "pantalla.png");
+  // Bea attaches a 45 KB screenshot: it goes in three envelopes and Ana has it in her spool, byte for byte.
+  const screenshot = join(HOME_B, "pantalla.png");
   const bytes = Buffer.alloc(45 * 1024);
   for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7) & 0xff;
-  writeFileSync(captura, bytes);
-  const conFichero = await rpc(HOME_B, { op: "say", sessionId: "U_B", id: open.id, text: "asi se ve", files: [captura] });
-  expect(["publicado", "encolado", true]).toContain(conFichero.delivered);
-  expect(await hasta(() => A.got.some(x => x.includes("Te dejo un fichero")))).toBe(true);
-  const rutaEnA = A.got.find(x => x.includes("Te dejo un fichero"))!.match(new RegExp(`${HOME_A}\\S*pantalla\\.png`))?.[0];
-  expect(rutaEnA).toBeDefined();
-  expect(readFileSync(rutaEnA!).equals(bytes)).toBe(true);
+  writeFileSync(screenshot, bytes);
+  const withFile = await rpc(HOME_B, { op: "say", sessionId: "U_B", id: open.id, text: "this is how it looks", files: [screenshot] });
+  expect(["publicado", "encolado", true]).toContain(withFile.delivered);
+  expect(await hasta(() => A.got.some(x => x.includes("I'm leaving you a file")))).toBe(true);
+  const pathOnA = A.got.find(x => x.includes("I'm leaving you a file"))!.match(new RegExp(`${HOME_A}\\S*pantalla\\.png`))?.[0];
+  expect(pathOnA).toBeDefined();
+  expect(readFileSync(pathOnA!).equals(bytes)).toBe(true);
   const { readdirSync: ls } = await import("node:fs");
   expect(ls(NOSTR).length).toBeGreaterThanOrEqual(6);
 
-  // Ana cierra: Bea se entera, y en las dos maquinas solo queda el sobre.
-  await rpc(HOME_A, { op: "close", sessionId: "U_A", id: open.id, reason: "resuelto" });
-  expect(await hasta(() => hilo(HOME_B, open.id)?.state === "closed")).toBe(true);
-  expect(await hasta(() => hilo(HOME_B, open.id)?.borrado > 0)).toBe(true);
-  expect(hilo(HOME_A, open.id).messages).toEqual([]);
-  expect(hilo(HOME_B, open.id).messages).toEqual([]);
-  expect(hilo(HOME_B, open.id).closeReason).toBe("resuelto");
-  expect(JSON.stringify(hilo(HOME_B, open.id))).not.toContain("min-width");
-  // Y el directorio de "reles" no tiene el texto en claro por ningun sitio.
+  // Ana closes: Bea finds out, and on both machines only the envelope remains.
+  await rpc(HOME_A, { op: "close", sessionId: "U_A", id: open.id, reason: "resolved" });
+  expect(await hasta(() => thread(HOME_B, open.id)?.state === "closed")).toBe(true);
+  expect(await hasta(() => thread(HOME_B, open.id)?.borrado > 0)).toBe(true);
+  expect(thread(HOME_A, open.id).messages).toEqual([]);
+  expect(thread(HOME_B, open.id).messages).toEqual([]);
+  expect(thread(HOME_B, open.id).closeReason).toBe("resolved");
+  expect(JSON.stringify(thread(HOME_B, open.id))).not.toContain("min-width");
+  // And the "relays" directory does not have the plaintext anywhere.
   const { readdirSync } = await import("node:fs");
   for (const f of readdirSync(NOSTR)) { const s = readFileSync(join(NOSTR, f), "utf8"); expect(s).not.toContain("min-width"); expect(s).not.toContain("pantalla"); }
-  // La captura se fue con el spoochie: el spool de Ana ya no la tiene.
+  // The screenshot left with the spoochie: Ana's spool no longer has it.
   expect(existsSync(join(HOME_A, "files", open.id))).toBe(false);
 
-  // La promesa entera, medida en disco y no afirmada: despues de cerrar, NINGUN fichero
-  // de ninguna de las dos maquinas contiene el texto de la conversacion. Antes se
-  // comprobaba solo el JSON del hilo, que es donde ya sabiamos que no estaba.
+  // The whole promise, measured on disk rather than asserted: after closing, NO file on
+  // either machine contains the conversation's text. Before, only the thread's JSON was
+  // checked, which is where we already knew it was not.
   const { readdirSync: ls2, statSync } = await import("node:fs");
-  const todos = (dir: string): string[] => ls2(dir).flatMap(f => {
+  const all = (dir: string): string[] => ls2(dir).flatMap(f => {
     const p = join(dir, f);
-    try { return statSync(p).isDirectory() ? todos(p) : [p]; } catch { return []; }
+    try { return statSync(p).isDirectory() ? all(p) : [p]; } catch { return []; }
   });
   for (const home of [HOME_A, HOME_B]) {
-    for (const f of todos(home)) {
-      if (f.endsWith("daemon.log")) continue; // el log lleva ids y estados, nunca texto
-      // El socket del demonio no es un fichero que se pueda leer (EOPNOTSUPP).
-      let contenido: string;
-      try { contenido = readFileSync(f).toString("utf8"); } catch { continue; }
-      expect({ fichero: f, tiene: contenido.includes("min-width del contenedor") }).toEqual({ fichero: f, tiene: false });
-      expect({ fichero: f, tiene: contenido.includes("mira tu Button") }).toEqual({ fichero: f, tiene: false });
+    for (const f of all(home)) {
+      if (f.endsWith("daemon.log")) continue; // the log carries ids and states, never text
+      // The daemon socket is not a file that can be read (EOPNOTSUPP).
+      let content: string;
+      try { content = readFileSync(f).toString("utf8"); } catch { continue; }
+      expect({ file: f, has: content.includes("container's min-width") }).toEqual({ file: f, has: false });
+      expect({ file: f, has: content.includes("look at your Button") }).toEqual({ file: f, has: false });
     }
   }
 }, plazo(40_000));

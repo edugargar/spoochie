@@ -7,19 +7,19 @@ import { join } from "node:path";
 import { hasta, plazo } from "./wait.ts";
 
 /**
- * La primera invitacion crea la clave Nostr, y el demonio ya estaba corriendo sin ella.
+ * The first invite creates the Nostr key, and the daemon was already running without it.
  *
- * Visto en la prueba real del 01-10: el demonio de quien invita arranca con la sesion,
- * sin clave; `invite` la crea y la guarda, el demonio no se entera y no escucha a nadie.
- * Quien se daba de alta veia "le he mandado tu clave" y el selftest en verde, y al otro
- * lado no llegaba nada en 4 minutos. Tras un slack-reload a mano, el hola entro en 1 s.
+ * Seen in the 01-10 real test: the inviter's daemon starts with the session,
+ * with no key; `invite` creates and stores it, the daemon doesn't notice and listens to nobody.
+ * Whoever joined saw "I've sent them your key" and the selftest green, and nothing reached
+ * the other side in 4 minutes. After a manual slack-reload, the hello came in within 1 s.
  */
 const HOME = mkdtempSync(join(tmpdir(), "sp-inv-"));
-const NOSTR = mkdtempSync(join(tmpdir(), "sp-inv-reles-"));
+const NOSTR = mkdtempSync(join(tmpdir(), "sp-inv-relays-"));
 const SRC = join(import.meta.dir, "..", "src");
 const env = { ...process.env, SPOOCHIE_HOME: HOME, SPOOCHIE_NOSTR_DIR: NOSTR };
-let demonio: ChildProcess | null = null;
-afterAll(() => demonio?.kill());
+let daemon: ChildProcess | null = null;
+afterAll(() => daemon?.kill());
 
 function ping(): Promise<any> {
   return new Promise((resolve, reject) => {
@@ -31,9 +31,9 @@ function ping(): Promise<any> {
   });
 }
 
-test("tras la primera invitacion, el demonio que ya corria escucha por Nostr", async () => {
+test("after the first invite, the daemon that was already running listens on Nostr", async () => {
   writeFileSync(join(HOME, "config.json"), JSON.stringify({ human: "Ana" }), { mode: 0o600 });
-  demonio = spawn("bun", ["run", join(SRC, "daemon.ts")], { env, stdio: "ignore" });
+  daemon = spawn("bun", ["run", join(SRC, "daemon.ts")], { env, stdio: "ignore" });
   expect(await hasta(() => existsSync(join(HOME, "daemon.sock")))).toBe(true);
   expect((await ping()).nostr).toBe(false);
 

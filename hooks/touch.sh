@@ -1,7 +1,7 @@
 #!/bin/sh
-# UserPromptSubmit: cada prompt tuyo toca el registro de esta sesion. Con eso el demonio
-# sabe en que terminal estas trabajando y ahi entrega la invitacion. Sin Bun ni nada:
-# leer el session_id del evento y un touch.
+# UserPromptSubmit: every prompt of yours touches this session's record. That tells the
+# daemon which terminal you are working in, and it delivers the invite there. No Bun, no
+# anything: read the event's session_id and a touch.
 id=$(sed -n 's/.*"session_id" *: *"\([^"]*\)".*/\1/p' | head -1)
 [ -n "$id" ] || exit 0
 safe=$(printf '%s' "$id" | tr -c 'A-Za-z0-9._-\n' '_')

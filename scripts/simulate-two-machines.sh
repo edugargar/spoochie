@@ -1,29 +1,29 @@
 #!/bin/bash
-# Simula dos personas en dos maquinas usando la misma cuenta de Slack.
+# Simulates two people on two machines using the same Slack account.
 #
-# Cada "maquina" es un SPOOCHIE_HOME distinto: su propio demonio, su propio registro
-# de sesiones y su propia identidad de Slack. No comparten nada en disco, asi que
-# lo unico que las une es el hilo de Slack, igual que dos portatiles de verdad.
+# Each "machine" is a different SPOOCHIE_HOME: its own daemon, its own session registry
+# and its own Slack identity. They share nothing on disk, so the only thing joining
+# them is the Slack thread, just like two real laptops.
 #
-# La ficcion: la "maquina A" dice ser el usuario bot de la app. Es un id de Slack
-# distinto del tuyo, que es lo unico que el descubrimiento necesita para no
-# confundir un spoochie propio con uno ajeno.
+# The pretense: "machine A" claims to be the app's bot user. That is a Slack id
+# different from yours, which is all discovery needs to tell your own spoochie from
+# someone else's.
 #
-#   ./scripts/simulate-two-machines.sh up      levanta las dos con dos sesiones de Claude
-#   ./scripts/simulate-two-machines.sh a "..."  habla con la sesion de la maquina A
-#   ./scripts/simulate-two-machines.sh b "..."  habla con la sesion de la maquina B
-#   ./scripts/simulate-two-machines.sh out a|b  ultima respuesta de esa sesion
-#   ./scripts/simulate-two-machines.sh down    lo tira todo abajo
+#   ./scripts/simulate-two-machines.sh up        starts both, with two Claude sessions
+#   ./scripts/simulate-two-machines.sh a "..."   talks to machine A's session
+#   ./scripts/simulate-two-machines.sh b "..."   talks to machine B's session
+#   ./scripts/simulate-two-machines.sh out a|b   last answer from that session
+#   ./scripts/simulate-two-machines.sh down      tears everything down
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 LAB="${SPOOCHIE_LAB:-/tmp/spoochie-lab}"
-TOKENS="${SPOOCHIE_TOKEN_FILE:?exporta SPOOCHIE_TOKEN_FILE con la ruta del JSON de tokens de tu app}"
+TOKENS="${SPOOCHIE_TOKEN_FILE:?export SPOOCHIE_TOKEN_FILE with the path to the token JSON of your app}"
 
-# A finge ser el usuario bot; B eres tu.
+# A pretends to be the bot user; B is you.
 A_USER="${SPOOCHIE_A_USER:-}"
 B_USER="${SPOOCHIE_B_USER:-}"
 
-maquina() { # nombre, spoochie_home, slack_user_id, humano
+machine() { # name, spoochie_home, slack_user_id, human
   mkdir -p "$2"
   python3 - "$2/config.json" "$3" "$4" "$TOKENS" <<'PY'
 import json,sys
@@ -34,8 +34,8 @@ json.dump({"guardian": True, "transcript": True, "human": sys.argv[3],
 PY
 }
 
-# Codigo de ejemplo: cada maquina tiene su mitad del problema y ninguna ve la del otro,
-# que es la situacion que spoochie existe para resolver.
+# Sample code: each machine has its half of the problem and neither sees the other's,
+# which is the situation spoochie exists to solve.
 fixtures() {
   mkdir -p "$LAB/repo-a/src" "$LAB/repo-b/src"
   cat > "$LAB/repo-a/src/Modal.tsx" <<'TSX'
@@ -44,10 +44,10 @@ export function Modal({ onSave, onClose }: Props) {
     <div className="modal">
       <button
         onClick={() => {
-          onSave();      // no espera nada
-          onClose();     // cierra al instante
+          onSave();      // doesn't wait for anything
+          onClose();     // closes right away
         }}
-      >Guardar</button>
+      >Save</button>
     </div>
   );
 }
@@ -58,10 +58,10 @@ export function useSaveProfile() {
   async function save(data: Profile) {
     setSaving(true);
     try {
-      await api.post("/profile", data);   // tarda ~600ms
-      toast.success("Guardado");
+      await api.post("/profile", data);   // takes ~600ms
+      toast.success("Saved");
     } catch (e) {
-      toast.error("No se pudo guardar");  // no re-lanza: la promesa nunca rechaza
+      toast.error("Could not save");      // doesn't rethrow: the promise never rejects
     } finally {
       setSaving(false);
     }
@@ -69,11 +69,11 @@ export function useSaveProfile() {
   return { save, saving };
 }
 TS
-  (cd "$LAB/repo-a" && git init -q && git add -A && git commit -qm modal && git checkout -q -b feat/modal-guardar)
-  (cd "$LAB/repo-b" && git init -q && git add -A && git commit -qm hook && git checkout -q -b feat/guardar-perfil)
+  (cd "$LAB/repo-a" && git init -q && git add -A && git commit -qm modal && git checkout -q -b feat/modal-save)
+  (cd "$LAB/repo-b" && git init -q && git add -A && git commit -qm hook && git checkout -q -b feat/save-profile)
 }
 
-sesion() { # nombre, spoochie_home, dir
+session() { # name, spoochie_home, dir
   mkdir -p "$3" "$LAB/$1"
   rm -f "$LAB/$1.fifo"; mkfifo "$LAB/$1.fifo"
   nohup sh -c "exec sleep 100000 > $LAB/$1.fifo" >/dev/null 2>&1 &
@@ -85,25 +85,25 @@ sesion() { # nombre, spoochie_home, dir
     < $LAB/$1.fifo > $LAB/$1.out 2> $LAB/$1.err" >/dev/null 2>&1 &
 }
 
-decir() { python3 -c 'import json,sys; print(json.dumps({"type":"user","message":{"role":"user","content":sys.argv[1]}}))' "$2" > "$LAB/$1.fifo"; }
+tell() { python3 -c 'import json,sys; print(json.dumps({"type":"user","message":{"role":"user","content":sys.argv[1]}}))' "$2" > "$LAB/$1.fifo"; }
 
 case "${1:-}" in
   up)
-    [ -n "$A_USER" ] && [ -n "$B_USER" ] || { echo "Faltan SPOOCHIE_A_USER y SPOOCHIE_B_USER (ids de Slack)"; exit 2; }
+    [ -n "$A_USER" ] && [ -n "$B_USER" ] || { echo "Missing SPOOCHIE_A_USER and SPOOCHIE_B_USER (Slack ids)"; exit 2; }
     "$0" down >/dev/null 2>&1 || true
     rm -rf "$LAB"; mkdir -p "$LAB"
     fixtures
-    maquina a "$LAB/home-a" "$A_USER" "Ana"
-    maquina b "$LAB/home-b" "$B_USER" "Edu"
-    sesion a "$LAB/home-a" "$LAB/repo-a"
-    sesion b "$LAB/home-b" "$LAB/repo-b"
+    machine a "$LAB/home-a" "$A_USER" "Ana"
+    machine b "$LAB/home-b" "$B_USER" "Edu"
+    session a "$LAB/home-a" "$LAB/repo-a"
+    session b "$LAB/home-b" "$LAB/repo-b"
     sleep 5
     for s in a b; do
-      decir $s "Ejecuta en bash y pega la salida: echo \"{\\\"session_id\\\":\\\"sim-$s\\\",\\\"cwd\\\":\\\"\$PWD\\\"}\" | bun run $ROOT/src/cli.ts register && bun run $ROOT/src/cli.ts sessions"
+      tell $s "Run this in bash and paste the output: echo \"{\\\"session_id\\\":\\\"sim-$s\\\",\\\"cwd\\\":\\\"\$PWD\\\"}\" | bun run $ROOT/src/cli.ts register && bun run $ROOT/src/cli.ts sessions"
     done
-    echo "Maquina A ($A_USER, Ana) y maquina B ($B_USER, Edu) levantadas en $LAB"
+    echo "Machine A ($A_USER, Ana) and machine B ($B_USER, Edu) up in $LAB"
     ;;
-  a|b) decir "$1" "$2" ;;
+  a|b) tell "$1" "$2" ;;
   out)
     python3 - "$LAB/${2}.out" <<'PY'
 import json,sys
@@ -120,7 +120,7 @@ PY
     for h in "$LAB/home-a" "$LAB/home-b"; do
       [ -f "$h/daemon.pid" ] && kill "$(cat "$h/daemon.pid")" 2>/dev/null || true
     done
-    echo "laboratorio parado"
+    echo "lab stopped"
     ;;
-  *) sed -n '2,12p' "$0" ;;
+  *) sed -n '2,16p' "$0" ;;
 esac

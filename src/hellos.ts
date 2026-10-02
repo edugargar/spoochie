@@ -1,10 +1,10 @@
 /**
- * Cuando toca mandar mi clave Nostr por Slack a un contacto que no tiene la suya.
+ * When to send my Nostr key over Slack to a contact who does not have theirs.
  *
- * Era "una vez por contacto y arranque", en memoria: con cada reinicio de Claude Code
- * el demonio arranca de nuevo y vuelve a mandar el DM. Visto en directo: dos DMs a la
- * misma persona en 35 segundos. Ahora se apunta en disco cuando se mando a cada uno y
- * no se repite hasta pasado un dia, que es lo que tarda en actualizar quien no lo ha hecho.
+ * It used to be "once per contact per start", in memory: every Claude Code restart starts
+ * the daemon again and it sent the DM again. Seen live: two DMs to the same person in 35
+ * seconds. Now the time it went to each one is written to disk and it does not repeat for
+ * a day, which is how long someone who has not updated takes to do it.
  */
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -13,23 +13,23 @@ import { ROOT, ensureDirs } from "./paths.ts";
 export const HELLOS_FILE = join(ROOT, "holas.json");
 export const HELLO_EVERY_MS = 24 * 3600 * 1000;
 
-function leer(): Record<string, number> {
+function readAll(): Record<string, number> {
   try { return existsSync(HELLOS_FILE) ? JSON.parse(readFileSync(HELLOS_FILE, "utf8")) : {}; } catch { return {}; }
 }
 
-/** True si a este contacto no se le ha mandado la clave en el ultimo dia; y lo apunta. */
-export function helloDue(id: string, ahora = Date.now()): boolean {
-  const h = leer();
-  if (h[id] && ahora - h[id] < HELLO_EVERY_MS) return false;
-  h[id] = ahora;
+/** True if this contact has not been sent the key in the last day; and writes it down. */
+export function helloDue(id: string, now = Date.now()): boolean {
+  const h = readAll();
+  if (h[id] && now - h[id] < HELLO_EVERY_MS) return false;
+  h[id] = now;
   ensureDirs();
   try { writeFileSync(HELLOS_FILE, JSON.stringify(h), { mode: 0o600 }); } catch {}
   return true;
 }
 
-/** Ya tiene clave: no hace falta recordar nada de el. */
+/** They have a key now: nothing to remember about them. */
 export function forgetHello(id: string) {
-  const h = leer();
+  const h = readAll();
   if (!(id in h)) return;
   delete h[id];
   try { writeFileSync(HELLOS_FILE, JSON.stringify(h), { mode: 0o600 }); } catch {}

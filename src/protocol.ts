@@ -1,34 +1,34 @@
 /**
- * La version del protocolo, y que hacer con un sobre que no se entiende.
+ * The protocol version, and what to do with an envelope we do not understand.
  *
- * El sobre lleva `v` desde el primer dia y nadie lo miraba nunca: era un 1 escrito a
- * mano en diez sitios. Eso vale mientras solo exista un 1. En cuanto salga un 2, un
- * spoochie viejo recibiria un sobre con campos que no conoce y lo tratatia como si los
- * entendiera: entregaria el texto sin la parte que lo acota, o sin la que lo retiene.
+ * The envelope has carried `v` since day one and nobody ever looked at it: it was a 1
+ * written by hand in ten places. That works while only a 1 exists. As soon as a 2 ships,
+ * an old spoochie would receive an envelope with fields it does not know and treat it as
+ * if it understood them. It would deliver the text without the part that narrows it, or
+ * without the part that holds it back.
  *
- * Con el binario distribuido por version de plugin, dos maquinas desparejadas es el caso
- * NORMAL durante semanas, asi que la regla tiene que estar escrita antes de que haga
- * falta, no despues.
+ * With the binary shipped per plugin version, two mismatched machines is the NORMAL case
+ * for weeks, so the rule has to be written before it is needed, not after.
  *
- * La regla:
- *   v igual o menor    se entiende, se entrega (la compatibilidad hacia atras la lleva
- *                      cada campo, como la firma v1)
- *   v mayor            NO se entrega. Se dice en el hilo, con la version de quien lo
- *                      manda, para que la persona sepa que tiene que actualizar. Callar
- *                      seria peor: el otro lado veria "entregado" y aqui no entra nada.
- *   v ausente          anterior a que esto existiera: se trata como 1.
+ * The rule:
+ *   v equal or lower   understood, delivered (each field carries its own backward
+ *                      compatibility, like the v1 signature)
+ *   v higher           NOT delivered. Said in the thread, with the sender's version, so
+ *                      the person knows they have to update. Staying silent would be
+ *                      worse: the other side would see "delivered" and nothing lands here.
+ *   v absent           older than this field, treated as 1.
  */
 export const PROTOCOL = 1;
 
 export type Reading = { entiendo: true } | { entiendo: false; por: string };
 
-export function readVersion(v: unknown, app?: string, mia = PROTOCOL): Reading {
+export function readVersion(v: unknown, app?: string, mine = PROTOCOL): Reading {
   const n = typeof v === "number" && Number.isFinite(v) ? v : 1;
-  if (n <= mia) return { entiendo: true };
+  if (n <= mine) return { entiendo: true };
   return {
     entiendo: false,
-    por: `habla el protocolo ${n} y este spoochie entiende hasta el ${mia}`
-      + (app ? ` (la otra maquina va por la ${app})` : "")
-      + `. Actualiza el plugin: /plugin marketplace update edugargar`,
+    por: `speaks protocol ${n} and this spoochie understands up to ${mine}`
+      + (app ? ` (the other machine is on ${app})` : "")
+      + `. Update the plugin: /plugin marketplace update edugargar`,
   };
 }

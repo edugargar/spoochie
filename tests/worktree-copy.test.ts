@@ -7,33 +7,33 @@ import { worktreeCopy, removeCopy, firstTurn } from "../src/aside.ts";
 
 const git = (cwd: string, ...a: string[]) => execFileSync("git", ["-C", cwd, ...a], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
 
-test("el aparte trabaja sobre una copia limpia de HEAD: lo commiteado esta, lo local no, y se retira", () => {
-  const repo = mkdtempSync(join(tmpdir(), "sp-copia-"));
+test("the aside works on a clean copy of HEAD: committed things are there, local ones are not, and it gets removed", () => {
+  const repo = mkdtempSync(join(tmpdir(), "sp-copy-"));
   git(repo, "init", "-q"); git(repo, "config", "user.email", "t@t"); git(repo, "config", "user.name", "t");
-  writeFileSync(join(repo, "a.txt"), "commiteado"); git(repo, "add", "a.txt"); git(repo, "commit", "-qm", "uno");
-  writeFileSync(join(repo, "b.txt"), "sin commit");
-  writeFileSync(join(repo, ".env"), "SECRETO=1");
-  const copia = worktreeCopy(repo, "cp1")!;
-  expect(copia).toBeTruthy();
-  expect(copia).not.toBe(repo);
-  expect(readFileSync(join(copia, "a.txt"), "utf8")).toBe("commiteado");
-  expect(existsSync(join(copia, "b.txt"))).toBe(false);
-  expect(existsSync(join(copia, ".env"))).toBe(false);
-  expect(git(repo, "worktree", "list")).toContain(copia);
-  // Repetir con el mismo id no falla: se rehace.
-  expect(worktreeCopy(repo, "cp1")).toBe(copia);
-  removeCopy(repo, copia);
-  expect(existsSync(copia)).toBe(false);
-  expect(git(repo, "worktree", "list")).not.toContain(copia);
+  writeFileSync(join(repo, "a.txt"), "committed"); git(repo, "add", "a.txt"); git(repo, "commit", "-qm", "one");
+  writeFileSync(join(repo, "b.txt"), "not committed");
+  writeFileSync(join(repo, ".env"), "SECRET=1");
+  const copy = worktreeCopy(repo, "cp1")!;
+  expect(copy).toBeTruthy();
+  expect(copy).not.toBe(repo);
+  expect(readFileSync(join(copy, "a.txt"), "utf8")).toBe("committed");
+  expect(existsSync(join(copy, "b.txt"))).toBe(false);
+  expect(existsSync(join(copy, ".env"))).toBe(false);
+  expect(git(repo, "worktree", "list")).toContain(copy);
+  // Repeating with the same id does not fail: it gets rebuilt.
+  expect(worktreeCopy(repo, "cp1")).toBe(copy);
+  removeCopy(repo, copy);
+  expect(existsSync(copy)).toBe(false);
+  expect(git(repo, "worktree", "list")).not.toContain(copy);
 });
 
-test("un directorio que no es un repo no tiene copia: se atiende en el sitio", () => {
+test("a directory that is not a repo gets no copy: it is handled in place", () => {
   expect(worktreeCopy(mkdtempSync(join(tmpdir(), "sp-nogit-")), "cp2")).toBeNull();
 });
 
-test("el primer turno dice que es una copia y que lo no commiteado no esta", () => {
-  const t: any = { id: "z1", subject: "s", from: { sessionId: "A", name: "a", cwd: "/a", human: "Ana" }, to: { sessionId: "ap", name: "aparte", cwd: "/copia", human: "Edu" }, context: {}, state: "open", messages: [] };
-  const p = firstTurn(t, "ap", "/x/spoochie", "/copia", "/repo/real");
-  expect(p).toContain("COPIA LIMPIA de /repo/real");
-  expect(p).toContain("no este commiteado");
+test("the first turn says it is a copy and that uncommitted things are not there", () => {
+  const t: any = { id: "z1", subject: "s", from: { sessionId: "A", name: "a", cwd: "/a", human: "Ana" }, to: { sessionId: "ap", name: "aside", cwd: "/copy", human: "Edu" }, context: {}, state: "open", messages: [] };
+  const p = firstTurn(t, "ap", "/x/spoochie", "/copy", "/repo/real");
+  expect(p).toContain("CLEAN COPY of /repo/real");
+  expect(p).toContain("not committed");
 });

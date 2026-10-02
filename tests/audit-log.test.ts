@@ -2,108 +2,109 @@ import { expect, test } from "bun:test";
 import { read } from "../src/audit.ts";
 import { readFileSync } from "node:fs";
 
-test("cada linea del registro es cuando, que, cual, quien y un detalle corto", () => {
-  const bruto = [
-    "2026-09-10T10:00:00.000Z\tabierto\tk7f\tEdu\t-> Sam · el modal",
-    "2026-09-10T10:01:00.000Z\tretenido\tk7f\tSam\tpide ejecutar un script",
-    "2026-09-10T10:02:00.000Z\tsoltado\tk7f\tEdu\t1 mensaje(s) · desde Slack",
+test("each line of the log is when, what, which, who and a short detail", () => {
+  const raw = [
+    "2026-09-10T10:00:00.000Z\tabierto\tk7f\tEdu\t-> Sam · the modal",
+    "2026-09-10T10:01:00.000Z\tretenido\tk7f\tSam\tasks to run a script",
+    "2026-09-10T10:02:00.000Z\tsoltado\tk7f\tEdu\t1 message(s) · from Slack",
   ].join("\n") + "\n";
-  const l = read(50, bruto);
+  const l = read(50, raw);
   expect(l).toHaveLength(3);
-  expect(l[0]).toEqual({ cuando: "2026-09-10T10:00:00.000Z", hecho: "abierto", id: "k7f", quien: "Edu", detalle: "-> Sam · el modal" });
+  expect(l[0]).toEqual({ cuando: "2026-09-10T10:00:00.000Z", hecho: "abierto", id: "k7f", quien: "Edu", detalle: "-> Sam · the modal" });
   expect(l[1].hecho).toBe("retenido");
   expect(l[2].quien).toBe("Edu");
-  // Se lee la cola, que es lo que interesa cuando el fichero lleva meses.
-  expect(read(1, bruto)[0].hecho).toBe("soltado");
+  // The tail is read, which is what matters when the file is months old.
+  expect(read(1, raw)[0].hecho).toBe("soltado");
   expect(read(50, "")).toEqual([]);
 });
 
-test("el registro no guarda el texto de los mensajes: el borrado al cerrar sigue siendo verdad", () => {
-  const fuente = readFileSync(new URL("../src/audit.ts", import.meta.url), "utf8");
-  // Lo que se apunta es hecho, id, quien y detalle. Ningun sitio recibe m.text.
-  expect(fuente).toContain("nunca el texto de los mensajes");
+test("the log does not keep the text of the messages: erase-on-close stays true", () => {
+  const source = readFileSync(new URL("../src/audit.ts", import.meta.url), "utf8");
+  // What gets written is fact, id, who and detail. Nothing receives m.text.
+  expect(source).toContain("never the text of the messages");
   const daemon = readFileSync(new URL("../src/daemon.ts", import.meta.url), "utf8");
-  for (const linea of daemon.split("\n").filter(l => l.includes("Aud.record("))) {
-    expect(linea).not.toContain("m.text");
-    expect(linea).not.toContain(".messages[");
+  for (const line of daemon.split("\n").filter(l => l.includes("Aud.record("))) {
+    expect(line).not.toContain("m.text");
+    expect(line).not.toContain(".messages[");
   }
-  // Y hay al menos un apunte por cada decision de una persona.
-  for (const hecho of ["abierto", "aceptado", "rechazado", "retenido", "cerrado"]) {
-    expect(daemon).toContain(`Aud.record("${hecho}"`);
+  // And there is at least one entry for each decision a person makes. The values are
+  // the on-disk log tags, which stay Spanish.
+  for (const fact of ["abierto", "aceptado", "rechazado", "retenido", "cerrado"]) {
+    expect(daemon).toContain(`Aud.record("${fact}"`);
   }
-  // Soltar y descartar salen del mismo sitio, segun lo que escribio la persona.
-  expect(daemon).toContain('Aud.record(orden === "suelta" ? "soltado" : "descartado"');
+  // Release and discard come from the same place, depending on what the person typed.
+  expect(daemon).toMatch(/Aud\.record\(\w+ === "suelta" \? "soltado" : "descartado"/);
 });
 
 /**
- * Un directorio de estado que ya existia abierto se quedaba abierto.
+ * A state directory that already existed open stayed open.
  *
- * El `mode` de `mkdirSync` solo se aplica al crear. Dentro de ese directorio estan la
- * config con las tres claves, el socket del demonio (por el que cualquier proceso local
- * abre un tunel sin preguntar), los hilos y el spool. `spoochie doctor` lo decia, pero
- * doctor se ejecuta cuando ya hay algo roto, no cada dia.
+ * `mkdirSync`'s `mode` only applies on creation. Inside that directory are the config
+ * with the three keys, the daemon socket (through which any local process opens a tunnel
+ * without asking), the threads and the spool. `spoochie doctor` said so, but doctor runs
+ * once something is already broken, not every day.
  */
-test("un directorio de estado con permisos abiertos se cierra al arrancar", async () => {
+test("a state directory with open permissions gets closed on start", async () => {
   const { mkdtempSync, mkdirSync, chmodSync, statSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const base = mkdtempSync(join(tmpdir(), "sp-perms-"));
-  const casa = join(base, "estado");
-  mkdirSync(casa, { recursive: true });
-  chmodSync(casa, 0o755);
-  expect(statSync(casa).mode & 0o077).not.toBe(0);
+  const home = join(base, "state");
+  mkdirSync(home, { recursive: true });
+  chmodSync(home, 0o755);
+  expect(statSync(home).mode & 0o077).not.toBe(0);
 
-  const antes = process.env.SPOOCHIE_HOME;
+  const before = process.env.SPOOCHIE_HOME;
   try {
-    // `ROOT` se calcula al importar paths.ts, asi que el aislamiento va por un proceso
-    // aparte: es lo mismo que pasa de verdad, un arranque nuevo sobre un directorio viejo.
+    // `ROOT` is computed when paths.ts is imported, so the isolation goes through a
+    // separate process: the same thing that really happens, a fresh start on an old directory.
     const r = Bun.spawnSync(["bun", "-e", 'const {ensureDirs}=await import("./src/paths.ts"); ensureDirs();'], {
-      cwd: join(import.meta.dir, ".."), env: { ...process.env, SPOOCHIE_HOME: casa },
+      cwd: join(import.meta.dir, ".."), env: { ...process.env, SPOOCHIE_HOME: home },
     });
     expect(r.exitCode).toBe(0);
-    expect(statSync(casa).mode & 0o077).toBe(0);
-    expect(statSync(join(casa, "sessions")).mode & 0o077).toBe(0);
-    expect(statSync(join(casa, "threads")).mode & 0o077).toBe(0);
+    expect(statSync(home).mode & 0o077).toBe(0);
+    expect(statSync(join(home, "sessions")).mode & 0o077).toBe(0);
+    expect(statSync(join(home, "threads")).mode & 0o077).toBe(0);
   } finally {
-    if (antes === undefined) delete process.env.SPOOCHIE_HOME; else process.env.SPOOCHIE_HOME = antes;
+    if (before === undefined) delete process.env.SPOOCHIE_HOME; else process.env.SPOOCHIE_HOME = before;
   }
 });
 
 /**
- * `writeFileSync` trunca y luego escribe: un proceso muerto en medio deja el fichero
- * cortado. En la config eso costaba las tres claves y la agenda entera (ver
- * config.test.ts); en un hilo, la conversacion. Se escribe al lado y se renombra, que en
- * el mismo disco es atomico: quien lea ve el viejo entero o el nuevo entero.
+ * `writeFileSync` truncates and then writes: a process that dies in between leaves the
+ * file cut short. In the config that cost the three keys and all the contacts (see
+ * config.test.ts); in a thread, the conversation. It writes alongside and renames, which
+ * on the same disk is atomic: a reader sees the whole old file or the whole new one.
  */
-test("un fichero de estado se escribe entero o no se escribe", async () => {
+test("a state file is written whole or not at all", async () => {
   const { writeAtomic } = await import("../src/paths.ts");
   const { readFileSync, existsSync, mkdtempSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const dir = mkdtempSync(join(tmpdir(), "sp-atom-"));
-  const f = join(dir, "estado.json");
+  const f = join(dir, "state.json");
 
   writeAtomic(f, '{"a":1}');
   expect(JSON.parse(readFileSync(f, "utf8"))).toEqual({ a: 1 });
   writeAtomic(f, '{"a":2}');
   expect(JSON.parse(readFileSync(f, "utf8"))).toEqual({ a: 2 });
-  // No se queda ningun temporal por el camino.
+  // No temporary file is left behind.
   expect(existsSync(`${f}.nuevo`)).toBe(false);
-  // Y el modo sigue siendo solo para ti: dentro hay tokens de buzon y claves.
+  // And the mode is still for you only: inside are inbox tokens and keys.
   const { statSync } = await import("node:fs");
   expect(statSync(f).mode & 0o077).toBe(0);
 });
 
-test("y ningun fichero de estado se escribe ya con writeFileSync a pelo", async () => {
-  // Si vuelve a aparecer uno, este test lo dice antes de que cueste una agenda.
+test("and no state file is written with a bare writeFileSync any more", async () => {
+  // If one shows up again, this test says so before it costs someone their contacts.
   const { readFileSync } = await import("node:fs");
   const { join } = await import("node:path");
-  const sospechosos: string[] = [];
+  const suspects: string[] = [];
   for (const f of ["config.ts", "threads.ts", "outbox.ts", "registry.ts"]) {
-    const fuente = readFileSync(join(import.meta.dir, "..", "src", f), "utf8");
-    for (const [i, l] of fuente.split("\n").entries()) {
-      if (/writeFileSync\(/.test(l) && !/\.nuevo|escribirAtomico/.test(l)) sospechosos.push(`${f}:${i + 1}`);
+    const source = readFileSync(join(import.meta.dir, "..", "src", f), "utf8");
+    for (const [i, l] of source.split("\n").entries()) {
+      if (/writeFileSync\(/.test(l) && !/\.nuevo|writeAtomic/.test(l)) suspects.push(`${f}:${i + 1}`);
     }
   }
-  expect(sospechosos).toEqual([]);
+  expect(suspects).toEqual([]);
 });

@@ -1,25 +1,26 @@
-// Los tests no tocan tu ~/.claude real.
-// Ojo: os.homedir() en Bun NO respeta $HOME, asi que aislar por HOME no vale.
-// El aislamiento va por SPOOCHIE_HOME, que es lo que lee src/paths.ts.
+// The tests do not touch your real ~/.claude.
+// Careful: os.homedir() in Bun does NOT honor $HOME, so isolating by HOME does not work.
+// Isolation goes through SPOOCHIE_HOME, which is what src/paths.ts reads.
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 process.env.SPOOCHIE_HOME = mkdtempSync(join(tmpdir(), "spoochie-test-"));
-// Y no abren dialogos de macOS: el aviso va a la terminal salvo que un test diga otra cosa.
+// And they open no macOS dialogs: the notice goes to the terminal unless a test says otherwise.
 process.env.SPOOCHIE_NOTICE ??= "terminal";
-// Ni miran GitHub para ver si hay version nueva, ni copian el repo para el aparte.
+// Nor do they check GitHub for a new version, or copy the repo for the aside.
 process.env.SPOOCHIE_OFFLINE = "1";
 
 /**
- * El plazo por defecto de los tests, y por que no son los 5 s de bun.
+ * The tests' default deadline, and why it is not bun's 5 s.
  *
- * Aqui hay muchos tests que lanzan procesos de verdad: demonios, git, osascript. Con la
- * maquina cargada, cinco segundos no dan. Medido: `copia.test.ts` fallaba a los 5.037 ms,
- * o sea justo en el corte, y el mensaje no decia "esto tarda mas", decia "esto no pasa".
+ * Many tests here start real processes: daemons, git, osascript. With the machine
+ * loaded, five seconds is not enough. Measured: `worktree-copy.test.ts` failed at
+ * 5,037 ms, right at the cutoff, and the message did not say "this takes longer", it
+ * said "this does not pass".
  *
- * Los plazos que cada test declara ya pasaban por `plazo()`, pero un test que no declara
- * ninguno se quedaba con los 5 s de bun, y esos no los movia SPOOCHIE_TEST_SLOW. O sea
- * que el mando de la maquina lenta seguia sin llegar a todo.
+ * The deadlines each test declares already went through `plazo()`, but a test that
+ * declares none kept bun's 5 s, and SPOOCHIE_TEST_SLOW did not move those. So the
+ * slow-machine knob still did not reach everything.
  */
 import { setDefaultTimeout } from "bun:test";
 import { plazo } from "./wait.ts";

@@ -1,92 +1,93 @@
 import { expect, test } from "bun:test";
 import { PROTOCOL, readVersion } from "../src/protocol.ts";
 
-test("un sobre de mi version o anterior se entiende", () => {
+test("an envelope of my version or earlier is understood", () => {
   expect(readVersion(PROTOCOL).entiendo).toBe(true);
   expect(readVersion(1, "0.9.9").entiendo).toBe(true);
-  // Sin `v` es de antes de que esto existiera: se trata como 1.
+  // No `v` means it predates this field: treated as 1.
   expect(readVersion(undefined).entiendo).toBe(true);
   expect(readVersion("dos" as any).entiendo).toBe(true);
 });
 
-test("un sobre de una version que no conozco no se entrega, y se dice cual falta", () => {
+test("an envelope of a version I do not know is not delivered, and it says which one is missing", () => {
   const l = readVersion(2, "1.2.0", 1);
   expect(l.entiendo).toBe(false);
-  if (l.entiendo) throw new Error("imposible");
-  expect(l.por).toContain("protocolo 2");
-  expect(l.por).toContain("entiende hasta el 1");
-  // Con la version de la otra maquina, para que la persona sepa a quien decirselo.
+  if (l.entiendo) throw new Error("impossible");
+  expect(l.por).toContain("protocol 2");
+  expect(l.por).toContain("understands up to 1");
+  // With the other machine's version, so the person knows whom to tell.
   expect(l.por).toContain("1.2.0");
   expect(l.por).toContain("plugin marketplace update");
 });
 
-test("el numero de protocolo no se escribe a mano en cada sobre", async () => {
+test("the protocol number is not hand-written in each envelope", async () => {
   for (const f of ["../src/slack.ts", "../src/nostr.ts"]) {
-    const fuente = await Bun.file(new URL(f, import.meta.url)).text();
-    // `v: 1` suelto es como estaba antes: diez copias que se olvidan de subir a la vez.
-    expect(fuente).not.toContain("v: 1,");
-    expect(fuente).toContain("v: PROTOCOL,");
+    const source = await Bun.file(new URL(f, import.meta.url)).text();
+    // A loose `v: 1` is how it used to be: ten copies that forget to go up together.
+    expect(source).not.toContain("v: 1,");
+    expect(source).toContain("v: PROTOCOL,");
   }
 });
 
 /**
- * La especificacion publicada tiene que decir lo que hace el codigo. Un documento de
- * protocolo que se queda atras es peor que no tenerlo: alguien lo implementa y sus
- * sobres se descartan sin que entienda por que.
+ * The published spec has to say what the code does. A protocol document that falls
+ * behind is worse than none: someone implements it and their envelopes get dropped
+ * without them understanding why.
  */
-test("docs/PROTOCOL.md dice el mismo numero de version que el codigo", async () => {
+test("docs/PROTOCOL.md states the same version number as the code", async () => {
   const doc = await Bun.file(new URL("../docs/PROTOCOL.md", import.meta.url)).text();
   expect(doc).toContain(`Protocol version: **${PROTOCOL}**`);
 });
 
-test("el orden de los campos firmados del documento es el del codigo", async () => {
+test("the order of the signed fields in the document is the code's", async () => {
   const doc = await Bun.file(new URL("../docs/PROTOCOL.md", import.meta.url)).text();
-  const firma = await Bun.file(new URL("../src/signing.ts", import.meta.url)).text();
-  const enCodigo = firma.slice(firma.indexOf("const datosV2"), firma.indexOf("export function firmar"));
-  // Los campos, en orden, tal cual se firman.
-  for (const campo of ["d.id", "d.kind", "d.from", "d.to", "d.ts", "d.app", "d.subject"]) {
-    expect(enCodigo).toContain(campo);
+  const signing = await Bun.file(new URL("../src/signing.ts", import.meta.url)).text();
+  const inCode = signing.slice(signing.indexOf("const signedBytesV2"), signing.indexOf("export function makeSignature("));
+  expect(inCode.length).toBeGreaterThan(0);
+  // The fields, in order, exactly as they are signed.
+  for (const field of ["d.id", "d.kind", "d.from", "d.to", "d.ts", "d.app", "d.subject"]) {
+    expect(inCode).toContain(field);
   }
-  const enDoc = doc.slice(doc.indexOf("JSON.stringify(["), doc.indexOf("])", doc.indexOf("JSON.stringify([")));
-  for (const campo of ["id,", "kind,", "from,", "to ??", "ts ??", "app ??", "subject ??", "thread ?"]) {
-    expect(enDoc).toContain(campo);
+  const inDoc = doc.slice(doc.indexOf("JSON.stringify(["), doc.indexOf("])", doc.indexOf("JSON.stringify([")));
+  for (const field of ["id,", "kind,", "from,", "to ??", "ts ??", "app ??", "subject ??", "thread ?"]) {
+    expect(inDoc).toContain(field);
   }
-  // Y la ventana de tiempo, que es un numero que se puede desincronizar solo.
+  // And the time window, a number that can drift out of sync on its own.
   expect(doc).toContain("**24 hours**");
-  expect(firma).toContain("export const WINDOW_MS = 24 * 60 * 60 * 1000;");
+  expect(signing).toContain("export const WINDOW_MS = 24 * 60 * 60 * 1000;");
 });
 
-test("los kind del documento son los del codigo", async () => {
+test("the document's kinds are the code's", async () => {
   const doc = await Bun.file(new URL("../docs/PROTOCOL.md", import.meta.url)).text();
   const slack = await Bun.file(new URL("../src/slack.ts", import.meta.url)).text();
-  const enCodigo = slack.slice(slack.indexOf('kind: "invite"'), slack.indexOf('kind: "invite"') + 120);
+  const inCode = slack.slice(slack.indexOf('kind: "invite"'), slack.indexOf('kind: "invite"') + 120);
   for (const k of ["invite", "msg", "accept", "close", "notice", "hola", "rota"]) {
-    expect(enCodigo).toContain(`"${k}"`);
+    expect(inCode).toContain(`"${k}"`);
     expect(doc).toContain(k);
   }
 });
 
 /**
- * La regla, en el transporte por defecto.
+ * The rule, on the default transport.
  *
- * `leerVersion` estaba bien y se llamaba en `recibir`, pero `abrir` cortaba antes con
- * `sobre.v !== 1`: un sobre del protocolo 2 se evaporaba sin dejar rastro mientras el
- * otro lado lo veia entregado, y uno sin `v` (de antes de que el campo existiera)
- * tambien. O sea que toda la regla escrita en este fichero y publicada en
- * docs/PROTOCOL.md era, por Nostr, codigo muerto. Por Slack si se cumplia: las dos
- * rutas hacian cosas distintas con el mismo sobre.
+ * `readVersion` was right and was called in `receive`, but `open` cut things off earlier
+ * with `envelope.v !== 1`: a protocol 2 envelope vanished without a trace while the other
+ * side saw it delivered, and so did one with no `v` (from before the field existed). So
+ * the whole rule written in this file and published in docs/PROTOCOL.md was, over Nostr,
+ * dead code. Over Slack it did hold: the two paths did different things with the same
+ * envelope.
  */
-test("por Nostr, un sobre de otra version llega hasta quien sabe que hacer con el", async () => {
+test("over Nostr, an envelope of another version reaches the code that knows what to do with it", async () => {
   const { wrapEnvelope, open, myKeys } = await import("../src/nostr.ts");
-  const yo = myKeys({} as any), otro = myKeys({} as any);
-  const manda = (v: unknown) => {
-    const { wrap } = wrapEnvelope(otro.sk, yo.pk, { v, id: "abc", kind: "msg", subject: "s" } as any, "hola");
-    return open(wrap, yo.sk);
+  const me = myKeys({} as any), other = myKeys({} as any);
+  const send = (v: unknown) => {
+    const { wrap } = wrapEnvelope(other.sk, me.pk, { v, id: "abc", kind: "msg", subject: "s" } as any, "hola");
+    return open(wrap, me.sk);
   };
-  // Ni el de mas adelante ni el de antes se tiran a la basura aqui.
-  expect(manda(2)?.sobre.v).toBe(2);
-  expect(manda(undefined)).not.toBeNull();
-  expect(manda(1)?.sobre.v).toBe(1);
-  // Lo que si se descarta es lo que no es un sobre de spoochie.
-  expect(manda("dos")).toBeNull();
+  // Neither the newer one nor the older one gets thrown away here.
+  expect(send(2)?.sobre.v).toBe(2);
+  expect(send(undefined)).not.toBeNull();
+  expect(send(1)?.sobre.v).toBe(1);
+  // What does get dropped is whatever is not a spoochie envelope.
+  expect(send("dos")).toBeNull();
 });

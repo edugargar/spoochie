@@ -23,7 +23,7 @@ export function deliver(target: SessionRecord, content: string): Promise<void> {
       sock.destroy();
       err ? reject(err) : resolve();
     };
-    sock.setTimeout(5000, () => done(new Error(`timeout escribiendo en ${target.socket}`)));
+    sock.setTimeout(5000, () => done(new Error(`timeout writing to ${target.socket}`)));
     sock.on("error", done);
     sock.on("connect", () => {
       sock.write(JSON.stringify({ type: "auth", token: target.token }) + "\n");
