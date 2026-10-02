@@ -21,7 +21,7 @@ export const SPOOL = join(ROOT, "files");
 
 const safe = (n: string) => n.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120) || "file";
 
-export type Uploaded = { id: string; nombre: string };
+export type Uploaded = { id: string; name: string };
 
 /** Uploads a file to the thread. Returns null if it is too big or Slack says no. */
 export async function upload(token: string, path: string, channel: string, threadTs: string): Promise<Uploaded | null> {
@@ -46,7 +46,7 @@ export async function upload(token: string, path: string, channel: string, threa
     body: JSON.stringify({ files: [{ id: j1.file_id, title: name }], channel_id: channel, thread_ts: threadTs }),
   });
   const j3 = await step3.json();
-  return j3.ok ? { id: j1.file_id, nombre: name } : null;
+  return j3.ok ? { id: j1.file_id, name: name } : null;
 }
 
 /**

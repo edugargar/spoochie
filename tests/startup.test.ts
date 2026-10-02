@@ -159,9 +159,9 @@ test("doctor fails if the daemon PATH cannot find claude, and says how to fix it
   // What the 0.9.9 plist had on Edu's machine.
   const bad = claudeCheck("/Users/x/.bun/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", () => null)!;
   expect(bad.ok).toBe(false);
-  expect(bad.detalle).toContain("not in");
-  expect(bad.detalle).toContain("spoochie register");
-  expect(claudeCheck("/a:/b", d => (d.includes("/b") ? "/b" : null))).toMatchObject({ ok: true, detalle: "/b/claude" });
+  expect(bad.detail).toContain("not in");
+  expect(bad.detail).toContain("spoochie register");
+  expect(claudeCheck("/a:/b", d => (d.includes("/b") ? "/b" : null))).toMatchObject({ ok: true, detail: "/b/claude" });
   // Without a LaunchAgent there is no daemon PATH to look at, and no failure is made up.
   expect(claudeCheck(null, findClaude)).toBeNull();
 });

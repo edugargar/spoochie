@@ -20,14 +20,14 @@
  */
 export const PROTOCOL = 1;
 
-export type Reading = { entiendo: true } | { entiendo: false; por: string };
+export type Reading = { understood: true } | { understood: false; reason: string };
 
 export function readVersion(v: unknown, app?: string, mine = PROTOCOL): Reading {
   const n = typeof v === "number" && Number.isFinite(v) ? v : 1;
-  if (n <= mine) return { entiendo: true };
+  if (n <= mine) return { understood: true };
   return {
-    entiendo: false,
-    por: `speaks protocol ${n} and this spoochie understands up to ${mine}`
+    understood: false,
+    reason: `speaks protocol ${n} and this spoochie understands up to ${mine}`
       + (app ? ` (the other machine is on ${app})` : "")
       + `. Update the plugin: /plugin marketplace update edugargar`,
   };

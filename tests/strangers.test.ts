@@ -61,16 +61,16 @@ test("the bridge reports any envelope from outside the contacts, not just invite
   const pool: Pool = { publish: () => [Promise.resolve()], subscribe: (_r, _f, cb) => { deliver = cb.onevent; return { close() {} }; } };
   const seen: string[] = [];
   const B = new NostrBridge(b.sk, b.pk, ["wss://b"], {
-    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
-    onDesconocido: async (de, s) => { seen.push(`${de === x.pk}:${s.kind}`); },
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: () => {},
+    onStranger: async (de, s) => { seen.push(`${de === x.pk}:${s.kind}`); },
   }, pool);
-  B.escuchar();
+  B.listen();
   deliver!(wrapEnvelope(x.sk, b.pk, { v: 1, id: "u1", kind: "invite", fromName: "Adrian" }, "hola").wrap);
   deliver!(wrapEnvelope(x.sk, b.pk, { v: 1, id: "u1", kind: "msg" }, "still here").wrap);
   await sleep(50);
   // Order does not matter: the invite waits to answer before reporting.
   expect(seen.sort()).toEqual(["true:invite", "true:msg"]);
-  B.cerrar();
+  B.close();
 });
 
 test("doctor shows it, and if it claims to be a contact with no key it gives the command to bind it", () => {
@@ -80,7 +80,7 @@ test("doctor shows it, and if it claims to be a contact with no key it gives the
   Strangers.record({ pk: pkAdri, kind: "hola", nombre: "Adrián Martin", slack: "U01234568" }, t0);
   Strangers.record({ pk: pkNobody, kind: "invite", nombre: "Mallory" }, t0);
   const c: any = { contacts: { adri: { id: "U01234568", name: "Adrián Martin" } } };
-  const lines = audit(c, t0).filter(x => x.que === "outside your contacts").map(x => x.detalle);
+  const lines = audit(c, t0).filter(x => x.what === "outside your contacts").map(x => x.detail);
   const fromAdri = lines.find(l => l.includes(pkAdri.slice(0, 12)))!;
   expect(fromAdri).toContain("claims to be Adrián Martin");
   expect(fromAdri).toContain(`spoochie contacts --bind U01234568 --npub ${pkAdri}`);

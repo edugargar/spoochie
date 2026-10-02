@@ -2,22 +2,22 @@ import { expect, test } from "bun:test";
 import { PROTOCOL, readVersion } from "../src/protocol.ts";
 
 test("an envelope of my version or earlier is understood", () => {
-  expect(readVersion(PROTOCOL).entiendo).toBe(true);
-  expect(readVersion(1, "0.9.9").entiendo).toBe(true);
+  expect(readVersion(PROTOCOL).understood).toBe(true);
+  expect(readVersion(1, "0.9.9").understood).toBe(true);
   // No `v` means it predates this field: treated as 1.
-  expect(readVersion(undefined).entiendo).toBe(true);
-  expect(readVersion("dos" as any).entiendo).toBe(true);
+  expect(readVersion(undefined).understood).toBe(true);
+  expect(readVersion("dos" as any).understood).toBe(true);
 });
 
 test("an envelope of a version I do not know is not delivered, and it says which one is missing", () => {
   const l = readVersion(2, "1.2.0", 1);
-  expect(l.entiendo).toBe(false);
-  if (l.entiendo) throw new Error("impossible");
-  expect(l.por).toContain("protocol 2");
-  expect(l.por).toContain("understands up to 1");
+  expect(l.understood).toBe(false);
+  if (l.understood) throw new Error("impossible");
+  expect(l.reason).toContain("protocol 2");
+  expect(l.reason).toContain("understands up to 1");
   // With the other machine's version, so the person knows whom to tell.
-  expect(l.por).toContain("1.2.0");
-  expect(l.por).toContain("plugin marketplace update");
+  expect(l.reason).toContain("1.2.0");
+  expect(l.reason).toContain("plugin marketplace update");
 });
 
 test("the protocol number is not hand-written in each envelope", async () => {
@@ -85,9 +85,9 @@ test("over Nostr, an envelope of another version reaches the code that knows wha
     return open(wrap, me.sk);
   };
   // Neither the newer one nor the older one gets thrown away here.
-  expect(send(2)?.sobre.v).toBe(2);
+  expect(send(2)?.envelope.v).toBe(2);
   expect(send(undefined)).not.toBeNull();
-  expect(send(1)?.sobre.v).toBe(1);
+  expect(send(1)?.envelope.v).toBe(1);
   // What does get dropped is whatever is not a spoochie envelope.
   expect(send("dos")).toBeNull();
 });

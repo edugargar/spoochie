@@ -412,10 +412,10 @@ async function main() {
     console.log(`Your Nostr key: ${N.npub(nk.pk)} (relays: ${N.myRelays(c).join(", ")}).`);
     // The hello: the inviter gets my key over Nostr and can open encrypted spoochies to me.
     if (invite.i?.np) {
-      const b = new N.NostrBridge(nk.sk, nk.pk, N.myRelays(c), { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} },
+      const b = new N.NostrBridge(nk.sk, nk.pk, N.myRelays(c), { onMessage: async () => {}, onRemoteAccept: async () => {}, onClose: async () => {}, onHello: async () => {}, log: () => {} },
         process.env.SPOOCHIE_NOSTR_DIR ? N.filePool(process.env.SPOOCHIE_NOSTR_DIR) : undefined);
-      const ok = await b.hola(invite.i.np, invite.i.r ?? [], c.human ?? userInfo().username, userId, invite.k);
-      b.cerrar();
+      const ok = await b.hello(invite.i.np, invite.i.r ?? [], c.human ?? userInfo().username, userId, invite.k);
+      b.close();
       console.log(ok ? `Sent your key to ${invite.i.name} over Nostr.` : `Could not send your key over Nostr (no network to the relays); ${invite.i.name} will have to add you with --npub.`);
     }
     try { const { installLaunchd } = await import("./startup.ts"); installLaunchd(); } catch {}
@@ -429,7 +429,7 @@ async function main() {
     let failed = 0;
     for (const p of await selftest()) {
       if (!p.ok) failed++;
-      console.log(`${p.ok ? "  ok " : "FAIL "}  ${p.que.padEnd(38)} ${p.detalle}`);
+      console.log(`${p.ok ? "  ok " : "FAIL "}  ${p.what.padEnd(38)} ${p.detail}`);
     }
     console.log(failed ? `\n${failed} failures: spoochie is not ready.` : "\nAll good. spoochie delivers on this machine.");
     process.exit(failed ? 1 : 0);
@@ -484,7 +484,7 @@ async function main() {
     if (!bridge) { console.error("cannot open the Slack bridge"); process.exit(1); return; }
     let n = 0;
     for (const x of contacts) {
-      const ok = await bridge.rotar(x.id, fresh.pub, old.priv, old.pub, c.human ?? "someone");
+      const ok = await bridge.rotate(x.id, fresh.pub, old.priv, old.pub, c.human ?? "someone");
       if (ok) n++; else console.error(`could not notify ${x.name}`);
     }
     c.keys = fresh;
@@ -782,7 +782,7 @@ async function main() {
       let failed = 0;
       for (const p of await selftest()) {
         if (!p.ok) failed++;
-        console.log(`${p.ok ? "  ok " : "FAIL "}  ${p.que.padEnd(38)} ${p.detalle}`);
+        console.log(`${p.ok ? "  ok " : "FAIL "}  ${p.what.padEnd(38)} ${p.detail}`);
       }
       console.log(failed ? `\n${failed} failures: spoochie is not ready.` : "\nAll good. spoochie delivers on this machine.");
       if (failed) process.exit(1);
@@ -794,7 +794,7 @@ async function main() {
       for (const c of await check()) {
         const mark = c.ok === true ? "  ok " : c.ok === "aviso" ? " note" : "FAIL ";
         if (c.ok === false) failed++;
-        console.log(`${mark}  ${c.que.padEnd(26)} ${c.detalle}`);
+        console.log(`${mark}  ${c.what.padEnd(26)} ${c.detail}`);
       }
       if (failed) process.exit(1);
       break;

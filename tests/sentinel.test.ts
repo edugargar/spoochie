@@ -60,7 +60,7 @@ test("the unread notice only comes from a tunnel that got opened", async () => {
   expect(f).toContain("if (closedBy === mine) return;");
   expect(source).toContain("await warnUnread(t, bySession);");
   // If the aside is still alive, it has seen it.
-  expect(f).toContain("if (ap && !ap.muerto");
+  expect(f).toContain("if (ap && !ap.dead");
   // And what it says is facts: who, when, the text and where the whole thread is.
   expect(f).toContain("with no reply from you");
   expect(f).toContain("don't open another spoochie on your own");

@@ -56,7 +56,7 @@ test("a rotation to the same key, or to something that is not a key, is rejected
 
 test("the rotation notice is read in the DM, not only in the envelope", async () => {
   const slack = await Bun.file(new URL("../src/slack.ts", import.meta.url)).text();
-  const f = slack.slice(slack.indexOf("async rotar("), slack.indexOf("onRota:"));
+  const f = slack.slice(slack.indexOf("async rotate("), slack.indexOf("onRotation:"));
   // If your old key was stolen, the thief can sign the rotation too. All that is left is
   // for the person to see it written and ask through some other channel.
   expect(f).toContain("ask them through some other channel");

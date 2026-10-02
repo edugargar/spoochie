@@ -75,7 +75,7 @@ export function parts(t: T.Thread): Parts {
   };
 }
 
-export const BUTTONS = { rechazar: "Not now", slack: "Open in Slack", aceptar: "Let it in" };
+export const BUTTONS = { decline: "Not now", slack: "Open in Slack", accept: "Let it in" };
 
 /**
  * Where the window goes, in points, counting from the top left.
@@ -127,9 +127,9 @@ export function windowScript(t: T.Thread, icon: string | null): string {
     pos: requestedPosition(),
     click: requestedClick(),
     buttons: [
-      { title: BUTTONS.rechazar, tag: 1, key: "" },
+      { title: BUTTONS.decline, tag: 1, key: "" },
       { title: BUTTONS.slack, tag: 2, key: "" },
-      { title: BUTTONS.aceptar, tag: 3, key: "\r" },
+      { title: BUTTONS.accept, tag: 3, key: "\r" },
     ],
     width: WIDTH,
     margin: MARGIN,

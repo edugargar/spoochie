@@ -6,7 +6,7 @@ const CLI = "/usr/local/bin/spoochie";
 const CLI_DEV = "/opt/bun run /repo/src/cli.ts";
 
 const passes = (cmd: string, cli = CLI) => judgeBash(cmd, cli).ok;
-const why = (cmd: string, cli = CLI) => { const v = judgeBash(cmd, cli); return v.ok ? "" : v.por; };
+const why = (cmd: string, cli = CLI) => { const v = judgeBash(cmd, cli); return v.ok ? "" : v.reason; };
 
 test("the scanner respects quotes: a `;` inside a message is not a metacharacter", () => {
   expect(scan(`spoochie say v1 "fix the modal; then the button"`).problem).toBeUndefined();

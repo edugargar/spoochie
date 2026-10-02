@@ -24,17 +24,15 @@ import * as V from "./window.ts";
 import poochie from "../docs/spoochie.png" with { type: "file" };
 import { envVar } from "./paths.ts";
 
-// The values stay in Spanish: the daemon writes them to its log and scripts/real-test.ts
-// reads them back from there.
-export type Answer = "acepto" | "rechazo" | "slack" | null;
-// "dialogo" stays too: src/daemon.ts compares against it.
-export type Mode = "dialogo" | "terminal";
+// The daemon writes the answer to its log and scripts/real-test.ts reads it back from there.
+export type Answer = "accept" | "decline" | "slack" | null;
+export type Mode = "dialog" | "terminal";
 
 export function noticeMode(): Mode {
   const v = envVar("SPOOCHIE_NOTICE", "SPOOCHIE_AVISO");
   if (v === "terminal") return "terminal";
-  if (v && v !== "dialog") return "dialogo";
-  return process.platform === "darwin" ? "dialogo" : "terminal";
+  if (v && v !== "dialog") return "dialog";
+  return process.platform === "darwin" ? "dialog" : "terminal";
 }
 
 /**
@@ -71,11 +69,11 @@ const DECLINE_WORDS = /^\s*(Not now|Decline|Rechazar|Ahora no)\s*$/m;
 
 export function interpret(output: string, code: number | null): Answer {
   if (/gave up:true/.test(output)) return null;
-  if (output.includes(`button returned:${BUTTONS.aceptar}`) || ACCEPT_WORDS.test(output)) return "acepto";
+  if (output.includes(`button returned:${BUTTONS.accept}`) || ACCEPT_WORDS.test(output)) return "accept";
   if (output.includes(`button returned:${BUTTONS.slack}`) || SLACK_WORDS.test(output)) return "slack";
-  if (output.includes(`button returned:${BUTTONS.rechazar}`) || DECLINE_WORDS.test(output)) return "rechazo";
+  if (output.includes(`button returned:${BUTTONS.decline}`) || DECLINE_WORDS.test(output)) return "decline";
   // The cancel button makes osascript exit with the error "User canceled".
-  if (code !== 0 && /canceled|cancelled|-128/i.test(output)) return "rechazo";
+  if (code !== 0 && /canceled|cancelled|-128/i.test(output)) return "decline";
   return null;
 }
 
@@ -95,8 +93,8 @@ export function interpret(output: string, code: number | null): Answer {
 export function osascriptScript(t: T.Thread, waitSec = 3600): string {
   const icon = existsSync(poochie) ? ` with icon POSIX file "${esc(poochie)}"` : "";
   return `display dialog "${esc(dialogText(t))}" with title "spoochie"${icon}`
-    + ` buttons {"${BUTTONS.rechazar}", "${BUTTONS.slack}", "${BUTTONS.aceptar}"}`
-    + ` default button "${BUTTONS.aceptar}" cancel button "${BUTTONS.rechazar}" giving up after ${waitSec}`;
+    + ` buttons {"${BUTTONS.decline}", "${BUTTONS.slack}", "${BUTTONS.accept}"}`
+    + ` default button "${BUTTONS.accept}" cancel button "${BUTTONS.decline}" giving up after ${waitSec}`;
 }
 
 /** The window's JXA program, with the icon if it exists. */
@@ -104,7 +102,7 @@ export function windowScript(t: T.Thread): string {
   return V.windowScript(t, existsSync(poochie) ? poochie : null);
 }
 
-type Notice = { cerrar: () => void; respuesta: Promise<Answer> };
+type Notice = { close: () => void; answer: Promise<Answer> };
 
 function run(cmd: string, args: string[]): { child: ChildProcess; done: Promise<{ output: string; code: number | null }> } {
   const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
@@ -155,7 +153,7 @@ export function ask(t: T.Thread, waitSec = 3600): Notice {
   const timer = setTimeout(cerrar, waitSec * 1000);
   if (typeof (timer as any).unref === "function") (timer as any).unref();
   void respuesta.then(() => clearTimeout(timer));
-  return { cerrar, respuesta };
+  return { close: cerrar, answer: respuesta };
 }
 
 /**

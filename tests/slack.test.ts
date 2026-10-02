@@ -74,7 +74,7 @@ test("an accept or close rendered by 0.9.10, in Spanish, still goes out as an ac
   const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
   const posts: any[] = [];
   b.call = async (method: string, body: any) => { if (method === "chat.postMessage") posts.push(body); return { ts: "1.0" }; };
-  b.pensandoOff = async () => {};
+  b.thinkingOff = async () => {};
   const th = { ...t, slack: { channel: "G1", ts: "0.1" }, closeReason: "resolved" };
   for (const notice of ["[spoochie a3f1 | s] Sam accepted the tunnel.", "[spoochie a3f1 | s] Sam ha aceptado el tunel.", "[spoochie a3f1 | s] closed (resolved).", "[spoochie a3f1 | s] cerrado (resolved)."]) await b.post(th, notice);
   expect(posts.map(p => p.metadata.event_payload.kind)).toEqual(["accept", "accept", "close", "close"]);
@@ -282,7 +282,7 @@ test("the close travels with its own kind and the other side closes on reading i
   const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
   const posts: any[] = [];
   b.call = async (method: string, body: any) => { if (method === "chat.postMessage") posts.push(body); return { ts: "1.0" }; };
-  b.pensandoOff = async () => {};
+  b.thinkingOff = async () => {};
   await b.post({ ...t, slack: { channel: "G1", ts: "0.1" }, closeReason: "resolved" }, "[spoochie a3f1 | s] cerrado (resolved). The tunnel no longer delivers messages.");
   expect(posts[0].metadata.event_payload.kind).toBe("close");
 
@@ -290,7 +290,7 @@ test("the close travels with its own kind and the other side closes on reading i
   const delivered: any[] = [];
   const closed: string[] = [];
   const r: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_SAM", async (_t: any, m: any) => { delivered.push(m); }, async () => {}, async () => {});
-  r.onCierre = async (_t: any, reason: string) => { closed.push(reason); };
+  r.onClose = async (_t: any, reason: string) => { closed.push(reason); };
   r.get = async () => ({ messages: [
     { ts: "0.1", user: "UBOT", text: "root" },
     { ts: "0.2", user: "UBOT", bot_id: "B1", text: "[spoochie a3f1 | s] cerrado (resolved). x", metadata: { event_type: EVENT, event_payload: signedClose("a3f1", "U_EDU", "[spoochie a3f1 | s] cerrado (resolved). x") } },
@@ -312,7 +312,7 @@ test("a branch sent over Slack carries a signature that matches what the receive
   const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
   const posts: any[] = [];
   b.call = async (method: string, body: any) => { if (method === "chat.postMessage") posts.push(body); return { ts: "1.0" }; };
-  b.pensandoOff = async () => {};
+  b.thinkingOff = async () => {};
   const m = msg({ kind: "branch", text: "feat/profile" });
   await b.post({ ...t, slack: { channel: "G1", ts: "0.1" } }, "", m);
   const env = posts[0].metadata.event_payload;
@@ -327,13 +327,13 @@ test("the close reason reaches the other side as the sender posts it", async () 
   const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
   const posts: any[] = [];
   b.call = async (method: string, body: any) => { if (method === "chat.postMessage") posts.push(body); return { ts: "1.0" }; };
-  b.pensandoOff = async () => {};
+  b.thinkingOff = async () => {};
   await b.post({ ...t, id: "c10s", slack: { channel: "G1", ts: "0.1" }, closeReason: "fixed in main" }, "[spoochie c10s | s] closed (fixed in main).");
   const Tm = await import("../src/threads.ts");
   for (const text of [posts[0].text, ":lock: Cerrado · fixed in main"]) {
     const closed: string[] = [];
     const r: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_SAM", async () => {}, async () => {}, async () => {});
-    r.onCierre = async (_t: any, reason: string) => { closed.push(reason); };
+    r.onClose = async (_t: any, reason: string) => { closed.push(reason); };
     r.get = async () => ({ messages: [
       { ts: "0.1", user: "UBOT", text: "root" },
       { ts: "0.2", user: "UBOT", bot_id: "B1", text, metadata: { event_type: EVENT, event_payload: signedClose("c10s", "U_EDU", text) } },
@@ -355,7 +355,7 @@ test("borrarHilo deletes what the bot posted (messages, files, root and notice) 
     { ts: "0.4", bot_id: "B1", text: "from the bot again" },
   ] });
   b.call = async (method: string, body: any) => { deleted.push(`${method}:${body.ts ?? body.file}`); return {}; };
-  const n = await b.borrarHilo({ ...t, slack: { channel: "G1", ts: "0.1", aviso: { channel: "D_SAM", ts: "9.9" } } });
+  const n = await b.eraseThread({ ...t, slack: { channel: "G1", ts: "0.1", aviso: { channel: "D_SAM", ts: "9.9" } } });
   expect(deleted).toEqual(["files.delete:F1", "chat.delete:0.2", "chat.delete:0.4", "chat.delete:0.1", "chat.delete:9.9"]);
   expect(n).toBe(4);
 });
@@ -364,7 +364,7 @@ test("a hola over Slack brings the other side's Nostr key and lands in contacts;
   const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
   const posts: any[] = [];
   b.call = async (method: string, body: any) => { if (method === "conversations.open") return { channel: { id: "D_X" } }; if (method === "chat.postMessage") posts.push(body); return {}; };
-  await b.hola("U_SAM", "a".repeat(64), ["wss://x"], "Edu");
+  await b.hello("U_SAM", "a".repeat(64), ["wss://x"], "Edu");
   expect(posts[0].channel).toBe("D_X");
   expect(posts[0].metadata.event_payload).toMatchObject({ kind: "hola", np: "a".repeat(64), r: ["wss://x"], fromName: "Edu" });
   // It is signed with my ed25519 key: without that, anyone with the bot token puts a key in my name.
@@ -380,7 +380,7 @@ test("a hola over Slack brings the other side's Nostr key and lands in contacts;
   expect(checkSignature(p.pk, "hola", "hola", "U_EDU", "b".repeat(64), p.sig)).toBe(false);
 
   const received: any[] = [];
-  b.onHola = async (from: string, name: string, np: string, r: string[], verdict: string) => { received.push({ from, name, np, r, verdict }); };
+  b.onHello = async (from: string, name: string, np: string, r: string[], verdict: string) => { received.push({ from, name, np, r, verdict }); };
   b.inbox = async () => "D_ME";
   b.get = async () => ({ messages: [
     { ts: "5.0", metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: "U_SAM", fromName: "Sam", np: "b".repeat(64), r: ["wss://sam"] } } },
