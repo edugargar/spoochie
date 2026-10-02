@@ -8,3 +8,9 @@ PARA-*.md
 *.png
 !docs/*.png
 dist/
+# What docs/media/promo/ downloads or renders.
+docs/media/promo/stock/
+docs/media/promo/clips/
+docs/media/promo/frames/
+docs/media/promo/keys/
+docs/media/promo/music.wav

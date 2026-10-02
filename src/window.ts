@@ -24,7 +24,7 @@
  * translucent glass as the system menus. The title bar is there but hidden: no title,
  * no traffic-light buttons, and the window drags from anywhere.
  *
- * The joke is not in the text but where it belongs: the icon is Poochie and the button
+ * The joke is not in the text but where it belongs: the icon is the dog and the button
  * still says "Let it in". A notice that interrupts gets one second; the face carries the
  * joke, not a paragraph.
  *
