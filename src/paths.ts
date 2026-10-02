@@ -66,6 +66,14 @@ const HEREDABLES = [
 /** Prefijos que si pasan enteros. `CLAUDE_` NO: ahi viven las del buzon. */
 const PREFIJOS_HEREDABLES = ["SPOOCHIE_", "ANTHROPIC_"];
 
+/** Environment variables had Spanish names up to 0.9.10 (`SPOOCHIE_VENTANA=fondo`). The
+ *  English name wins; the old name, and its old values, still work. */
+const OLD_VALUES: Record<string, string> = { fondo: "background", ventana: "window", dialogo: "dialog" };
+export function envVar(name: string, old: string): string | undefined {
+  const v = process.env[name] ?? process.env[old];
+  return v === undefined ? undefined : OLD_VALUES[v] ?? v;
+}
+
 export function cleanEnv(extra: Record<string, string | undefined> = {}, base = process.env): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(base)) {

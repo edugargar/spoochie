@@ -22,14 +22,15 @@ import * as V from "./window.ts";
 // El logo, como icono del aviso. Con `type: "file"` Bun lo empaqueta dentro del binario
 // compilado y aqui llega una ruta valida en los dos casos, fuente o binario.
 import poochie from "../docs/spoochie.png" with { type: "file" };
+import { envVar } from "./paths.ts";
 
 export type Answer = "acepto" | "rechazo" | "slack" | null;
 export type Mode = "dialogo" | "terminal";
 
 export function noticeMode(): Mode {
-  const v = process.env.SPOOCHIE_AVISO;
+  const v = envVar("SPOOCHIE_NOTICE", "SPOOCHIE_AVISO");
   if (v === "terminal") return "terminal";
-  if (v && v !== "dialogo") return "dialogo";
+  if (v && v !== "dialog") return "dialogo";
   return process.platform === "darwin" ? "dialogo" : "terminal";
 }
 
@@ -116,13 +117,13 @@ function correr(cmd: string, args: string[]): { child: ChildProcess; fin: Promis
  * el mismo null que el "gave up:true" de AppleScript.
  */
 export function ask(t: T.Thread, esperaSeg = 3600): Aviso {
-  const custom = process.env.SPOOCHIE_AVISO;
+  const custom = envVar("SPOOCHIE_NOTICE", "SPOOCHIE_AVISO");
   let vivo: ChildProcess | null = null;
   let matado = false;
   const cerrar = () => { matado = true; try { vivo?.kill(); } catch {} };
 
   const respuesta = (async (): Promise<Answer> => {
-    if (custom && custom !== "dialogo") {
+    if (custom && custom !== "dialog") {
       const { child, fin } = correr(custom, [dialogText(t)]);
       vivo = child;
       const r = await fin;
@@ -157,7 +158,7 @@ export function ask(t: T.Thread, esperaSeg = 3600): Aviso {
  * seria suyo. Sin escritorio, o con SPOOCHIE_AVISO fijado (los tests), no hace nada.
  */
 export function notify(titulo: string, texto: string): boolean {
-  if (process.platform !== "darwin" || process.env.SPOOCHIE_AVISO) return false;
+  if (process.platform !== "darwin" || envVar("SPOOCHIE_NOTICE", "SPOOCHIE_AVISO")) return false;
   const guion = "on run argv\ndisplay notification (item 2 of argv) with title (item 1 of argv)\nend run";
   const p = spawn("osascript", ["-e", guion, titulo, texto], { detached: true, stdio: "ignore" });
   p.on("error", () => {});

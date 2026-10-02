@@ -40,7 +40,7 @@ const PATRONES: [string, RegExp][] = [
 ];
 const CORREO = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 
-const prohibidas = (process.env.FUGAS_PROHIBIDAS ?? "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+const prohibidas = ((process.env.SPOOCHIE_FORBIDDEN_WORDS ?? process.env.FUGAS_PROHIBIDAS) ?? "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
 
 type Hallazgo = { donde: string; que: string };
 const hallazgos: Hallazgo[] = [];

@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve as rpath } from "node:path";
 import { userInfo } from "node:os";
-import { DAEMON_SOCK, DAEMON_LOG, ensureDirs } from "./paths.ts";
+import { DAEMON_SOCK, DAEMON_LOG, ensureDirs, envVar } from "./paths.ts";
 import { register, liveSessions, unregister, type SessionRecord } from "./registry.ts";
 import * as Cfg from "./config.ts";
 import { MAX_MESSAGE, MAX_PATCH, transcriptUrlOf } from "./threads.ts";
@@ -58,11 +58,11 @@ async function ensureDaemon() {
 function whoAmI(): SessionRecord {
   // Dentro de un Claude aparte la CLI se reconoce por el spoochie que atiende: el
   // registro lo escribio el demonio al lanzarlo, y no lleva socket.
-  if (process.env.SPOOCHIE_APARTE) {
-    const sid = process.env.SPOOCHIE_APARTE_SESION;
-    const ap = liveSessions().find(s => sid ? s.sessionId === sid : s.aparte === process.env.SPOOCHIE_APARTE);
+  if (envVar("SPOOCHIE_ASIDE", "SPOOCHIE_APARTE")) {
+    const sid = envVar("SPOOCHIE_ASIDE_SESSION", "SPOOCHIE_APARTE_SESION");
+    const ap = liveSessions().find(s => sid ? s.sessionId === sid : s.aparte === envVar("SPOOCHIE_ASIDE", "SPOOCHIE_APARTE"));
     if (ap) return ap;
-    throw new Error(`este Claude aparte (spoochie ${process.env.SPOOCHIE_APARTE}) ya no esta registrado`);
+    throw new Error(`este Claude aparte (spoochie ${envVar("SPOOCHIE_ASIDE", "SPOOCHIE_APARTE")}) ya no esta registrado`);
   }
   const sock = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
   if (!sock) throw new Error("no hay CLAUDE_CODE_MESSAGING_SOCKET: esto tiene que correr dentro de una sesion de Claude Code");
@@ -175,7 +175,7 @@ async function main() {
     const { sentinel } = await import("./sentinel.ts");
     let entrada: unknown = null;
     try { entrada = JSON.parse(await new Response(Bun.stdin.stream()).text()); } catch {}
-    console.log(JSON.stringify(sentinel(entrada, process.env.SPOOCHIE_APARTE, process.env.SPOOCHIE_APARTE_SESION)));
+    console.log(JSON.stringify(sentinel(entrada, envVar("SPOOCHIE_ASIDE", "SPOOCHIE_APARTE"), envVar("SPOOCHIE_ASIDE_SESSION", "SPOOCHIE_APARTE_SESION"))));
     return;
   }
 
@@ -192,10 +192,10 @@ async function main() {
     // La ventana de un Claude aparte: sustituye el registro provisional que dejo el
     // demonio por uno con socket, y el demonio le entrega lo que tenia guardado. No
     // reclama spoochies ni toca launchd. Lo que se imprime entra en su contexto.
-    if (process.env.SPOOCHIE_APARTE) {
-      const id = process.env.SPOOCHIE_APARTE;
+    if (envVar("SPOOCHIE_ASIDE", "SPOOCHIE_APARTE")) {
+      const id = envVar("SPOOCHIE_ASIDE", "SPOOCHIE_APARTE");
       register({
-        sessionId: process.env.SPOOCHIE_APARTE_SESION ?? `aparte-${id}`, name: `aparte-${id}`, cwd, socket, token,
+        sessionId: envVar("SPOOCHIE_ASIDE_SESSION", "SPOOCHIE_APARTE_SESION") ?? `aparte-${id}`, name: `aparte-${id}`, cwd, socket, token,
         pid: Number(socket.split("/").pop()!.replace(/\.sock$/, "")) || process.ppid, startedAt: Date.now(), aparte: id,
       });
       console.log(`spoochie: esta ventana es el Claude aparte del spoochie ${id}. El primer turno llega ahora por el tunel.`);
@@ -226,7 +226,7 @@ async function main() {
     const raw = await new Response(Bun.stdin.stream()).text().catch(() => "{}");
     const ev = raw.trim() ? JSON.parse(raw) : {};
     const sock = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
-    const id = process.env.SPOOCHIE_APARTE_SESION ?? ev.session_id ?? liveSessions().find(s => s.socket === sock)?.sessionId;
+    const id = envVar("SPOOCHIE_ASIDE_SESSION", "SPOOCHIE_APARTE_SESION") ?? ev.session_id ?? liveSessions().find(s => s.socket === sock)?.sessionId;
     if (!id) return;
     try { await rpc({ op: "session-end", sessionId: id }, 5000); } catch {}
     unregister(id);

@@ -12,7 +12,7 @@
  * Solo macOS, porque es donde existen las dos.
  *
  * EL AVISO se captura solo. La ventana se planta en un sitio conocido con
- * SPOOCHIE_VENTANA_POS, dice su alto por stdout, y `screencapture -R` recorta ese
+ * SPOOCHIE_WINDOW_POS, dice su alto por stdout, y `screencapture -R` recorta ese
  * rectangulo. En el PNG no cabe nada mas que la ventana.
  *
  * Antes no era asi, y por eso esta escrito: capturar una ventana por su id exige el
@@ -67,7 +67,7 @@ console.log(`capturas en ${DIR}\n`);
   // La posicion la lee `guionVentana` de este proceso, no del hijo: el guion sale ya
   // escrito con las coordenadas dentro. Ponerla solo en el env del spawn dejaba la
   // ventana centrada, y el recorte cogia lo que hubiera en esa esquina.
-  process.env.SPOOCHIE_VENTANA_POS = `${X},${Y}`;
+  process.env.SPOOCHIE_WINDOW_POS = `${X},${Y}`;
   const p = spawn("osascript", ["-l", "JavaScript", "-e", windowScript(HILO)], { stdio: ["ignore", "pipe", "pipe"] });
   let salida = "";
   p.stdout.on("data", d => { salida += d.toString(); });

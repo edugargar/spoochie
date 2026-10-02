@@ -70,16 +70,16 @@ test("los tres botones, con el Return en el que acepta", () => {
 });
 
 test("la posicion solo se acepta si son dos numeros", () => {
-  const antes = process.env.SPOOCHIE_VENTANA_POS;
+  const antes = process.env.SPOOCHIE_WINDOW_POS;
   try {
-    delete process.env.SPOOCHIE_VENTANA_POS;
+    delete process.env.SPOOCHIE_WINDOW_POS;
     expect(requestedPosition()).toBeNull();
-    process.env.SPOOCHIE_VENTANA_POS = "200, 160";
+    process.env.SPOOCHIE_WINDOW_POS = "200, 160";
     expect(requestedPosition()).toEqual({ x: 200, y: 160 });
-    process.env.SPOOCHIE_VENTANA_POS = "arriba a la izquierda";
+    process.env.SPOOCHIE_WINDOW_POS = "arriba a la izquierda";
     expect(requestedPosition()).toBeNull();
   } finally {
-    if (antes === undefined) delete process.env.SPOOCHIE_VENTANA_POS; else process.env.SPOOCHIE_VENTANA_POS = antes;
+    if (antes === undefined) delete process.env.SPOOCHIE_WINDOW_POS; else process.env.SPOOCHIE_WINDOW_POS = antes;
   }
 });
 
@@ -112,7 +112,7 @@ test.if(process.platform === "darwin")("y macOS lo entiende: JXA lo lee entero s
  * "Que pase", el demonio leia "button returned:" y lo registraba como "sin respuesta".
  * Una persona abrio un spoochie, a la otra le salto el aviso, pulso aceptar y no paso nada.
  *
- * Con SPOOCHIE_VENTANA_CLIC la ventana real sale transparente, sin Dock y sin foco, y un
+ * Con SPOOCHIE_WINDOW_CLICK la ventana real sale transparente, sin Dock y sin foco, y un
  * temporizador pulsa el boton. Se lee lo que imprime, que es lo que lee el demonio.
  * Necesita AppKit: solo en un Mac con sesion grafica, y no en CI.
  */
@@ -142,9 +142,9 @@ async function correrYMirarElFoco(guion: string) {
 for (const [titulo, tag, esperado] of [["Que pase", 3, "acepto"], ["Ahora no", 1, "rechazo"], ["Ver en Slack", 2, "slack"]] as const) {
   test.if(conPantalla)(`pulsar "${titulo}" en la ventana real llega al demonio como ${esperado}, siempre y sin tomar el foco`, async () => {
     const { interpret } = await import("../src/dialog.ts");
-    process.env.SPOOCHIE_VENTANA_CLIC = String(tag);
+    process.env.SPOOCHIE_WINDOW_CLICK = String(tag);
     let guion: string;
-    try { guion = windowScript(hilo({ id: `clic${tag}` })); } finally { delete process.env.SPOOCHIE_VENTANA_CLIC; }
+    try { guion = windowScript(hilo({ id: `clic${tag}` })); } finally { delete process.env.SPOOCHIE_WINDOW_CLICK; }
     // Varias vueltas: el 01-10 un clic dio el boton equivocado una de cada seis veces.
     for (let i = 0; i < 6; i++) {
       const r = await correrYMirarElFoco(guion);
@@ -156,12 +156,12 @@ for (const [titulo, tag, esperado] of [["Que pase", 3, "acepto"], ["Ahora no", 1
   }, plazo(60_000));
 }
 
-test("sin SPOOCHIE_VENTANA_CLIC el guion de produccion no lleva ningun clic automatico ni es invisible", () => {
-  delete process.env.SPOOCHIE_VENTANA_CLIC;
+test("sin SPOOCHIE_WINDOW_CLICK el guion de produccion no lleva ningun clic automatico ni es invisible", () => {
+  delete process.env.SPOOCHIE_WINDOW_CLICK;
   const g = windowScript(hilo());
   expect(datos(g).clic).toBe(0);
   // El bloque de la prueba existe en el guion, pero detras de `if (D.clic)`: con 0 no corre.
   expect(g).toContain("if (D.clic) {");
-  process.env.SPOOCHIE_VENTANA_CLIC = "9";
-  try { expect(datos(windowScript(hilo())).clic).toBe(0); } finally { delete process.env.SPOOCHIE_VENTANA_CLIC; }
+  process.env.SPOOCHIE_WINDOW_CLICK = "9";
+  try { expect(datos(windowScript(hilo())).clic).toBe(0); } finally { delete process.env.SPOOCHIE_WINDOW_CLICK; }
 });

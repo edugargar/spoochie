@@ -20,7 +20,7 @@ import { spawn, spawnSync, execFileSync, type ChildProcess } from "node:child_pr
 import { chmodSync, mkdirSync, openSync, writeFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { ROOT, ensureDirs, cleanEnv } from "./paths.ts";
+import { ROOT, ensureDirs, cleanEnv, envVar } from "./paths.ts";
 import * as T from "./threads.ts";
 import { register, type SessionRecord } from "./registry.ts";
 
@@ -148,7 +148,7 @@ export function asideFlags(id: string, cli = cliCommand()): string[] {
  */
 export const ASIDE_BUDGET = "1.00";
 export function asideBudget(): string | null {
-  const v = process.env.SPOOCHIE_APARTE_PRESUPUESTO ?? ASIDE_BUDGET;
+  const v = envVar("SPOOCHIE_ASIDE_BUDGET", "SPOOCHIE_APARTE_PRESUPUESTO") ?? ASIDE_BUDGET;
   return v === "0" || v === "" ? null : v;
 }
 
@@ -165,7 +165,7 @@ export function asideBudget(): string | null {
  */
 export const ASIDE_MODEL = "claude-sonnet-5";
 export function asideModel(): string {
-  return process.env.SPOOCHIE_APARTE_MODELO || ASIDE_MODEL;
+  return envVar("SPOOCHIE_ASIDE_MODEL", "SPOOCHIE_APARTE_MODELO") || ASIDE_MODEL;
 }
 
 /** Con que modo de permisos arranca el aparte, en ventana y en fondo. "auto" por defecto: lo que no esta en la
@@ -173,7 +173,7 @@ export function asideModel(): string {
  *  primera prueba real dejo la ventana esperando un "ls" mientras la persona estaba en
  *  una reunion. SPOOCHIE_APARTE_PERMISOS=default vuelve a preguntar por todo. */
 export function permissionMode(): string {
-  const v = process.env.SPOOCHIE_APARTE_PERMISOS;
+  const v = envVar("SPOOCHIE_ASIDE_PERMISSIONS", "SPOOCHIE_APARTE_PERMISOS");
   return v === "default" || v === "auto" ? v : "auto";
 }
 
@@ -231,9 +231,9 @@ export const PENDING_SOCKET = "(esperando a la ventana)";
  *   sin nada                   ventana en macOS, fondo en el resto
  */
 export function asideMode(): Mode {
-  const v = process.env.SPOOCHIE_VENTANA;
-  if (v === "fondo") return "fondo";
-  if (v && v !== "ventana") return "ventana";
+  const v = envVar("SPOOCHIE_WINDOW", "SPOOCHIE_VENTANA");
+  if (v === "background") return "fondo";
+  if (v && v !== "window") return "ventana";
   return process.platform === "darwin" ? "ventana" : "fondo";
 }
 
@@ -252,8 +252,8 @@ export function windowScript(t: T.Thread, cwd: string, sessionId: string): strin
     `#!/bin/sh`,
     `# spoochie ${t.id}: ${t.subject.replace(/\n/g, " ")}`,
     `export PATH=${sq(process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin")}`,
-    `export SPOOCHIE_APARTE=${sq(t.id)}`,
-    `export SPOOCHIE_APARTE_SESION=${sq(sessionId)}`,
+    `export SPOOCHIE_ASIDE=${sq(t.id)}`,
+    `export SPOOCHIE_ASIDE_SESSION=${sq(sessionId)}`,
     process.env.SPOOCHIE_HOME ? `export SPOOCHIE_HOME=${sq(process.env.SPOOCHIE_HOME)}` : `unset SPOOCHIE_HOME`,
     `cd ${sq(cwd)} || exit 1`,
     `printf '\\033]0;spoochie ${t.id}\\007'`,
@@ -270,8 +270,8 @@ export function windowScript(t: T.Thread, cwd: string, sessionId: string): strin
  *  desde una shell se queda colgado esperando el dialogo. Un `.command` en Terminal
  *  abrio la ventana en 4 s sin preguntar nada. */
 export function openWindow(script: string): string | null {
-  const custom = process.env.SPOOCHIE_VENTANA;
-  if (custom && custom !== "ventana") {
+  const custom = envVar("SPOOCHIE_WINDOW", "SPOOCHIE_VENTANA");
+  if (custom && custom !== "window") {
     const p = spawn(custom, [script], { detached: true, stdio: "ignore" });
     p.on("error", () => {});
     p.unref();
@@ -295,7 +295,7 @@ export function launch(t: T.Thread, cwd: string, como: Mode = asideMode()): Asid
   ensureDirs();
   mkdirSync(ASIDE_DIR, { recursive: true, mode: 0o700 });
   const base = { sessionId: asideSession(t.id), name: asideName(t.id), cwd, startedAt: Date.now(), aparte: t.id };
-  const env = cleanEnv({ SPOOCHIE_APARTE: t.id, SPOOCHIE_APARTE_SESION: base.sessionId });
+  const env = cleanEnv({ SPOOCHIE_ASIDE: t.id, SPOOCHIE_ASIDE_SESSION: base.sessionId });
 
   if (como === "ventana") {
     const script = join(ASIDE_DIR, `${t.id}.command`);

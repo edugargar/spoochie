@@ -13,15 +13,15 @@ import { hasta, plazo } from "./wait.ts";
  * maquinas desparejadas es el caso NORMAL durante las semanas que van de una release a
  * que la gente actualice. Nada lo probaba: los cambios de protocolo se revisaban a ojo.
  *
- * Se corre solo si SPOOCHIE_VIEJA apunta a un arbol de la version anterior, porque
+ * Se corre solo si SPOOCHIE_OLD apunta a un arbol de la version anterior, porque
  * prepararlo cuesta un `git archive` y un `bun install`. En CI lo hace el job
  * `compatibilidad`; en local:
  *
  *   mkdir -p /tmp/sp-vieja && git archive v0.9.8 | tar -x -C /tmp/sp-vieja
  *   (cd /tmp/sp-vieja && bun install)
- *   SPOOCHIE_VIEJA=/tmp/sp-vieja bun test tests/compat.test.ts
+ *   SPOOCHIE_OLD=/tmp/sp-vieja bun test tests/compat.test.ts
  */
-const VIEJA = process.env.SPOOCHIE_VIEJA;
+const VIEJA = process.env.SPOOCHIE_OLD;
 const hay = Boolean(VIEJA && existsSync(join(VIEJA!, "src", "daemon.ts")));
 
 const BASE = mkdtempSync(join(tmpdir(), "sp-compat-"));
@@ -72,7 +72,7 @@ test.if(hay)("la version anterior y HEAD se entienden en las dos direcciones", a
     }), { mode: 0o600 });
     writeFileSync(join(home, "sessions", `${id}.json`), JSON.stringify({ sessionId: id, name: `repo-${yo.toLowerCase()}`, cwd: home, socket: box.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
     demonios.push(spawn("bun", ["run", daemon], {
-      env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOSTR_DIR: NOSTR, SPOOCHIE_AVISO: "terminal", SPOOCHIE_VENTANA: "fondo" }, stdio: "ignore",
+      env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOSTR_DIR: NOSTR, SPOOCHIE_NOTICE: "terminal", SPOOCHIE_WINDOW: "background" }, stdio: "ignore",
     }));
   }
   expect(await hasta(async () => { try { await rpc(NUEVA_HOME, { op: "ping" }); await rpc(VIEJA_HOME, { op: "ping" }); return true; } catch { return false; } })).toBe(true);
@@ -96,7 +96,7 @@ test.if(hay)("la version anterior y HEAD se entienden en las dos direcciones", a
   expect(await hasta(() => V.got.some(x => x.includes("contesta HEAD")))).toBe(true);
 }, plazo(90_000));
 
-test.if(!hay)("sin SPOOCHIE_VIEJA, la matriz de versiones no corre (y se dice)", () => {
+test.if(!hay)("sin SPOOCHIE_OLD, la matriz de versiones no corre (y se dice)", () => {
   // Que no corra en silencio: un test que no existe y uno que no se ejecuta se parecen
   // demasiado cuando alguien mira el resumen de la suite.
   expect(hay).toBe(false);

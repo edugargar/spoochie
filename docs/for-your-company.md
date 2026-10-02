@@ -33,7 +33,7 @@ Do this if you want the plugin to come from your own GitHub, or you changed the 
    `/plugin install spoochie@yourorg`. Invitations sent from a forked install already say
    that.
 
-`SPOOCHIE_ORIGEN=yourorg/spoochie` in the daemon's environment does the same without
+`SPOOCHIE_ORIGIN=yourorg/spoochie` in the daemon's environment does the same without
 touching files, for trying it out.
 
 ## What you get and what you don't

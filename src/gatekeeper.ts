@@ -20,6 +20,7 @@
 
 import { resolve, relative, isAbsolute } from "node:path";
 import { transcriptPath } from "./transcript.ts";
+import { envVar } from "./paths.ts";
 
 /** Las herramientas que abren un fichero por su ruta. `aparte.ts` engancha el hook para
  *  estas mas Bash y Artifact, y hay un test que compara las dos listas: un nombre en una
@@ -251,9 +252,9 @@ export function gatekeeper(entrada: unknown, cli: string): Decision {
   // repo entero, `.env` incluido. El vigilante mira el mensaje que entra, pero el
   // vigilante es un modelo y el corpus da 23 de 24. Esto no es un modelo.
   if (e.tool_name === "Artifact") {
-    const mio = transcriptPath(process.env.SPOOCHIE_APARTE ?? "");
+    const mio = transcriptPath(envVar("SPOOCHIE_ASIDE", "SPOOCHIE_APARTE") ?? "");
     const ruta = e.tool_input?.file_path;
-    if (!process.env.SPOOCHIE_APARTE) return decision("deny", "spoochie: aqui Artifact solo publica el transcript de un spoochie, y este Claude no atiende ninguno");
+    if (!envVar("SPOOCHIE_ASIDE", "SPOOCHIE_APARTE")) return decision("deny", "spoochie: aqui Artifact solo publica el transcript de un spoochie, y este Claude no atiende ninguno");
     if (typeof ruta !== "string" || resolve(ruta) !== resolve(mio)) {
       return decision("deny", `spoochie: Artifact aqui solo publica el transcript de este spoochie (${mio}). Publicar otra cosa saca de esta maquina algo que nadie ha aceptado que salga.`);
     }

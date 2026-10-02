@@ -52,7 +52,7 @@ test("dos maquinas por Nostr: abrir, aceptar, contestar, cerrar, y solo queda el
       contacts: { [otroNombre.toLowerCase()]: { id: otroNombre === "Ana" ? "U_A" : "U_B", name: otroNombre, npub: otro.pk, relays: ["wss://x"] } },
     }), { mode: 0o600 });
     writeFileSync(join(home, "sessions", `${id}.json`), JSON.stringify({ sessionId: id, name: `repo-${yo.toLowerCase()}`, cwd: home, socket: box.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
-    const d = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], { env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOSTR_DIR: NOSTR, SPOOCHIE_AVISO: "terminal", SPOOCHIE_VENTANA: "fondo" }, stdio: "ignore" });
+    const d = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], { env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOSTR_DIR: NOSTR, SPOOCHIE_NOTICE: "terminal", SPOOCHIE_WINDOW: "background" }, stdio: "ignore" });
     demonios.push(d);
   }
   for (let i = 0; i < 60 && !(existsSync(join(HOME_A, "daemon.sock")) && existsSync(join(HOME_B, "daemon.sock"))); i++) await sleep(100);

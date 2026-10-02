@@ -61,7 +61,7 @@ test("un demonio que se reinicia con un spoochie vivo lo recoge y la conversacio
   const salida: string[] = [];
   const arrancar = (home: string) => {
     const d = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-      env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOSTR_DIR: NOSTR, SPOOCHIE_AVISO: "terminal", SPOOCHIE_VENTANA: "fondo" }, stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOSTR_DIR: NOSTR, SPOOCHIE_NOTICE: "terminal", SPOOCHIE_WINDOW: "background" }, stdio: ["ignore", "pipe", "pipe"],
     });
     d.stdout?.on("data", x => salida.push(`[${home.slice(-1)}] ${x}`));
     d.stderr?.on("data", x => salida.push(`[${home.slice(-1)}] ${x}`));

@@ -13,7 +13,7 @@ function repo() {
   mkdirSync(join(dir, "scripts"));
   copyFileSync(join(import.meta.dir, "..", "scripts", "leaks.ts"), join(dir, "scripts", "leaks.ts"));
   const commit = (msg: string, correo: string) => { git("add", "-A"); git("-c", `user.email=${correo}`, "-c", "user.name=x", "commit", "-q", "-m", msg); };
-  const correr = (lista = "", desde?: string) => spawnSync("bun", ["scripts/leaks.ts", ...(desde ? ["--desde", desde] : [])], { cwd: dir, encoding: "utf8", env: { ...process.env, FUGAS_PROHIBIDAS: lista } });
+  const correr = (lista = "", desde?: string) => spawnSync("bun", ["scripts/leaks.ts", ...(desde ? ["--desde", desde] : [])], { cwd: dir, encoding: "utf8", env: { ...process.env, SPOOCHIE_FORBIDDEN_WORDS: lista } });
   return { dir, git, commit, correr };
 }
 

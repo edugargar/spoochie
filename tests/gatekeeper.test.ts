@@ -240,9 +240,9 @@ test("el hook se dispara con TODAS las herramientas que el portero juzga", async
  */
 test("Artifact solo publica el transcript de ESTE spoochie", async () => {
   const { transcriptPath } = await import("../src/transcript.ts");
-  const antes = process.env.SPOOCHIE_APARTE;
+  const antes = process.env.SPOOCHIE_ASIDE;
   try {
-    process.env.SPOOCHIE_APARTE = "k7f";
+    process.env.SPOOCHIE_ASIDE = "k7f";
     const v = (file_path?: string) => gatekeeper({ tool_name: "Artifact", tool_input: file_path ? { file_path } : {} }, "sp");
     expect(v(transcriptPath("k7f")).hookSpecificOutput.permissionDecision).toBe("allow");
     // Ni otro fichero, ni el transcript de otro spoochie, ni sin ruta ninguna.
@@ -250,9 +250,9 @@ test("Artifact solo publica el transcript de ESTE spoochie", async () => {
     expect(v(transcriptPath("otro")).hookSpecificOutput.permissionDecision).toBe("deny");
     expect(v().hookSpecificOutput.permissionDecision).toBe("deny");
     // Y en un Claude que no atiende ningun spoochie, Artifact no publica nada.
-    delete process.env.SPOOCHIE_APARTE;
+    delete process.env.SPOOCHIE_ASIDE;
     expect(v(transcriptPath("k7f")).hookSpecificOutput.permissionDecision).toBe("deny");
   } finally {
-    if (antes === undefined) delete process.env.SPOOCHIE_APARTE; else process.env.SPOOCHIE_APARTE = antes;
+    if (antes === undefined) delete process.env.SPOOCHIE_ASIDE; else process.env.SPOOCHIE_ASIDE = antes;
   }
 });

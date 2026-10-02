@@ -92,7 +92,7 @@ test("doctor lo ensena, y si dice ser un contacto sin clave da el comando para v
 
 function cli(home: string, ...args: string[]) {
   const r = spawnSync("bun", ["run", join(import.meta.dir, "..", "src", "cli.ts"), ...args], {
-    env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_AVISO: "terminal", SPOOCHIE_SIN_RED: "1" }, encoding: "utf8",
+    env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOTICE: "terminal", SPOOCHIE_OFFLINE: "1" }, encoding: "utf8",
   });
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }

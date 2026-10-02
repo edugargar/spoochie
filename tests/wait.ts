@@ -7,11 +7,11 @@
  * fallos y tardo 86 s donde normalmente tarda 48. Cuatro pasadas en paralelo, cada una a
  * 48 s, pasaron enteras. O sea que lo que se rompe es el presupuesto, no la logica.
  *
- * SPOOCHIE_TEST_LENTO multiplica todos los plazos a la vez. En una maquina lenta o en un
- * CI compartido, `SPOOCHIE_TEST_LENTO=3 bun test` en vez de subir numeros a mano en
+ * SPOOCHIE_TEST_SLOW multiplica todos los plazos a la vez. En una maquina lenta o en un
+ * CI compartido, `SPOOCHIE_TEST_SLOW=3 bun test` en vez de subir numeros a mano en
  * ocho ficheros y olvidarse de la mitad.
  */
-export const LENTO = Math.max(1, Number(process.env.SPOOCHIE_TEST_LENTO ?? 1) || 1);
+export const LENTO = Math.max(1, Number(process.env.SPOOCHIE_TEST_SLOW ?? 1) || 1);
 
 export const dormir = (ms: number) => new Promise(r => setTimeout(r, ms));
 

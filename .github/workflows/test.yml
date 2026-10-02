@@ -23,7 +23,7 @@ jobs:
       # compartida y lenta: sin margen, un fallo de presupuesto se lee como un fallo de
       # logica. Medido en local: la pasada que fallo tardo 86 s donde normalmente tarda 48.
       - run: bun test
-        env: { SPOOCHIE_TEST_LENTO: "3" }
+        env: { SPOOCHIE_TEST_SLOW: "3" }
   # Una version anterior hablando con HEAD, en las dos direcciones. spoochie se
   # distribuye como un binario fijado a una version de plugin, asi que dos maquinas
   # desparejadas es el caso NORMAL durante las semanas que van de una release a que la
@@ -46,7 +46,7 @@ jobs:
           git archive "$tag" | tar -x -C /tmp/sp-vieja
           cd /tmp/sp-vieja && bun install --frozen-lockfile
       - run: bun test tests/compat.test.ts
-        env: { SPOOCHIE_VIEJA: /tmp/sp-vieja }
+        env: { SPOOCHIE_OLD: /tmp/sp-vieja }
 
   # Nada que identifique a una persona o empresa ajena al proyecto, ni tokens, ni ids
   # reales de Slack, ni correos fuera de la lista: en el arbol, en los mensajes y en los
@@ -59,4 +59,4 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: latest }
       - run: bun scripts/leaks.ts --desde "${{ github.event.pull_request.base.sha || github.event.before }}"
-        env: { FUGAS_PROHIBIDAS: "${{ secrets.FUGAS_PROHIBIDAS }}" }
+        env: { SPOOCHIE_FORBIDDEN_WORDS: "${{ secrets.FUGAS_PROHIBIDAS }}" }

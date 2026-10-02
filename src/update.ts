@@ -6,11 +6,12 @@
  */
 import { VERSION, newerThan } from "./version.ts";
 import { ORIGIN as REPO, PLUGIN } from "./origin.ts";
+import { envVar } from "./paths.ts";
 const CADA_MS = 6 * 60 * 60 * 1000;
 let cache: { cuando: number; version: string | null } | null = null;
 
 export async function latestPublished(): Promise<string | null> {
-  if (process.env.SPOOCHIE_SIN_RED) return null;
+  if (envVar("SPOOCHIE_OFFLINE", "SPOOCHIE_SIN_RED")) return null;
   if (cache && Date.now() - cache.cuando < CADA_MS) return cache.version;
   let version: string | null = null;
   try {

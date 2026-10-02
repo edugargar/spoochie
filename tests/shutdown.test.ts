@@ -45,7 +45,7 @@ test("el script de capturas recorta la ventana, y lo que si es pantalla entera v
   const s = await Bun.file(new URL("../scripts/screenshots.ts", import.meta.url)).text();
   // El aviso ya no necesita la pantalla: se planta donde le decimos y se recorta su
   // rectangulo exacto, con marco cero para que no entre ni una tira de lo de detras.
-  expect(s).toContain("SPOOCHIE_VENTANA_POS");
+  expect(s).toContain("SPOOCHIE_WINDOW_POS");
   expect(s).toContain("MARCO = 0");
   expect(s).toContain('spawnSync("screencapture", ["-x", "-R"');
   // La ventana del aparte es una Terminal y no se puede plantar: esa si es pantalla
@@ -136,7 +136,7 @@ test("el demonio barre al arrancar los cerrados que todavia guardan texto", asyn
   }));
 
   const d = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, SPOOCHIE_HOME: casa, SPOOCHIE_AVISO: "terminal", SPOOCHIE_VENTANA: "fondo" }, stdio: "ignore",
+    env: { ...process.env, SPOOCHIE_HOME: casa, SPOOCHIE_NOTICE: "terminal", SPOOCHIE_WINDOW: "background" }, stdio: "ignore",
   });
   try {
     const conTexto = (f: string) => JSON.parse(readFileSync(f, "utf8")).messages.filter((m: { text?: string }) => m.text).length;

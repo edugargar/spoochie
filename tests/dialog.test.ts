@@ -123,7 +123,7 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aparte-rec
   writeFileSync(join(HOME, "sessions", "S.json"),
     JSON.stringify({ sessionId: "S", name: "trabajo", cwd: REPO, socket: S.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
   daemon = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_VENTANA: "fondo", SPOOCHIE_AVISO: join(bin, "dialogo") }, stdio: "ignore",
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_WINDOW: "background", SPOOCHIE_NOTICE: join(bin, "dialogo") }, stdio: "ignore",
   });
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   expect((await rpc({ op: "ping" })).pid).toBe(daemon.pid!);
@@ -191,7 +191,7 @@ test("con varios spoochies a la vez solo se abre un aviso; el resto espera turno
   for (let i = 0; i < 6; i++) writeFileSync(join(HOME2, "threads", "c" + i + ".json"), JSON.stringify(sobre("c" + i)));
 
   const d2 = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: bin2 + ":" + process.env.PATH, SPOOCHIE_HOME: HOME2, SPOOCHIE_VENTANA: "fondo", SPOOCHIE_AVISO: join(bin2, "dialogo") }, stdio: "ignore",
+    env: { ...process.env, PATH: bin2 + ":" + process.env.PATH, SPOOCHIE_HOME: HOME2, SPOOCHIE_WINDOW: "background", SPOOCHIE_NOTICE: join(bin2, "dialogo") }, stdio: "ignore",
   });
   try {
     for (let i = 0; i < 60 && !existsSync(join(HOME2, "daemon.sock")); i++) await sleep(100);

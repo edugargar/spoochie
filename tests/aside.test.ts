@@ -82,7 +82,7 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aparte-rec
       { mode: 0o600 });
   }
   daemon = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_VENTANA: "fondo" }, stdio: "ignore",
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_WINDOW: "background" }, stdio: "ignore",
   });
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   expect((await rpc({ op: "ping" })).pid).toBe(daemon.pid!);
@@ -149,7 +149,7 @@ test("el entorno de un hijo no lleva el buzon de la sesion que lo arranco", asyn
     PATH: "/usr/bin", HOME: "/Users/x", TERM: "xterm-256color",
     SPOOCHIE_HOME: "/tmp/sp", ANTHROPIC_API_KEY: "sk-ant-x", CLAUDE_CONFIG_DIR: "/Users/x/.claude",
   };
-  const env = cleanEnv({ SPOOCHIE_APARTE: "v1" }, base as any);
+  const env = cleanEnv({ SPOOCHIE_ASIDE: "v1" }, base as any);
   // La llave del buzon donde trabaja la persona no viaja al proceso que atiende a otra.
   expect(env.CLAUDE_CODE_MESSAGING_SOCKET).toBeUndefined();
   expect(env.CLAUDE_CODE_MESSAGING_TOKEN).toBeUndefined();
@@ -161,7 +161,7 @@ test("el entorno de un hijo no lleva el buzon de la sesion que lo arranco", asyn
   expect(env.PATH).toBe("/usr/bin");
   expect(env.HOME).toBe("/Users/x");
   expect(env.SPOOCHIE_HOME).toBe("/tmp/sp");
-  expect(env.SPOOCHIE_APARTE).toBe("v1");
+  expect(env.SPOOCHIE_ASIDE).toBe("v1");
   expect(env.ANTHROPIC_API_KEY).toBe("sk-ant-x");
   expect(env.CLAUDE_CONFIG_DIR).toBe("/Users/x/.claude");
 });
