@@ -87,7 +87,7 @@ test("a daemon that restarts with a live spoochie picks it up and the conversati
   expect(open.ok).toBe(true);
   expect(await hasta(() => D.got.some(x => x.includes(`spoochie accept ${open.id}`)))).toBe(true);
   expect((await step("accept", () => rpc(HOME_D, { op: "accept", sessionId: "U_D", id: open.id, by: "Dani", aqui: true }))).ok).toBe(true);
-  expect(await hasta(() => C.got.some(x => x.includes("ha aceptado el tunel")))).toBe(true);
+  expect(await hasta(() => C.got.some(x => x.includes("accepted the tunnel")))).toBe(true);
 
   // Cris's daemon dies with the spoochie open.
   const cris = daemons[daemons.length - 2];

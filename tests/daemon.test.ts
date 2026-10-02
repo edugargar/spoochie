@@ -93,7 +93,7 @@ test("full cycle: open, approval gate, talk and close", async () => {
   // 3. Accept: only the receiving side can do it.
   expect((await rpc({ op: "accept", sessionId: "A", id })).ok).toBe(false);
   expect((await rpc({ op: "accept", sessionId: "B", id })).ok).toBe(true);
-  expect(await arrives(A, x => x.includes("ha aceptado el tunel"))).toBe(true);
+  expect(await arrives(A, x => x.includes("accepted the tunnel"))).toBe(true);
 
   // 4. Talk in both directions.
   expect((await rpc({ op: "say", sessionId: "B", id, text: "the wrapper is 360" })).delivered).toBe(true);
@@ -106,7 +106,7 @@ test("full cycle: open, approval gate, talk and close", async () => {
 
   // 6. Close: the other side is told and delivery stops.
   expect((await rpc({ op: "close", sessionId: "A", id, reason: "resolved" })).ok).toBe(true);
-  expect(await arrives(B, x => x.includes("cerrado (resolved)"))).toBe(true);
+  expect(await arrives(B, x => x.includes("closed (resolved)"))).toBe(true);
   expect((await rpc({ op: "say", sessionId: "A", id, text: "one more" })).ok).toBe(false);
 }, plazo(30_000));
 
@@ -169,7 +169,7 @@ test("on close, the conversation is deleted locally and the envelope stays", asy
   expect(t.subject).toBe("deletable");
   expect(JSON.stringify(t)).not.toContain("this must not stay");
   // The close reached B anyway, before the deletion.
-  expect(await arrives(B, x => x.includes(`[spoochie ${open.id} | deletable] cerrado (done)`))).toBe(true);
+  expect(await arrives(B, x => x.includes(`[spoochie ${open.id} | deletable] closed (done)`))).toBe(true);
 }, plazo(20_000));
 
 test("a local send says delivered only if the inbox accepted it", async () => {

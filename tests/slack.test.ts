@@ -60,16 +60,24 @@ test("a patch goes in a code block and warns that nobody applies it for you", ()
   expect(b).toContain("+y");
 });
 
-
-
 test("system notices do not drag internal text into Slack", () => {
-  const acc = noticeBlocks({ ...t, acceptedBy: "Sam" }, '[spoochie a3f1] b ha aceptado el tunel.\nYou can talk now: spoochie say a3f1 "<text>"');
+  const acc = noticeBlocks({ ...t, acceptedBy: "Sam" }, '[spoochie a3f1] b accepted the tunnel.\nYou can talk now: spoochie say a3f1 "<text>"');
   expect(acc.text).toContain("Sam");
   expect(acc.text).not.toContain("spoochie say");
   expect(acc.text).not.toContain("<text>");
-  const cl = noticeBlocks({ ...t, closeReason: "resolved" }, "[spoochie a3f1 | s] cerrado (resolved).");
+  const cl = noticeBlocks({ ...t, closeReason: "resolved" }, "[spoochie a3f1 | s] closed (resolved).");
   expect(cl.text).toContain("resolved");
   expect(cl.text).not.toContain("[spoochie");
+});
+
+test("an accept or close rendered by 0.9.10, in Spanish, still goes out as an accept or close", async () => {
+  const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
+  const posts: any[] = [];
+  b.call = async (method: string, body: any) => { if (method === "chat.postMessage") posts.push(body); return { ts: "1.0" }; };
+  b.pensandoOff = async () => {};
+  const th = { ...t, slack: { channel: "G1", ts: "0.1" }, closeReason: "resolved" };
+  for (const notice of ["[spoochie a3f1 | s] Sam accepted the tunnel.", "[spoochie a3f1 | s] Sam ha aceptado el tunel.", "[spoochie a3f1 | s] closed (resolved).", "[spoochie a3f1 | s] cerrado (resolved)."]) await b.post(th, notice);
+  expect(posts.map(p => p.metadata.event_payload.kind)).toEqual(["accept", "accept", "close", "close"]);
 });
 
 test("the fallback text is what shows in the phone notification", () => {

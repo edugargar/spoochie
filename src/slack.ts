@@ -144,9 +144,8 @@ export function noticeText(t: T.Thread, rendered: string): string {
 type Block = Record<string, unknown>;
 
 /**
- * What renderAccepted and renderClose look like. They still carry the Spanish markers
- * ("ha aceptado el tunel", "cerrado ("), which nostr.ts also looks for; the English ones
- * are accepted too so the renderers can switch without touching this file.
+ * What renderAccepted and renderClose look like: "accepted the tunnel", "closed (". The
+ * Spanish markers of 0.9.10 and earlier ("ha aceptado el tunel", "cerrado (") still count.
  */
 const isAcceptedNotice = (s: string) => s.includes("ha aceptado el tunel") || s.includes("accepted the tunnel");
 const isClosedNotice = (s: string) => s.includes("cerrado (") || s.includes("closed (");
