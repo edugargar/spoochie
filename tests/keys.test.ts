@@ -31,24 +31,24 @@ test("a hello over Nostr only gets in with my invite's nonce, and is bound to wh
   const c = cfg();
   Cfg.addContact(c, { id: "U_SAM", name: "Sam" });
   // The 07-09 attack: a stranger claims to be Sam's Slack. No nonce, out.
-  expect(helloByNostr(c, { de: K_X, nombre: "Sam" })).toMatchObject({ ok: false });
+  expect(helloByNostr(c, { from: K_X, name: "Sam" })).toMatchObject({ ok: false });
   expect((Cfg.contactById(c, "U_SAM") as any).npub).toBeUndefined();
   // I invite Sam; their hello carries the nonce: it is bound to the id I wrote down, even if the hello says another name.
   const k = newInvite(c, { id: "U_SAM", name: "Sam" });
-  const d = helloByNostr(c, { de: K_SAM, nombre: "Samuel", k, relays: ["wss://sam"] });
+  const d = helloByNostr(c, { from: K_SAM, name: "Samuel", k, relays: ["wss://sam"] });
   expect(d).toMatchObject({ ok: true, id: "U_SAM", name: "Sam", vinculo: "nueva" });
   expect((Cfg.contactById(c, "U_SAM") as any).npub).toBe(K_SAM);
   // The same nonce does not count twice, not even for another key.
-  expect(helloByNostr(c, { de: K_X, nombre: "Sam", k })).toMatchObject({ ok: false });
+  expect(helloByNostr(c, { from: K_X, name: "Sam", k })).toMatchObject({ ok: false });
   // A known key can say hello again without a nonce (relay change), but cannot change id.
-  expect(helloByNostr(c, { de: K_SAM, nombre: "Sam", relays: ["wss://otro"] })).toMatchObject({ ok: true, vinculo: "igual" });
+  expect(helloByNostr(c, { from: K_SAM, name: "Sam", relays: ["wss://otro"] })).toMatchObject({ ok: true, vinculo: "igual" });
   // Even with a valid nonce, nobody replaces Sam's key.
   const k2 = newInvite(c, { id: "U_SAM", name: "Sam" });
-  expect(helloByNostr(c, { de: K_X, nombre: "Sam", k: k2 })).toMatchObject({ ok: false });
+  expect(helloByNostr(c, { from: K_X, name: "Sam", k: k2 })).toMatchObject({ ok: false });
   expect((Cfg.contactById(c, "U_SAM") as any).npub).toBe(K_SAM);
   // A printed invite (no id) binds to the key, never to a Slack id the hello claims.
   const k3 = newInvite(c, { name: "Sam" });
-  expect(helloByNostr(c, { de: K_BEA, nombre: "Sam", k: k3 })).toMatchObject({ ok: true, id: `nostr:${K_BEA}`, name: "Sam" });
+  expect(helloByNostr(c, { from: K_BEA, name: "Sam", k: k3 })).toMatchObject({ ok: true, id: `nostr:${K_BEA}`, name: "Sam" });
 });
 
 test("a hello over Slack only gets in signed with the already pinned key, or from an id already in the contacts", () => {
@@ -56,17 +56,17 @@ test("a hello over Slack only gets in signed with the already pinned key, or fro
   Cfg.addContact(c, { id: "U_BEA", name: "Bea", pk: "PK_BEA" });
   Cfg.addContact(c, { id: "U_SAM", name: "Sam" });
   // Unsigned or with a forged signature: no, even if the id is known. That is how it was before 07-09.
-  expect(helloBySlack(c, { de: "U_BEA", nombre: "Bea", np: K_X, veredicto: "sin-firma" })).toMatchObject({ ok: false });
-  expect(helloBySlack(c, { de: "U_BEA", nombre: "Bea", np: K_X, veredicto: "mala" })).toMatchObject({ ok: false });
+  expect(helloBySlack(c, { from: "U_BEA", name: "Bea", np: K_X, verdict: "sin-firma" })).toMatchObject({ ok: false });
+  expect(helloBySlack(c, { from: "U_BEA", name: "Bea", np: K_X, verdict: "mala" })).toMatchObject({ ok: false });
   expect((Cfg.contactById(c, "U_BEA") as any).npub).toBeUndefined();
   // An id not in the contacts does not get added just for signing correctly the first time.
-  expect(helloBySlack(c, { de: "U_NADIE", nombre: "Nadie", np: K_X, veredicto: "nueva" })).toMatchObject({ ok: false });
+  expect(helloBySlack(c, { from: "U_NADIE", name: "Nadie", np: K_X, verdict: "nueva" })).toMatchObject({ ok: false });
   expect(Cfg.contactById(c, "U_NADIE")).toBeNull();
   // Signed with Bea's pinned key: gets in.
-  expect(helloBySlack(c, { de: "U_BEA", nombre: "Bea", np: K_BEA, veredicto: "ok" })).toMatchObject({ ok: true, vinculo: "nueva" });
+  expect(helloBySlack(c, { from: "U_BEA", name: "Bea", np: K_BEA, verdict: "ok" })).toMatchObject({ ok: true, vinculo: "nueva" });
   // Sam is in the contacts with no pinned key: their first signature counts (as with their envelopes).
-  expect(helloBySlack(c, { de: "U_SAM", nombre: "Sam", np: K_SAM, veredicto: "nueva" })).toMatchObject({ ok: true });
+  expect(helloBySlack(c, { from: "U_SAM", name: "Sam", np: K_SAM, verdict: "nueva" })).toMatchObject({ ok: true });
   // And once there is a key, nobody changes it over Slack even with a good signature.
-  expect(helloBySlack(c, { de: "U_BEA", nombre: "Bea", np: K_X, veredicto: "ok" })).toMatchObject({ ok: false });
+  expect(helloBySlack(c, { from: "U_BEA", name: "Bea", np: K_X, verdict: "ok" })).toMatchObject({ ok: false });
   expect((Cfg.contactById(c, "U_BEA") as any).npub).toBe(K_BEA);
 });
