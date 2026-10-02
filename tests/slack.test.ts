@@ -294,6 +294,24 @@ test("the close travels with its own kind and the other side closes on reading i
   expect(delivered).toEqual([]);
 });
 
+test("a branch sent over Slack carries a signature that matches what the receiver rebuilds", async () => {
+  // The receiver checks the signature against the text it rebuilds from the body blocks.
+  // Up to 0.9.10 the sender signed m.text, and a branch body also carries its label, so
+  // every branch arrived as "carried a signature that is not theirs" and was dropped.
+  const { checkSignature } = require("../src/signing.ts");
+  const Cfg = require("../src/config.ts");
+  const c = Cfg.load(); c.slack = { ...(c.slack ?? {}), userId: "U_EDU" }; Cfg.save(c);
+  const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
+  const posts: any[] = [];
+  b.call = async (method: string, body: any) => { if (method === "chat.postMessage") posts.push(body); return { ts: "1.0" }; };
+  b.pensandoOff = async () => {};
+  const m = msg({ kind: "branch", text: "feat/profile" });
+  await b.post({ ...t, slack: { channel: "G1", ts: "0.1" } }, "", m);
+  const env = posts[0].metadata.event_payload;
+  expect(env.sig).toBeTruthy();
+  expect(checkSignature(env.pk, env, bodyFromBlocks(posts[0].blocks), env.sig)).toBe(true);
+});
+
 test("borrarHilo deletes what the bot posted (messages, files, root and notice) and leaves what a person wrote", async () => {
   const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
   b.botUserId = "UBOT";
