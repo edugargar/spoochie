@@ -125,8 +125,8 @@ sequenceDiagram
     DA->>S: posts the invitation in the group DM (bot + Alice + Bob), and a pointer in Bob's bot DM
     S-->>B: notification
     DB->>S: discovers the invitation
-    DB->>B: macOS dialog: "Alice wants to open a spoochie" [Let them in]
-    B->>DB: clicks Let them in (or replies in the Slack thread)
+    DB->>B: macOS dialog: "Alice wants to open a spoochie" [Let it in]
+    B->>DB: clicks Let it in (or replies in the Slack thread)
     DB->>CB: opens a new Terminal window with a read-only Claude, hands it the thread
     CB->>CB: reads its local files
     CB->>DB: spoochie say "it's the container's min-width"
@@ -215,8 +215,8 @@ Parts:
 A spoochie that lands in the session you are working in smears someone else's
 conversation over your screen. So it never does. On macOS an incoming spoochie is a
 **system dialog**, outside every terminal, with Poochie on it: who is asking, the
-subject, the question, and three buttons. "Let them in" accepts; "Not now" closes the
-tunnel as rejected; "View in Slack" opens the thread, where replying also accepts. Your
+subject, the question, and three buttons. "Let it in" accepts; "Not now" closes the
+tunnel as rejected; "Open in Slack" opens the thread, where replying also accepts. Your
 open sessions see nothing at all, before or after.
 
 Once you accept, the daemon opens a **new terminal window** running a Claude of its own
@@ -307,8 +307,8 @@ Not in a policy document: built, each with its test.
   another key is discarded and the thread is told. Unsigned envelopes still deliver,
   labelled as such.
 - **"delivered" doesn't lie.** Over Slack a message leaves with a delay; until it leaves
-  `say` waits up to 8 s for it to actually leave and then says `published`; only if it
-  takes longer does it say `queued`, and if publishing fails the sending session
+  `say` waits up to 8 s for it to actually leave and then says it was posted; only if it
+  takes longer does it say it is queued, and if publishing fails the sending session
   is told. The silence warning lists facts (when your last message left, when the other
   side accepted, when their last message arrived) so the Claude reading it doesn't guess.
 
