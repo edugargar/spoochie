@@ -71,7 +71,7 @@ test("two machines over Nostr: open, accept, answer, close, and only the envelop
   // Bea accepts: Ana finds out. The accept notice still carries the Spanish marker
   // (threads.ts renderAccepted), which the bridges look for.
   expect((await rpc(HOME_B, { op: "accept", sessionId: "U_B", id: open.id, by: "Bea", aqui: true })).ok).toBe(true);
-  expect(await hasta(() => A.got.some(x => x.includes("ha aceptado el tunel")))).toBe(true);
+  expect(await hasta(() => A.got.some(x => x.includes("accepted the tunnel")))).toBe(true);
 
   // Bea answers: it reaches Ana as a turn.
   const say = await rpc(HOME_B, { op: "say", sessionId: "U_B", id: open.id, text: "it's the container's min-width" });

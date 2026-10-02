@@ -125,7 +125,7 @@ while IFS= read -r line; do printf '%s\\n' "$line" >> "$SPOOCHIE_HOME/aside-rece
 
   // Closing tells the aside the same way.
   await rpc({ op: "close", sessionId: "PA", id: open.id, reason: "resolved" });
-  expect(await hasta(() => received().includes("cerrado (resolved)"))).toBe(true);
+  expect(await hasta(() => received().includes("closed (resolved)"))).toBe(true);
 }, plazo(30_000));
 
 test("the first turn carries who it is, how to answer and what was said so far", () => {

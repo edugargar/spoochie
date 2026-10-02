@@ -468,8 +468,7 @@ export class NostrBridge {
 
   async post(t: T.Thread, notice: string, m?: T.Msg): Promise<boolean> {
     // The accept and close notices are recognised by their text, which threads.ts writes
-    // (renderAccepted, renderClose). They still carry the Spanish markers; the English
-    // ones are accepted too, as in slack.ts, so the renderers can switch without this file.
+    // (renderAccepted, renderClose). The Spanish markers of 0.9.10 still count, as in slack.ts.
     const accepted = notice.includes("ha aceptado el tunel") || notice.includes("accepted the tunnel");
     const closed = notice.includes("cerrado (") || notice.includes("closed (");
     const kind: Envelope["kind"] = m ? "msg" : accepted ? "accept" : closed ? "close" : "notice";

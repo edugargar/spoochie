@@ -279,12 +279,13 @@ export function renderInvite(t: Thread, forSession: string): string {
   ].filter(x => x !== null).join("\n");
 }
 
-// The first line stays in Spanish: SlackBridge.post and NostrBridge.post look for
-// "ha aceptado el tunel" to send an `accept` envelope instead of a notice.
+// SlackBridge.post and NostrBridge.post look for "accepted the tunnel" to send an
+// `accept` envelope instead of a notice. Up to 0.9.10 it read "ha aceptado el tunel";
+// both are still recognised. Only the sender looks: the receiver goes by the envelope kind.
 export function renderAccepted(t: Thread, forSession: string): string {
   const other = otherSide(t, forSession);
   return [
-    `[spoochie ${t.id} | ${t.subject}] ${other.human ?? other.name} ha aceptado el tunel.`,
+    `[spoochie ${t.id} | ${t.subject}] ${other.human ?? other.name} accepted the tunnel.`,
     `You can talk now: spoochie say ${t.id} "<text>"`,
     `It dies on its own after 10 min of silence.`,
   ].join("\n");
@@ -348,10 +349,10 @@ export function renderNotice(t: Thread, secondsLeft: number, forSession?: string
   ].join("\n");
 }
 
-// "cerrado (" stays in Spanish: SlackBridge.post and NostrBridge.post look for it to
-// send a `close` envelope, and the Slack receiver reads the reason out of it.
+// SlackBridge.post and NostrBridge.post look for "closed (" to send a `close` envelope.
+// Up to 0.9.10 it read "cerrado ("; both are still recognised.
 export function renderClose(t: Thread): string {
-  return `[spoochie ${t.id} | ${t.subject}] cerrado (${t.closeReason ?? "no reason"}). The tunnel no longer delivers messages.`;
+  return `[spoochie ${t.id} | ${t.subject}] closed (${t.closeReason ?? "no reason"}). The tunnel no longer delivers messages.`;
 }
 
 /**
