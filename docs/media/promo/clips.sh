@@ -10,7 +10,6 @@ cut() { # name, mixkit id, start s, length s
   ffmpeg -loglevel error -y -ss $3 -t $4 -i stock/$2.mp4 -vf "fps=30,scale=1280:720" -q:v 3 clips/$1/%04d.jpg
 }
 cut night 8843 4 5
-cut frustrated 39854 2 5
 cut together 4872 3 6
 cut code 41642 1 4
 cut glasses 221 3 4

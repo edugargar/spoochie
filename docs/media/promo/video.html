@@ -6,13 +6,17 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=block" rel="stylesheet">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #05080B; color: #F2F6F8; font-family: Inter, sans-serif; -webkit-font-smoothing: antialiased; }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #0B3036; color: #F2F6F8; font-family: Inter, sans-serif; -webkit-font-smoothing: antialiased; }
   #cam { position: absolute; inset: 0; transform-origin: 50% 50%; }
   .layer { position: absolute; inset: 0; display: none; }
-  .bg { position: absolute; inset: 0; background: radial-gradient(1200px 800px at 50% 40%, #0C1A1F, #05080B 70%); }
-  .grid { position: absolute; inset: -200px; background-image: linear-gradient(rgba(43,179,160,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(43,179,160,.07) 1px, transparent 1px); background-size: 80px 80px; }
+  .bg { position: absolute; inset: -100px; background:
+    radial-gradient(900px 700px at var(--ax, 20%) var(--ay, 30%), rgba(30,133,118,.85), transparent 70%),
+    radial-gradient(1000px 800px at var(--bx, 80%) var(--by, 70%), rgba(70,56,170,.75), transparent 70%),
+    radial-gradient(700px 600px at var(--cx, 60%) var(--cy, 10%), rgba(255,122,47,.35), transparent 70%),
+    linear-gradient(135deg, #0E3A40, #16224A); }
+  .grid { position: absolute; inset: -200px; background-image: linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px); background-size: 80px 80px; }
   .clip { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
-  .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,8,11,.15), rgba(5,8,11,.75)); }
+  .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(14,58,64,.1), rgba(14,40,60,.7)); }
   .big { font: 900 150px/0.95 Inter; letter-spacing: -.05em; text-align: center; }
   .mid { font: 800 96px/1 Inter; letter-spacing: -.04em; text-align: center; }
   .sm { font: 600 40px/1.25 Inter; letter-spacing: -.01em; text-align: center; color: #C9D6DD; }
@@ -41,14 +45,13 @@
   .notice .b { padding: 12px 26px; border-radius: 10px; background: rgba(255,255,255,.22); font: 500 23px Inter; }
   .notice .b.ok { background: #FF7A2F; }
   .chip { display: inline-block; padding: 16px 30px; border-radius: 999px; font: 700 34px Inter; background: rgba(43,212,188,.12); border: 2px solid rgba(43,212,188,.5); color: #C8FFF5; }
-  .stat { text-align: center; }
-  .stat b { display: block; font: 900 190px/1 Inter; letter-spacing: -.05em; }
-  .stat span { display: block; font: 600 36px Inter; color: #9FB2BD; margin-top: 10px; }
-  .proof { position: relative; border-radius: 14px; overflow: hidden; box-shadow: 0 40px 100px rgba(0,0,0,.7); border: 2px solid rgba(255,255,255,.15); }
-  .proof img { display: block; }
-  .tag { position: absolute; padding: 10px 18px; border-radius: 8px; background: #FF2D55; font: 800 24px Inter; letter-spacing: .12em; color: #fff; }
+    .card { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  .card .k { font: 800 28px Inter; letter-spacing: .3em; opacity: .75; }
+  .card .n { font: 900 300px/0.9 Inter; letter-spacing: -.06em; margin-top: 18px; }
+  .card .l { font: 700 56px/1.15 Inter; letter-spacing: -.02em; max-width: 1600px; margin-top: 26px; }
+  .card .src { position: absolute; bottom: 56px; font: 600 24px Inter; letter-spacing: .04em; opacity: .7; }
   #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
-  #vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.6)); pointer-events: none; }
+  #vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 70%, rgba(6,20,26,.15)); pointer-events: none; }
   #scan { position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 2px, transparent 2px 4px); pointer-events: none; opacity: 0; }
   canvas { position: absolute; inset: 0; }
 </style>
@@ -87,8 +90,8 @@ for (const [s, n] of [[8, 8], [24, 8]]) for (let k = s; k < s + n; k++) SNARES.p
 const DROPS = [b(8), b(24), b(32)];
 function sinceLast(list, t) { let best = 99; for (const x of list) if (x <= t && t - x < best) best = t - x; return best; }
 
-// Footage, extracted to numbered JPGs at 30 fps by build.sh.
-const CLIPS = { night: { frames: 150 }, frustrated: { frames: 150 }, together: { frames: 180 }, code: { frames: 120 }, glasses: { frames: 120 }, coffee: { frames: 120 }, handshake: { frames: 120 } };
+// Footage, cut to numbered JPGs at 30 fps by clips.sh.
+const CLIPS = { night: { frames: 150 }, together: { frames: 180 }, code: { frames: 120 }, glasses: { frames: 120 }, coffee: { frames: 120 }, handshake: { frames: 120 } };
 function clipSrc(name, local) {
   const c = CLIPS[name]; if (!c) return "";
   const i = Math.min(c.frames - 1, Math.max(0, Math.floor(local * 30 * (c.speed || 1)) + (c.start || 0)));
@@ -114,6 +117,28 @@ function slam(el, t, at, from = 1.6) {
   el.style.filter = `blur(${(1 - k) * 12}px)`;
 }
 
+// Full-bleed colour cards that wipe in one after another, each with a counting number.
+function cards(list) {
+  return mk(list.map((c, i) => `<div class="card" data-i="${i}" style="background:${c.bg}; color:${c.fg}">
+    <div class="k">${c.k}</div><div class="n" style="color:${c.hi || c.fg}"></div><div class="l">${c.l}</div><div class="src">Source: ${c.src}</div></div>`).join(""));
+}
+function playCards(el, list, lt, each) {
+  const i = Math.min(list.length - 1, Math.floor(lt / each));
+  el.querySelectorAll(".card").forEach((d, j) => {
+    const local = lt - j * each;
+    if (j > i) { d.style.display = "none"; return; }
+    d.style.display = "flex";
+    const w = j === 0 ? 1 : inOut(prog(local, 0, .28));
+    d.style.clipPath = `polygon(0 0, ${w * 130}% 0, ${w * 130 - 30}% 100%, 0 100%)`;
+    const n = d.querySelector(".n"); const k = out(prog(local, .1, .7));
+    n.textContent = list[j].n(k);
+    n.style.transform = `scale(${lerp(1.25, 1, outBack(prog(local, .05, .35)))})`;
+    const l = d.querySelector(".l"); l.style.opacity = out(prog(local, .3, .35)); l.style.transform = `translateY(${(1 - out(prog(local, .3, .35))) * 30}px)`;
+    d.querySelector(".k").style.opacity = .75 * out(prog(local, 0, .3));
+    d.querySelector(".src").style.opacity = .7 * out(prog(local, .5, .4));
+  });
+}
+
 // ---------- INTRO: bars 0-8 ----------
 // 0-2: real footage, a developer at night
 S(0, b(2) + .1, () => mk(`<img class="clip" id="c"><div class="shade"></div>
@@ -121,6 +146,7 @@ S(0, b(2) + .1, () => mk(`<img class="clip" id="c"><div class="shade"></div>
   <div class="big" id="l2" style="margin-top:26px; font-size:118px">Each one works alone.</div></div>`),
   (t, lt, el) => {
     q(el, "#c").src = lt < BAR ? clipSrc("glasses", lt) : clipSrc("night", lt - BAR);
+    q(el, "#c").style.filter = lt < BAR ? "none" : "brightness(1.6) saturate(1.15)";
     q(el, "#c").style.transform = `scale(${1.08 + lt * .02})`;
     const a = q(el, "#l1"), c = q(el, "#l2");
     a.style.opacity = out(prog(lt, .3, .6)); a.style.transform = `translateY(${(1 - out(prog(lt, .3, .6))) * 20}px)`;
@@ -152,27 +178,22 @@ S(b(2), b(4) + .1, () => mk(`<div class="term" id="ta" style="left:120px; top:26
     q(el, "#cnt").innerHTML = n ? `<span class="orange">${n}</span> copy-paste${n > 1 ? "s" : ""}` : "";
     q(el, "#cnt").style.transform = `scale(${1 + Math.max(0, .25 - sinceLast([bt(1.6), bt(3.1), bt(4.6), bt(6.1)].map(x => x + b(2)), t)) * 1.2})`;
   });
-// 4-6: kinetic words on the kicks, over frustrated footage
-S(b(4), b(6) + .1, () => mk(`<img class="clip" id="c" style="filter:saturate(.5) contrast(1.1)"><div class="shade" style="background:rgba(5,8,11,.62)"></div>
-  <div class="center"><div class="big" id="w"></div><div class="sm" id="w2" style="margin-top:30px"></div></div>`),
-  (t, lt, el) => {
-    q(el, "#c").src = clipSrc("frustrated", lt);
-    const words = ["Copy.", "Paste.", "Copy.", "Paste.", "Every.", "Single.", "Question.", "Question."];
-    const i = Math.min(7, Math.floor(lt / BEAT));
-    const w = q(el, "#w"); w.textContent = i < 6 ? words[i] : "Every question.";
-    w.style.transform = `scale(${1 + Math.max(0, .18 - (lt - i * BEAT)) * 1.6})`;
-    w.className = "big" + (i % 2 ? " orange" : "");
-    q(el, "#w2").textContent = i >= 6 ? "The humans are the couriers." : "";
-  });
-// 6-8: the build, "what if it could just ask?"
-S(b(6), b(8), () => mk(`<div class="center"><div class="sm" id="p1" style="letter-spacing:.3em; font-size:30px" class="teal">WHAT IF</div>
+// 4-7: what the copy-paste costs, one number per bar
+const FATIGUE = [
+  { bg: "#FF7A2F", fg: "#10262A", k: "THE COPY-PASTE TAX", n: k => Math.round(61 * k) + "%", l: "of developers spend 30+ min a day hunting for answers", src: "Stack Overflow Developer Survey 2024" },
+  { bg: "#F4EFE6", fg: "#10262A", hi: "#E2611B", k: "THE COPY-PASTE TAX", n: k => Math.round(53 * k) + "%", l: "say waiting on answers breaks their flow", src: "Stack Overflow Developer Survey 2024" },
+  { bg: "#1E8576", fg: "#FFFFFF", k: "THE COPY-PASTE TAX", n: k => Math.round(10 * k) + " h", l: "lost every week, for half of all developers", src: "Atlassian, State of Developer Experience 2025 · 3,500 developers" },
+];
+S(b(4), b(7) + .05, () => cards(FATIGUE), (t, lt, el) => playCards(el, FATIGUE, lt, BAR));
+// 7-8: the turn, "what if it could just ask?"
+S(b(7), b(8), () => mk(`<div class="center"><div class="sm" id="p1" style="letter-spacing:.3em; font-size:30px">WHAT IF</div>
   <div class="big" id="p2" style="margin-top:20px">your Claude could<br><span class="glitch teal" id="ask" data-t="just ask theirs?">just ask theirs?</span></div></div>`),
   (t, lt, el) => {
-    const p1 = q(el, "#p1"); p1.style.opacity = out(prog(lt, 0, .3)); p1.style.color = "#2BD4BC";
-    const p2 = q(el, "#p2"); const k = out(prog(lt, bt(1), .4));
-    p2.style.opacity = k; p2.style.transform = `scale(${lerp(.85, 1, k) + lt * .03})`; p2.style.letterSpacing = `${lerp(-.02, -.05, prog(lt, 0, b(2)))}em`;
-    glitch(q(el, "#ask"), t, prog(lt, b(1.5), b(.5)));
-    p2.style.filter = `blur(${Math.max(0, lt - b(2) + .25) * 30}px)`;
+    const p1 = q(el, "#p1"); p1.style.opacity = out(prog(lt, 0, .2)); p1.style.color = "#7FF0DD";
+    const p2 = q(el, "#p2"); const k = out(prog(lt, .15, .3));
+    p2.style.opacity = k; p2.style.transform = `scale(${lerp(.85, 1, k) + lt * .04})`;
+    glitch(q(el, "#ask"), t, prog(lt, bt(2), bt(1)));
+    p2.style.filter = `blur(${Math.max(0, lt - b(1) + .2) * 40}px)`;
   });
 
 // ---------- DROP 1: bars 8-16 ----------
@@ -202,7 +223,7 @@ S(b(9), b(11) + .05, () => mk(`<div class="term" id="t" style="left:180px; top:2
   });
 // 11-12: the tunnel, particles on the canvas
 S(b(11), b(12) + .05, () => mk(`<div class="center"><div class="mid" id="h" style="font-size:84px">End-to-end encrypted.</div>
-  <div style="display:flex; gap:22px; margin-top:44px" id="chips"><span class="chip">Nostr relays</span><span class="chip">NIP-44</span><span class="chip">No server of ours</span></div></div>`),
+  <div style="display:flex; gap:22px; margin-top:44px" id="chips"><span class="chip">Peer to peer</span><span class="chip">No server of ours</span><span class="chip">Deleted on close</span></div></div>`),
   (t, lt, el) => {
     q(el, "#h").style.opacity = out(prog(lt, 0, .2));
     [...q(el, "#chips").children].forEach((c, i) => slam(c, lt, bt(1 + i), 1.5));
@@ -257,51 +278,26 @@ S(b(16), b(18) + .1, () => mk(`<img class="clip" id="c"><div class="shade"></div
     q(el, "#h").style.opacity = out(prog(lt, .4, .6)); q(el, "#h").style.transform = `translateY(${(1 - out(prog(lt, .4, .6))) * 30}px)`;
     q(el, "#s").style.opacity = out(prog(lt, 1.6, .6));
   });
-S(b(18), b(20) + .1, () => mk(`<div class="center"><div class="tag" id="tag" style="position:relative; margin-bottom:34px">REAL · TWO MACHINES</div>
-  <div style="display:flex; gap:50px; align-items:center" id="row">
-    <div class="proof" id="p1"><img src="real/notice.png" width="640"></div>
-    <div class="proof" id="p2"><img src="real/answer.png" width="700"></div>
-  </div>
-  <div class="sm" id="s" style="margin-top:40px">From the real test that runs before every push.<br><span class="dim">Real relays. Real Claude sessions. A real click.</span></div></div>`),
-  (t, lt, el) => {
-    slam(q(el, "#tag"), lt, 0, 1.4);
-    for (const [id, d, a] of [["#p1", -1, .2], ["#p2", 1, .5]]) {
-      const k = outBack(prog(lt, a, .5)); const p = q(el, id);
-      p.style.opacity = clamp(k); p.style.transform = `translateY(${(1 - k) * 160}px) rotate(${(1 - k) * d * 8 + d * 1.5}deg)`;
-    }
-    q(el, "#s").style.opacity = out(prog(lt, 1.2, .5));
-  });
+// 18-24: why now, one number per bar and a half
+const WHYNOW = [
+  { bg: "#F4EFE6", fg: "#10262A", hi: "#1E8576", k: "WHY NOW", n: k => Math.round(84 * k) + "%", l: "of developers use AI tools, or are about to", src: "Stack Overflow Developer Survey 2025" },
+  { bg: "#4638AA", fg: "#FFFFFF", k: "WHY NOW", n: k => "$" + (2.5 * k).toFixed(1) + "B", l: "Claude Code run-rate, nine months after launch", src: "Anthropic, February 2026" },
+  { bg: "#1E8576", fg: "#FFFFFF", k: "WHY NOW", n: k => Math.round(4 * k) + "%", l: "of public GitHub commits are written by Claude Code", src: "Anthropic, February 2026" },
+  { bg: "#FF7A2F", fg: "#10262A", k: "WHY NOW", n: k => "2×", l: "that share, in a single month", src: "Anthropic, February 2026" },
+];
+S(b(18), b(24), () => cards(WHYNOW), (t, lt, el) => playCards(el, WHYNOW, lt, b(1.5)));
 
-// ---------- BUILD 2: bars 20-24, the promises ----------
-S(b(20), b(24), () => mk(`<div class="center"><div class="sm" id="k" style="letter-spacing:.3em; font-size:28px; color:#2BD4BC">THREE PROMISES · EACH ONE A TEST IN CI</div>
-  <div class="big" id="w" style="margin-top:34px; font-size:140px"></div><div class="sm mono" id="w2" style="margin-top:30px; font-size:30px; color:#7F909B"></div></div>`),
+// ---------- DROP 2: bars 24-28, people, one line per bar ----------
+const MONTAGE = [["code", "Your Claude.", "#1E8576"], ["glasses", "Their Claude.", "#4638AA"], ["coffee", "One question.", "#FF7A2F"], ["handshake", "No copy-paste.", "#1E8576"]];
+S(b(24), b(28), () => mk(`<img class="clip" id="c"><div id="tint" style="position:absolute; inset:0; mix-blend-mode:multiply"></div><div class="shade" style="opacity:.5"></div>
+  <div class="center"><div class="big" id="w" style="font-size:170px"></div></div>`),
   (t, lt, el) => {
-    const P = [["No server of ours.", "tests/two-machines-nostr.test.ts"], ["The model is yours.", "src/guardian.ts → your claude -p"], ["Closing deletes it.", "every file, both machines, asserted empty"]];
-    const i = Math.min(2, Math.floor(lt / BAR * 0.75 + (lt > b(3) ? .3 : 0)));
-    const at = [0, b(4 / 3), b(8 / 3)];
-    const idx = lt < at[1] ? 0 : lt < at[2] ? 1 : 2;
-    const w = q(el, "#w"); w.textContent = P[idx][0]; q(el, "#w2").textContent = "✓ " + P[idx][1];
-    const k = prog(lt, at[idx], .25);
-    w.style.transform = `scale(${lerp(1.3, 1, outBack(k)) + (lt - at[idx]) * .02})`; w.style.filter = `blur(${(1 - k) * 10}px)`;
-    w.className = "big" + (idx === 1 ? " teal" : idx === 2 ? " orange" : "");
-    q(el, "#k").style.opacity = out(prog(lt, 0, .4));
-    if (lt > b(3.5)) { const g = prog(lt, b(3.5), b(.5)); w.style.filter = `blur(${g * 20}px)`; w.style.transform = `scale(${1 + g * .6})`; }
-  });
-
-// ---------- DROP 2: bars 24-32, the montage ----------
-const STATS = [["312", "tests on Linux and macOS"], ["0", "servers we run"], ["107 s", "real two-person test, every push"], ["E2E", "NIP-44 encryption, signed envelopes"]];
-S(b(24), b(28), () => mk(`<img class="clip" id="c" style="opacity:.32; filter:grayscale(.4)"><div class="center"><div class="stat" id="st"><b id="sb"></b><span id="ss"></span></div></div>`),
-  (t, lt, el) => {
-    const i = Math.min(3, Math.floor(lt / BAR));
-    q(el, "#c").src = clipSrc(["code", "glasses", "coffee", "handshake"][i], lt - i * BAR);
-    const st = STATS[i]; const sb = q(el, "#sb");
-    const local = lt - i * BAR;
-    if (i === 0) sb.textContent = String(Math.round(312 * out(prog(local, 0, .9))));
-    else if (i === 2) sb.textContent = Math.round(107 * out(prog(local, 0, .9))) + " s";
-    else sb.textContent = st[0];
-    q(el, "#ss").textContent = st[1];
-    sb.className = i % 2 ? "teal" : "orange"; sb.style.color = i % 2 ? "#2BD4BC" : "#FF8A3D";
-    q(el, "#st").style.transform = `scale(${lerp(1.5, 1, outBack(prog(local, 0, .25)))})`;
+    const i = Math.min(3, Math.floor(lt / BAR)), local = lt - i * BAR, [clip, word, col] = MONTAGE[i];
+    q(el, "#c").src = clipSrc(clip, local); q(el, "#c").style.transform = `scale(${1.12 - local * .03})`;
+    q(el, "#tint").style.background = col; q(el, "#tint").style.opacity = .55;
+    const w = q(el, "#w"); w.textContent = word;
+    const k = prog(local, 0, .22); w.style.transform = `scale(${lerp(1.6, 1, outBack(k))})`; w.style.filter = `blur(${(1 - k) * 14}px)`;
+    w.style.opacity = k > 0 ? 1 : 0;
   });
 S(b(28), b(30), () => mk(`<div class="center"><div class="sm" id="k" style="letter-spacing:.3em; font-size:28px; color:#2BD4BC">TWO COMMANDS IN CLAUDE CODE</div>
   <div class="mono" id="code" style="margin-top:36px; font-size:46px; line-height:1.7; background:rgba(15,22,29,.9); border:2px solid #22313D; border-radius:22px; padding:34px 56px; white-space:pre"></div></div>`),
@@ -323,7 +319,7 @@ S(b(30), b(32), () => mk(`<div class="center"><div class="big" id="w" style="fon
 S(b(32), DURATION, () => mk(`<div class="center"><img id="logo" src="../../spoochie.svg" width="240" height="240">
   <div class="big" id="n" style="margin-top:28px; font-size:160px">spoochie</div>
   <div class="sm" id="s" style="margin-top:14px">Claude Code, <span class="teal">between people.</span></div>
-  <div class="mono" id="u" style="margin-top:50px; font-size:32px; color:#9FB0BC">github.com/edugargar/spoochie</div></div>`),
+  <div class="mono" id="u" style="margin-top:50px; font-size:34px; color:#E6F4F1">github.com/edugargar/spoochie</div></div>`),
   (t, lt, el) => {
     slam(q(el, "#logo"), lt, 0, 3); slam(q(el, "#n"), lt, .15, 1.6);
     q(el, "#s").style.opacity = out(prog(lt, .6, .5)); q(el, "#u").style.opacity = out(prog(lt, 1.1, .5));
@@ -373,6 +369,10 @@ function render(t) {
   const zoom = 1 + .035 * Math.exp(-sk * 10) * (inDrop ? 1 : .5) + .08 * Math.exp(-dr * 4);
   document.getElementById("cam").style.transform = `translate(${sx}px, ${sy}px) scale(${zoom})`;
   document.getElementById("cam").style.filter = inDrop ? `contrast(${1 + .15 * Math.exp(-sn * 8)})` : "none";
+  const bg = document.querySelector(".bg").style;
+  bg.setProperty("--ax", `${20 + Math.sin(t * .35) * 15}%`); bg.setProperty("--ay", `${30 + Math.cos(t * .3) * 15}%`);
+  bg.setProperty("--bx", `${80 + Math.sin(t * .27 + 2) * 15}%`); bg.setProperty("--by", `${70 + Math.cos(t * .33 + 1) * 15}%`);
+  bg.setProperty("--cx", `${60 + Math.sin(t * .4 + 4) * 25}%`); bg.setProperty("--cy", `${10 + Math.cos(t * .25) * 20}%`);
   document.getElementById("grid").style.transform = `translate(${(t * 40) % 80}px, ${(t * 25) % 80}px)`;
   document.getElementById("flash").style.opacity = Math.max(.9 * Math.exp(-dr * 7) * (dr < 2 ? 1 : 0), inDrop ? .18 * Math.exp(-sn * 14) : 0);
   document.getElementById("scan").style.opacity = inDrop ? .8 : .3;

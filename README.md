@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/media/spoochie.mp4"><img src="docs/media/demo.gif" width="860" alt="Alice's Claude asks Bob's Claude why a modal breaks; Bob lets it in; a read-only Claude on Bob's machine finds the cause and the answer lands in Alice's session"></a><br>
+  <a href="docs/media/spoochie.mp4"><img src="docs/media/demo.gif" width="860" alt="Two developers copy-paste a question between their Claudes; what that costs; then Alice's Claude asks Bob's directly, Bob lets it in, and a read-only Claude on Bob's machine finds the cause"></a><br>
   <sub><a href="docs/media/spoochie.mp4">Watch the 60-second video</a></sub>
 </p>
 
