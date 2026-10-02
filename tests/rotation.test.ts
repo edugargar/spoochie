@@ -39,12 +39,12 @@ test("a rotation from someone with no pinned key is not accepted", () => {
   const byVerdict = incomingRotation(c, "U_SAM", newKeys().pub, "nueva");
   expect(byVerdict.ok).toBe(false);
   if (byVerdict.ok) throw new Error("impossible");
-  expect(byVerdict.por).toContain("does not match the pinned key");
+  expect(byVerdict.reason).toContain("does not match the pinned key");
 
   const byMissingKey = incomingRotation(c, "U_SAM", newKeys().pub, "ok");
   expect(byMissingKey.ok).toBe(false);
   if (byMissingKey.ok) throw new Error("impossible");
-  expect(byMissingKey.por).toContain("there was no key pinned");
+  expect(byMissingKey.reason).toContain("there was no key pinned");
 });
 
 test("a rotation to the same key, or to something that is not a key, is rejected", () => {

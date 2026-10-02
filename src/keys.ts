@@ -61,27 +61,27 @@ export function bindKey(c: Cfg.Config, p: { id: string; name: string; npub: stri
 
 export type Decision = { ok: true; id: string; name: string; vinculo: Binding } | { ok: false; motivo: string };
 
-/** A hello arriving over Nostr: `de` is the key that signed the seal (that part is trustworthy). */
-export function helloByNostr(c: Cfg.Config, x: { de: string; nombre: string; k?: string; relays?: string[] }, now = Date.now()): Decision {
+/** A hello arriving over Nostr: `from` is the key that signed the seal (that part is trustworthy). */
+export function helloByNostr(c: Cfg.Config, x: { from: string; name: string; k?: string; relays?: string[] }, now = Date.now()): Decision {
   const inv = redeemInvite(c, x.k, now);
-  const known = Cfg.contactByNpub(c, x.de);
+  const known = Cfg.contactByNpub(c, x.from);
   if (!inv && !known) return { ok: false, motivo: "no valid invite and unknown key" };
-  const id = inv?.id ?? known?.id ?? `nostr:${x.de}`;
-  const name = inv?.name ?? known?.name ?? x.nombre;
-  const binding = bindKey(c, { id, name, npub: x.de, relays: x.relays });
+  const id = inv?.id ?? known?.id ?? `nostr:${x.from}`;
+  const name = inv?.name ?? known?.name ?? x.name;
+  const binding = bindKey(c, { id, name, npub: x.from, relays: x.relays });
   if (binding === "conflicto") return { ok: false, motivo: `${name} already has another key; not replacing it` };
   return { ok: true, id, name, vinculo: binding };
 }
 
-/** A hello arriving over Slack: `de` is the Slack id the envelope claims, and it only counts if signed. */
-export function helloBySlack(c: Cfg.Config, x: { de: string; nombre: string; np: string; relays?: string[]; veredicto: Verdict }): Decision {
-  const known = Cfg.contactById(c, x.de);
-  if (x.veredicto === "mala" || x.veredicto === "sin-firma") return { ok: false, motivo: `hello from ${x.de} ${x.veredicto === "mala" ? "with a signature that is not theirs" : "unsigned"}` };
-  if (x.veredicto === "nueva" && !known) return { ok: false, motivo: `hello from an id that is not in your contacts (${x.de})` };
-  const name = known?.name ?? x.nombre;
-  const binding = bindKey(c, { id: x.de, name, npub: x.np, relays: x.relays });
+/** A hello arriving over Slack: `from` is the Slack id the envelope claims, and it only counts if signed. */
+export function helloBySlack(c: Cfg.Config, x: { from: string; name: string; np: string; relays?: string[]; verdict: Verdict }): Decision {
+  const known = Cfg.contactById(c, x.from);
+  if (x.verdict === "mala" || x.verdict === "sin-firma") return { ok: false, motivo: `hello from ${x.from} ${x.verdict === "mala" ? "with a signature that is not theirs" : "unsigned"}` };
+  if (x.verdict === "nueva" && !known) return { ok: false, motivo: `hello from an id that is not in your contacts (${x.from})` };
+  const name = known?.name ?? x.name;
+  const binding = bindKey(c, { id: x.from, name, npub: x.np, relays: x.relays });
   if (binding === "conflicto") return { ok: false, motivo: `${name} already has another key; not replacing it` };
-  return { ok: true, id: x.de, name, vinculo: binding };
+  return { ok: true, id: x.from, name, vinculo: binding };
 }
 
 /**
@@ -91,13 +91,13 @@ export function helloBySlack(c: Cfg.Config, x: { de: string; nombre: string; np:
  * ("ok"). "nueva" does not count: that would be someone we knew nothing about debuting
  * with a key change, which is exactly what we do not want.
  */
-export function incomingRotation(c: Cfg.Config, from: string, newPk: string, verdict: Verdict): { ok: false; por: string } | { ok: true; nombre: string; antes: string } {
-  if (verdict !== "ok") return { ok: false, por: `the rotation signature does not match the pinned key (${verdict})` };
+export function incomingRotation(c: Cfg.Config, from: string, newPk: string, verdict: Verdict): { ok: false; reason: string } | { ok: true; name: string; before: string } {
+  if (verdict !== "ok") return { ok: false, reason: `the rotation signature does not match the pinned key (${verdict})` };
   const x = Cfg.contactById(c, from);
-  if (!x?.pk) return { ok: false, por: "there was no key pinned for that id" };
-  if (!/^[A-Za-z0-9+/=]{20,}$/.test(newPk)) return { ok: false, por: "the new key does not look like a key" };
-  if (x.pk === newPk) return { ok: false, por: "the new key is the same one already pinned" };
+  if (!x?.pk) return { ok: false, reason: "there was no key pinned for that id" };
+  if (!/^[A-Za-z0-9+/=]{20,}$/.test(newPk)) return { ok: false, reason: "the new key does not look like a key" };
+  if (x.pk === newPk) return { ok: false, reason: "the new key is the same one already pinned" };
   const before = x.pk;
   Cfg.addContact(c, { id: x.id, name: x.name, pk: newPk });
-  return { ok: true, nombre: x.name, antes: before };
+  return { ok: true, name: x.name, before };
 }

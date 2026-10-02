@@ -902,7 +902,7 @@ function startNostr() {
       // Someone I invited is in. Only with my invite's nonce, and it's bound
       // to what I recorded when inviting, not to what the hello says (keys.ts).
       const c = Cfg.load();
-      const d = helloByNostr(c, { de: from, nombre: name, k: env.k, relays: env.relays });
+      const d = helloByNostr(c, { from, name, k: env.k, relays: env.relays });
       if (!d.ok) {
         log("nostr", "hello REJECTED from", name, from.slice(0, 12), d.motivo);
         warnStranger(from, { kind: "hola", fromName: name, slack: env.slack, motivo: d.motivo });
@@ -916,7 +916,7 @@ function startNostr() {
   if (slack) {
     slack.onHello = async (from, name, np, r, verdict) => {
       const c = Cfg.load();
-      const d = helloBySlack(c, { de: from, nombre: name, np, relays: r, veredicto: verdict });
+      const d = helloBySlack(c, { from, name, np, relays: r, verdict });
       if (!d.ok) { log("nostr", "key over Slack REJECTED:", d.motivo); return; }
       Cfg.save(c);
       log("nostr", "key received over Slack from", d.name, d.vinculo);
@@ -1019,10 +1019,10 @@ function hookRotation() {
     const c = Cfg.load();
     const { incomingRotation } = await import("./keys.ts");
     const r = incomingRotation(c, from, newPk, verdict);
-    if (!r.ok) { log("rotation", from, "rejected:", r.por); Aud.record("clave-rechazada", "-", from, `rotation: ${r.por}`); return; }
+    if (!r.ok) { log("rotation", from, "rejected:", r.reason); Aud.record("clave-rechazada", "-", from, `rotation: ${r.reason}`); return; }
     Cfg.save(c);
     log("rotation", from, r.nombre, "key changed");
-    Aud.record("clave-fijada", "-", r.nombre, `rotation accepted · before ${r.antes.slice(0, 12)}...`);
+    Aud.record("clave-fijada", "-", r.name, `rotation accepted · before ${r.before.slice(0, 12)}...`);
   };
 }
 
