@@ -1,17 +1,17 @@
 /**
- * Quien ha intentado hablarme sin estar en mi agenda.
+ * Who has tried to talk to me without being in my contacts.
  *
- * Por Nostr, un sobre de una clave desconocida se tiraba con una linea en el log del
- * demonio, y un saludo de alta rechazado igual. El 14-09 eso dejo a dos personas sin
- * saber nada: el alta de Adrian venia de una 0.9.8, su saludo llego sin el nonce de la
- * invitacion, y su spoochie despues se tiro por "clave que no esta en la agenda". Edu no
- * vio nada, y el arreglo fue leer los reles a mano.
+ * Over Nostr, an envelope from an unknown key was dropped with one line in the daemon
+ * log, and so was a rejected join hello. On 14-09 that left two people knowing nothing:
+ * Adrian's join came from a 0.9.8, his hello arrived without the invite nonce, and his
+ * spoochie was then dropped as "key not in contacts". Edu saw nothing, and the fix was
+ * reading the relays by hand.
  *
- * Aqui queda apuntado lo justo para decidir: la clave, el nombre y el id de Slack QUE
- * DICE el sobre (nada de eso esta comprobado), que tipo de sobre era y cuando. Nunca el
- * asunto ni el texto: no es mio guardarlo, y lo que se dijo se borra al cerrar.
- * `spoochie doctor` lo ensena, y `spoochie contacts --vincular` es la salida cuando la
- * persona es quien dice ser.
+ * What gets written down here is just enough to decide: the key, the name and the Slack
+ * id the envelope CLAIMS (none of it is checked), what kind of envelope it was and when.
+ * Never the subject or the text: that is not mine to keep, and what was said is deleted
+ * on close. `spoochie doctor` shows it, and `spoochie contacts --bind` is the way out
+ * when the person is who they say they are.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -19,66 +19,66 @@ import { ROOT, ensureDirs, writeAtomic } from "./paths.ts";
 
 export type Stranger = {
   pk: string;
-  /** Lo que dice el sobre. Sin comprobar. */
+  /** What the envelope says. Unchecked. */
   nombre?: string;
   slack?: string;
   kind: string;
   motivo?: string;
   primera: number;
   ultima: number;
-  /** Cuando se interrumpio a la persona por ultima vez por esta clave. */
+  /** When the person was last interrupted about this key. */
   avisado?: number;
   veces: number;
 };
 
-const FICHERO = () => join(ROOT, "desconocidos.json");
+const FILE = () => join(ROOT, "desconocidos.json");
 const MAX = 20;
-const DIA_MS = 24 * 3600_000;
-export const REMEMBER_MS = 7 * DIA_MS;
+const DAY_MS = 24 * 3600_000;
+export const REMEMBER_MS = 7 * DAY_MS;
 
-function leerTodo(): Stranger[] {
-  try { return existsSync(FICHERO()) ? JSON.parse(readFileSync(FICHERO(), "utf8")) : []; } catch { return []; }
+function readAll(): Stranger[] {
+  try { return existsSync(FILE()) ? JSON.parse(readFileSync(FILE(), "utf8")) : []; } catch { return []; }
 }
 
-const limpio = (s: unknown, max: number) => typeof s === "string"
+const clean = (s: unknown, max: number) => typeof s === "string"
   ? s.replace(/[\u0000-\u001f\u007f\u2028\u2029\[\]`]/g, " ").replace(/\s+/g, " ").trim().slice(0, max) || undefined
   : undefined;
 
 /**
- * Apunta un intento. Devuelve true si es el primero de esa clave en un dia, que es
- * cuando merece interrumpir a la persona; los repetidos solo suben la cuenta.
+ * Records an attempt. Returns true if it is the first from that key in a day, which is
+ * when it is worth interrupting the person; repeats only bump the count.
  */
-export function record(x: { pk: string; kind: string; nombre?: unknown; slack?: unknown; motivo?: string }, ahora = Date.now()): boolean {
+export function record(x: { pk: string; kind: string; nombre?: unknown; slack?: unknown; motivo?: string }, now = Date.now()): boolean {
   if (!/^[0-9a-f]{64}$/.test(x.pk)) return false;
-  const todos = leerTodo().filter(d => ahora - d.ultima < REMEMBER_MS);
-  const previo = todos.find(d => d.pk === x.pk);
-  // El dia cuenta desde el ultimo aviso, no desde el ultimo intento: si no, una clave
-  // que insiste cada hora no volveria a avisar nunca.
-  const nuevo = !previo || ahora - (previo.avisado ?? previo.primera) >= DIA_MS;
+  const all = readAll().filter(d => now - d.ultima < REMEMBER_MS);
+  const prev = all.find(d => d.pk === x.pk);
+  // The day counts from the last notice, not from the last attempt: otherwise a key that
+  // keeps trying every hour would never notify again.
+  const fresh = !prev || now - (prev.avisado ?? prev.primera) >= DAY_MS;
   const slack = typeof x.slack === "string" && /^[UW][A-Z0-9]{6,20}$/.test(x.slack) ? x.slack : undefined;
   const d: Stranger = {
     pk: x.pk,
-    nombre: limpio(x.nombre, 60) ?? previo?.nombre,
-    slack: slack ?? previo?.slack,
-    kind: limpio(x.kind, 20) ?? "?",
-    motivo: limpio(x.motivo, 120),
-    primera: previo?.primera ?? ahora,
-    ultima: ahora,
-    veces: (previo?.veces ?? 0) + 1,
-    avisado: nuevo ? ahora : previo?.avisado,
+    nombre: clean(x.nombre, 60) ?? prev?.nombre,
+    slack: slack ?? prev?.slack,
+    kind: clean(x.kind, 20) ?? "?",
+    motivo: clean(x.motivo, 120),
+    primera: prev?.primera ?? now,
+    ultima: now,
+    veces: (prev?.veces ?? 0) + 1,
+    avisado: fresh ? now : prev?.avisado,
   };
-  const resto = todos.filter(o => o.pk !== x.pk);
+  const rest = all.filter(o => o.pk !== x.pk);
   ensureDirs();
-  writeAtomic(FICHERO(), JSON.stringify([d, ...resto].sort((a, b) => b.ultima - a.ultima).slice(0, MAX)));
-  return nuevo;
+  writeAtomic(FILE(), JSON.stringify([d, ...rest].sort((a, b) => b.ultima - a.ultima).slice(0, MAX)));
+  return fresh;
 }
 
-export function recent(ahora = Date.now()): Stranger[] {
-  return leerTodo().filter(d => ahora - d.ultima < REMEMBER_MS).sort((a, b) => b.ultima - a.ultima);
+export function recent(now = Date.now()): Stranger[] {
+  return readAll().filter(d => now - d.ultima < REMEMBER_MS).sort((a, b) => b.ultima - a.ultima);
 }
 
 export function forget(pk: string) {
-  const todos = leerTodo();
-  const quedan = todos.filter(d => d.pk !== pk);
-  if (quedan.length !== todos.length) writeAtomic(FICHERO(), JSON.stringify(quedan));
+  const all = readAll();
+  const kept = all.filter(d => d.pk !== pk);
+  if (kept.length !== all.length) writeAtomic(FILE(), JSON.stringify(kept));
 }

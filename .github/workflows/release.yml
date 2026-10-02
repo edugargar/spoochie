@@ -13,11 +13,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with: { bun-version: latest }
-      # Hasta 0.8 no habia dependencias y bun test corria sin node_modules; nostr-tools
-      # llego con 0.9 y el demonio moria al importar, asi que todos los tests con demonio
-      # caian en CI. El lock fijo: lo que se prueba es lo que se compila.
-      # El tag y plugin.json tienen que decir la misma version: el 06-09 se corto un tag
-      # sobre el commit equivocado y, con los tags inmutables, no hubo forma de moverlo.
+      # Until 0.8 there were no dependencies and bun test ran without node_modules;
+      # nostr-tools arrived with 0.9 and the daemon died on import, so every test with a
+      # daemon failed in CI. The frozen lockfile means what is tested is what is compiled.
+      # The tag and plugin.json must say the same version: on 09-06 a tag was cut on the
+      # wrong commit and, with tags immutable, there was no way to move it.
       - name: the tag matches plugin.json
         run: |
           tag="${GITHUB_REF_NAME#v}"

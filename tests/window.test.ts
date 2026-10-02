@@ -8,17 +8,17 @@ import { windowScript } from "../src/aside.ts";
 import { hasta, plazo } from "./wait.ts";
 
 /**
- * El Claude aparte en una ventana nueva. Aqui no hay iTerm: SPOOCHIE_WINDOW apunta a un
- * "abridor" que corre el script en segundo plano, y el `claude` del PATH es uno falso
- * que hace lo que haria el hook SessionStart de la ventana (registrar su sesion con un
- * socket) y se queda vivo. Con eso se prueba lo que fallo en e856: que la conversacion
- * va a la ventana por su socket, que a la sesion interactiva no le llega nada mas, que
- * un segundo accept/take en el mismo repo no abre otra ventana, y que cerrar la ventana
- * cierra el spoochie.
+ * The aside Claude in a new window. There is no iTerm here: SPOOCHIE_WINDOW points at an
+ * "opener" that runs the script in the background, and the `claude` on the PATH is a
+ * fake one that does what the window's SessionStart hook would do (register its session
+ * with a socket) and stays alive. That tests what failed in e856: that the conversation
+ * goes to the window through its socket, that nothing more reaches the interactive
+ * session, that a second accept/take in the same repo opens no other window, and that
+ * closing the window closes the spoochie.
  */
-const HOME = mkdtempSync(join(tmpdir(), "spoochie-vent-"));
+const HOME = mkdtempSync(join(tmpdir(), "spoochie-win-"));
 const DAEMON_SOCK = join(HOME, "daemon.sock");
-const VENTANAS = join(HOME, "ventanas.txt");
+const WINDOWS = join(HOME, "windows.txt");
 const REPO_A = mkdtempSync(join(tmpdir(), "repo-va-")), REPO_B = mkdtempSync(join(tmpdir(), "repo-vb-"));
 
 function fakeInbox(name: string) {
@@ -48,41 +48,41 @@ function rpc(req: any): Promise<any> {
   });
 }
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-const ventanas = () => existsSync(VENTANAS) ? readFileSync(VENTANAS, "utf8").trim().split("\n").filter(Boolean) : [];
+const windows = () => existsSync(WINDOWS) ? readFileSync(WINDOWS, "utf8").trim().split("\n").filter(Boolean) : [];
 
-// A y B son sesiones interactivas; V es el buzon de la ventana del aparte.
+// A and B are interactive sessions; V is the inbox of the aside's window.
 const A = fakeInbox("va"), B = fakeInbox("vb"), V = fakeInbox("vv");
 let daemon: ChildProcess;
 afterAll(() => { daemon?.kill(); A.server.close(); B.server.close(); V.server.close(); });
 
-test("el script de la ventana entra en el repo, lleva la correa y las variables del aparte", () => {
-  const t: any = { id: "w1", subject: "el boton", messages: [] };
-  const s = windowScript(t, "/tmp/mi repo", "aparte-w1-x");
-  expect(s).toContain("cd '/tmp/mi repo'");
+test("the window script enters the repo, carries the leash and the aside's variables", () => {
+  const t: any = { id: "w1", subject: "the button", messages: [] };
+  const s = windowScript(t, "/tmp/my repo", "aparte-w1-x");
+  expect(s).toContain("cd '/tmp/my repo'");
   expect(s).toContain("SPOOCHIE_ASIDE='w1'");
   expect(s).toContain("SPOOCHIE_ASIDE_SESSION='aparte-w1-x'");
   expect(s).toContain("--allowedTools");
-  // Desde que ventana y fondo comparten `banderasAparte`, cada palabra del exec va
-  // entrecomillada por sq(), banderas incluidas: al shell le llega igual.
+  // Since window and background share `asideFlags`, every word of the exec is quoted
+  // by sq(), flags included: the shell gets the same thing.
   expect(s).toContain("'--permission-mode' 'auto'");
-  // Lo prohibido va en la lista de denegacion, no en la blanca.
+  // What is forbidden goes in the deny list, not the allowlist.
   expect(s).toMatch(/'--disallowedTools' '[^']*Edit,Write[^']*git push/);
   expect(s.split("--allowedTools")[1].split("--disallowedTools")[0]).not.toMatch(/Edit|Write/);
 });
 
-test("la conversacion va a la ventana por su socket; la sesion no ve nada mas; no se abre dos veces; cerrarla cierra el spoochie", async () => {
-  const bin = mkdtempSync(join(tmpdir(), "sp-claude-vent-"));
-  // El abridor: lo que hace iTerm de verdad. Corre el script y vuelve.
-  writeFileSync(join(bin, "abridor"), `#!/bin/sh
+test("the conversation goes to the window through its socket; the session sees nothing more; it does not open twice; closing it closes the spoochie", async () => {
+  const bin = mkdtempSync(join(tmpdir(), "sp-claude-win-"));
+  // The opener: what iTerm really does. It runs the script and returns.
+  writeFileSync(join(bin, "opener"), `#!/bin/sh
 nohup /bin/sh "$1" >/dev/null 2>&1 &
 `);
-  // El claude falso de la ventana: se registra como lo haria el hook y se queda vivo.
-  // Como el hook: a un fichero aparte y un mv, que sustituye el registro provisional de
-  // una vez. Con "cat >" el demonio podia leerlo vacio a mitad de escribirse, darlo por
-  // no existente y perder el say que llegaba en ese instante: en CI ubuntu, 3 de 8
-  // pasadas ("say ... FALLO" 3 ms despues del accept). register() usa escribirAtomico.
+  // The window's fake claude: it registers the way the hook would and stays alive.
+  // Like the hook: to a separate file and an mv, which replaces the provisional record
+  // in one go. With "cat >" the daemon could read it empty halfway through the write,
+  // take it as missing and lose the say arriving at that instant: on CI ubuntu, 3 of 8
+  // runs (the say FAILED 3 ms after the accept). register() writes atomically.
   writeFileSync(join(bin, "claude"), `#!/bin/sh
-echo "$SPOOCHIE_ASIDE_SESSION $PWD" >> "$SPOOCHIE_HOME/ventanas.txt"
+echo "$SPOOCHIE_ASIDE_SESSION $PWD" >> "$SPOOCHIE_HOME/windows.txt"
 f="$SPOOCHIE_HOME/sessions/$SPOOCHIE_ASIDE_SESSION.json"
 cat > "$f.tmp" <<JSON
 {"sessionId":"$SPOOCHIE_ASIDE_SESSION","name":"aparte-$SPOOCHIE_ASIDE","cwd":"$PWD","socket":"${V.sock}","token":"t","pid":$$,"startedAt":$(date +%s)000,"aparte":"$SPOOCHIE_ASIDE"}
@@ -91,7 +91,7 @@ chmod 600 "$f.tmp"
 mv "$f.tmp" "$f"
 sleep 60
 `);
-  chmodSync(join(bin, "claude"), 0o755); chmodSync(join(bin, "abridor"), 0o755);
+  chmodSync(join(bin, "claude"), 0o755); chmodSync(join(bin, "opener"), 0o755);
 
   mkdirSync(join(HOME, "sessions"), { recursive: true, mode: 0o700 });
   writeFileSync(join(HOME, "config.json"), JSON.stringify({ guardian: false, transcript: true, aparte: true, human: "Edu" }), { mode: 0o600 });
@@ -101,71 +101,71 @@ sleep 60
       { mode: 0o600 });
   }
   daemon = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_WINDOW: join(bin, "abridor") }, stdio: "ignore",
+    env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, SPOOCHIE_HOME: HOME, SPOOCHIE_WINDOW: join(bin, "opener") }, stdio: "ignore",
   });
   for (let i = 0; i < 60 && !existsSync(DAEMON_SOCK); i++) await sleep(100);
   expect((await rpc({ op: "ping" })).pid).toBe(daemon.pid!);
 
-  const open = await rpc({ op: "open", sessionId: "VA", to: "repo-vb", subject: "el boton", body: "mira tu Button" });
+  const open = await rpc({ op: "open", sessionId: "VA", to: "repo-vb", subject: "the button", body: "look at your Button" });
   expect(open.ok).toBe(true);
   expect(await hasta(() => B.got.some(x => x.includes(`spoochie accept ${open.id}`)))).toBe(true);
-  const antesB = B.got.length;
-  // Un spoochie que llega de otra maquina no tiene quien publique su transcript: se simula
-  // quitandole el dueno que `open` le puso aqui. El aparte tiene que quedarselo.
-  const ruta = join(HOME, "threads", `${open.id}.json`);
-  const hilo = JSON.parse(readFileSync(ruta, "utf8")); delete hilo.transcriptOwner; writeFileSync(ruta, JSON.stringify(hilo));
+  const beforeB = B.got.length;
+  // A spoochie arriving from another machine has nobody to publish its transcript: this
+  // is simulated by removing the owner `open` gave it here. The aside has to take it.
+  const path = join(HOME, "threads", `${open.id}.json`);
+  const thread = JSON.parse(readFileSync(path, "utf8")); delete thread.transcriptOwner; writeFileSync(path, JSON.stringify(thread));
 
   const acc = await rpc({ op: "accept", sessionId: "VB", id: open.id, by: "Edu" });
   expect(acc.ok).toBe(true);
   expect(acc.aparte).toBe(REPO_B);
   expect(acc.ventana).toBe(true);
-  // Lo que A dice mientras la ventana arranca no cae en B: se guarda para la ventana.
-  const say0 = await rpc({ op: "say", sessionId: "VA", id: open.id, text: "y el min-width, miralo" });
+  // What A says while the window starts does not land in B: it is kept for the window.
+  const say0 = await rpc({ op: "say", sessionId: "VA", id: open.id, text: "and the min-width, check it" });
   expect(say0.ok).toBe(true);
 
-  // La ventana se abrio en el repo de B, se registro, y recibio el primer turno y lo guardado, en orden.
-  expect(await hasta(() => ventanas().length === 1, 10_000)).toBe(true);
-  expect(ventanas()[0]).toContain(REPO_B);
-  const llegaron = await hasta(() => V.got.length >= 2, 10_000);
-  // En CI, solo en las PR de Dependabot, esto fallo dos veces seguidas (01-10 y 02-10) y
-  // nunca en local ni en Docker con el mismo arbol. Sin el log del demonio no hay como
-  // saber por que: se imprime aqui en vez de adivinar.
-  if (!llegaron) {
-    console.log(`V.got=${JSON.stringify(V.got)}\nB.got=${B.got.length}\n--- daemon.log\n${existsSync(join(HOME, "daemon.log")) ? readFileSync(join(HOME, "daemon.log"), "utf8") : "(no hay)"}`);
+  // The window opened in B's repo, registered, and got the first turn and what was kept, in order.
+  expect(await hasta(() => windows().length === 1, 10_000)).toBe(true);
+  expect(windows()[0]).toContain(REPO_B);
+  const arrived = await hasta(() => V.got.length >= 2, 10_000);
+  // On CI, only on Dependabot PRs, this failed twice in a row (01-10 and 02-10) and
+  // never locally or in Docker with the same tree. Without the daemon log there is no
+  // way to know why: it gets printed here instead of guessing.
+  if (!arrived) {
+    console.log(`V.got=${JSON.stringify(V.got)}\nB.got=${B.got.length}\n--- daemon.log\n${existsSync(join(HOME, "daemon.log")) ? readFileSync(join(HOME, "daemon.log"), "utf8") : "(none)"}`);
     const { readdirSync, statSync } = await import("node:fs");
     for (const f of readdirSync(join(HOME, "sessions"))) {
       const p = join(HOME, "sessions", f);
-      console.log(`--- sessions/${f} modo ${(statSync(p).mode & 0o777).toString(8)}\n${readFileSync(p, "utf8")}`);
+      console.log(`--- sessions/${f} mode ${(statSync(p).mode & 0o777).toString(8)}\n${readFileSync(p, "utf8")}`);
     }
   }
-  expect(llegaron).toBe(true);
-  expect(V.got[0]).toContain("Asunto: el boton");
-  expect(V.got[0]).toContain("mira tu Button");
-  expect(V.got[0]).toContain(`desde ${REPO_B}`);
-  // Y el encargo de publicar el transcript va con el, no con la sesion interactiva.
-  expect(V.got[0]).toContain("republica el transcript");
+  expect(arrived).toBe(true);
+  expect(V.got[0]).toContain("Subject: the button");
+  expect(V.got[0]).toContain("look at your Button");
+  expect(V.got[0]).toContain(`from ${REPO_B}`);
+  // And the job of publishing the transcript goes with it, not with the interactive session.
+  expect(V.got[0]).toContain("republish the transcript");
   expect(V.got[0]).toContain(`spoochie transcript ${open.id} --url`);
-  expect(B.got.join("\n")).not.toContain("republica el transcript");
+  expect(B.got.join("\n")).not.toContain("republish the transcript");
   expect(V.got[1]).toContain("min-width");
 
-  // Un turno mas va directo por el socket de la ventana.
-  const say = await rpc({ op: "say", sessionId: "VA", id: open.id, text: "es el contenedor, seguro" });
+  // One more turn goes straight through the window's socket.
+  const say = await rpc({ op: "say", sessionId: "VA", id: open.id, text: "it is the container, for sure" });
   expect(say.delivered).toBe(true);
-  expect(await hasta(() => V.got.some(x => x.includes("es el contenedor")))).toBe(true);
+  expect(await hasta(() => V.got.some(x => x.includes("it is the container")))).toBe(true);
 
-  // Otro accept y un take desde el mismo repo: ninguna ventana mas.
+  // Another accept and a take from the same repo: no more windows.
   expect((await rpc({ op: "accept", sessionId: "VB", id: open.id, by: "Edu" })).already).toBe(true);
   const take = await rpc({ op: "take", sessionId: "VB", id: open.id });
   expect(take.already).toBe(true);
   await sleep(800);
-  expect(ventanas().length).toBe(1);
+  expect(windows().length).toBe(1);
 
-  // A la sesion B no le ha llegado nada desde la invitacion.
-  expect(B.got.slice(antesB)).toEqual([]);
+  // Session B has received nothing since the invitation.
+  expect(B.got.slice(beforeB)).toEqual([]);
 
-  // Cerrar la ventana (su hook SessionEnd) cierra el spoochie y avisa al otro lado.
-  const sid = ventanas()[0].split(" ")[0];
-  const fin = await rpc({ op: "session-end", sessionId: sid });
-  expect(fin.closed).toEqual([open.id]);
-  expect(await hasta(() => A.got.some(x => x.includes("se cerro la ventana del Claude aparte")))).toBe(true);
+  // Closing the window (its SessionEnd hook) closes the spoochie and tells the other side.
+  const sid = windows()[0].split(" ")[0];
+  const end = await rpc({ op: "session-end", sessionId: sid });
+  expect(end.closed).toEqual([open.id]);
+  expect(await hasta(() => A.got.some(x => x.includes("the aside Claude's window was closed")))).toBe(true);
 }, plazo(40_000));

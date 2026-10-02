@@ -1,8 +1,8 @@
 #!/bin/sh
-# La CLI de spoochie, venga de donde venga:
-#   1. el binario de ESTA version, verificado y bajado por el hook: ~/.claude/spoochie/bin/spoochie-<version>
-#   2. Bun sobre el codigo fuente de este plugin
-# Los slash commands y los hooks pasan por aqui para no repetir la eleccion.
+# The spoochie CLI, wherever it comes from:
+#   1. the binary for THIS version, downloaded and verified by the hook: ~/.claude/spoochie/bin/spoochie-<version>
+#   2. Bun running this plugin's source code
+# The slash commands and the hooks go through here so the choice is made in one place.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VERSION=$(sed -n 's/.*"version" *: *"\([^"]*\)".*/\1/p' "$ROOT/.claude-plugin/plugin.json" | head -1)
 BIN="${SPOOCHIE_HOME:-$HOME/.claude/spoochie}/bin/spoochie-$VERSION"

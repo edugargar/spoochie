@@ -39,11 +39,11 @@ _clear() {
 banner() {
   _clear
   printf '\n%s%s  %s%s\n' "$BOLD" "$BLUE" "$1" "$RESET"
-  printf '%s  %s pasos%s\n\n' "$DIM" "$TOTAL_STAGES" "$RESET"
-  printf '%s  El navegador lo llevas tu. Esto solo te dice que tocar y recoge lo que\n' "$DIM"
-  printf '  copies de vuelta. Puedes cortar con Ctrl-C y volver a lanzarlo: se acuerda\n'
-  printf '  de lo que ya guardaste.%s\n' "$RESET"
-  pause "¿Empezamos?"
+  printf '%s  %s steps%s\n\n' "$DIM" "$TOTAL_STAGES" "$RESET"
+  printf '%s  You drive the browser. This only tells you what to click and collects what\n' "$DIM"
+  printf '  you copy back. You can stop with Ctrl-C and run it again: it remembers\n'
+  printf '  what you already saved.%s\n' "$RESET"
+  pause "Ready to start?"
 }
 
 # stage "Name" — clear the screen, then announce a stage and show progress.
@@ -51,7 +51,7 @@ banner() {
 stage() {
   _clear
   _STAGE_INDEX=$((_STAGE_INDEX + 1))
-  printf '\n%s%s▸ Paso %s/%s · %s%s\n' \
+  printf '\n%s%s▸ Step %s/%s · %s%s\n' \
     "$BOLD" "$BLUE" "$_STAGE_INDEX" "$TOTAL_STAGES" "$1" "$RESET"
 }
 
@@ -76,7 +76,7 @@ open_url() {
 
 # pause "msg" — wait for the human to confirm they've done the manual part.
 pause() {
-  printf '  %s%s%s ' "$DIM" "${1:-Pulsa Enter para seguir}" "$RESET"
+  printf '  %s%s%s ' "$DIM" "${1:-Press Enter to continue}" "$RESET"
   read -r _ || true
 }
 
@@ -184,78 +184,78 @@ finish() {
 # ──────────────────────────────────────────────────────────────────────────
 
 # ──────────────────────────────────────────────────────────────────────────
-# Rotar el app-level token (xapp-) de la app de Slack.
+# Rotate the Slack app's app-level token (xapp-).
 #
-# Ojo con quien lo usa: spoochie NO usa el appToken, solo el de bot. Lo usa la
-# herramienta que tenga Socket Mode con esa app, si la hay: rotarlo la deja sin
-# recibir mensajes hasta que se guarde el nuevo. El fichero va en SPOOCHIE_TOKEN_FILE.
+# Mind who uses it: spoochie does NOT use the appToken, only the bot one. Whatever tool
+# has Socket Mode with that app uses it, if there is one: rotating it leaves that tool
+# deaf until the new one is saved. The file goes in SPOOCHIE_TOKEN_FILE.
 
 TOTAL_STAGES=4
 ENV_FILE="$(mktemp)"
-CONFIG="${SPOOCHIE_TOKEN_FILE:?exporta SPOOCHIE_TOKEN_FILE con la ruta del JSON de tokens de tu app}"
+CONFIG="${SPOOCHIE_TOKEN_FILE:?export SPOOCHIE_TOKEN_FILE with the path to the token JSON of your app}"
 
-banner "Rotar el app-level token de Slack"
+banner "Rotate the Slack app-level token"
 
 # ── 1 ─────────────────────────────────────────────────────────────────────
-stage "Que se rompe y que no"
-say "El token que vas a rotar es el xapp-, el de nivel de aplicacion."
-step "spoochie NO lo usa: le basta el de bot (xoxb)."
-step "Lo usa quien tenga Socket Mode con esta app. Se queda sordo hasta que guardes el nuevo."
+stage "What breaks and what doesn't"
+say "The token you are about to rotate is the xapp-, the app-level one."
+step "spoochie does NOT use it: the bot one (xoxb) is enough."
+step "Whoever has Socket Mode with this app uses it. It goes deaf until you save the new one."
 say ""
 if [[ -f "$CONFIG" ]]; then
-  step "fichero de tokens: $CONFIG"
-  modo=$(stat -f '%Lp' "$CONFIG" 2>/dev/null || stat -c '%a' "$CONFIG" 2>/dev/null || echo "?")
-  if [[ "$modo" != "600" ]]; then
-    warn "ese fichero esta en $modo y lleva los tres tokens dentro. Lo dejamos en 600 al final."
+  step "token file: $CONFIG"
+  perms=$(stat -f '%Lp' "$CONFIG" 2>/dev/null || stat -c '%a' "$CONFIG" 2>/dev/null || echo "?")
+  if [[ "$perms" != "600" ]]; then
+    warn "that file is at $perms and holds all three tokens. We leave it at 600 at the end."
   fi
 else
-  warn "no encuentro $CONFIG. Pasa la ruta en SPOOCHIE_TOKEN_FILE y vuelve."
+  warn "can't find $CONFIG. Pass the path in SPOOCHIE_TOKEN_FILE and come back."
   exit 1
 fi
-confirm "Seguimos?" || exit 0
+confirm "Carry on?" || exit 0
 
 # ── 2 ─────────────────────────────────────────────────────────────────────
-stage "Revocar el viejo y generar uno nuevo"
-say "En la pagina de tu app:"
+stage "Revoke the old one and generate a new one"
+say "On your app's page:"
 step "Basic Information → App-Level Tokens"
-step "Abre el token que hay, dale a Revoke Token y confirma"
-step "Vuelve y pulsa Generate Token and Scopes"
-step "Ponle un nombre, anade el scope connections:write y genera"
-step "Copia el xapp- nuevo: solo se ve una vez"
+step "Open the existing token, click Revoke Token and confirm"
+step "Go back and click Generate Token and Scopes"
+step "Give it a name, add the connections:write scope and generate"
+step "Copy the new xapp-: it is only shown once"
 open_url "https://api.slack.com/apps"
 say ""
-ask_secret APP_TOKEN "Pega el nuevo app-level token (xapp-...):"
+ask_secret APP_TOKEN "Paste the new app-level token (xapp-...):"
 if [[ "$APP_TOKEN" != xapp-* ]]; then
-  warn "eso no parece un xapp-. Nada que guardar."
+  warn "that doesn't look like an xapp-. Nothing to save."
   exit 1
 fi
 pause
 
 # ── 3 ─────────────────────────────────────────────────────────────────────
-stage "Guardarlo donde toca"
-COPIA="$CONFIG.bak.$(date +%Y%m%d%H%M%S)"
-cp "$CONFIG" "$COPIA"
-note "copia de seguridad en $COPIA"
+stage "Save it where it belongs"
+BACKUP="$CONFIG.bak.$(date +%Y%m%d%H%M%S)"
+cp "$CONFIG" "$BACKUP"
+note "backup in $BACKUP"
 python3 - "$CONFIG" "$APP_TOKEN" <<'PY'
 import json, sys
 p = sys.argv[1]
 d = json.load(open(p))
 d["appToken"] = sys.argv[2]
 json.dump(d, open(p, "w"), indent=2)
-print("  appToken actualizado")
+print("  appToken updated")
 PY
 chmod 600 "$CONFIG"
-note "y el fichero queda en 600: llevaba los tres tokens legibles por cualquier usuario"
+note "and the file is now at 600: it had all three tokens readable by any user"
 pause
 
 # ── 4 ─────────────────────────────────────────────────────────────────────
-stage "Comprobar los dos lados"
-say "spoochie no depende del appToken, pero conviene ver que sigue entero:"
+stage "Check both sides"
+say "spoochie doesn't depend on the appToken, but it is worth checking it is still whole:"
 bun run "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/src/cli.ts" doctor || true
 say ""
-say "Y la herramienta que si lo usa:"
-step "Reinicialo para que coja el token nuevo"
-step "Mandale un DM al bot y comprueba que responde"
+say "And the tool that does use it:"
+step "Restart it so it picks up the new token"
+step "DM the bot and check that it answers"
 say ""
-warn "Si guardaste el xapp- viejo en algun sitio (notas, otro portatil), borralo."
+warn "If you saved the old xapp- anywhere (notes, another laptop), delete it."
 finish

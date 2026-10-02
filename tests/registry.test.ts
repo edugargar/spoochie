@@ -6,28 +6,28 @@ import { register, liveSessions, unregister } from "../src/registry.ts";
 
 const sockOf = (n: string) => { const p = join(mkdtempSync(join(tmpdir(), "sp-")), n); writeFileSync(p, ""); return p; };
 
-test("barre las sesiones cuyo proceso ya no vive", () => {
-  register({ sessionId: "viva", name: "viva", cwd: "/a", socket: sockOf("v.sock"), token: "t", pid: process.pid, startedAt: 1 });
-  register({ sessionId: "muerta", name: "muerta", cwd: "/b", socket: sockOf("m.sock"), token: "t", pid: 999_999, startedAt: 2 });
+test("sweeps the sessions whose process is no longer alive", () => {
+  register({ sessionId: "alive", name: "alive", cwd: "/a", socket: sockOf("v.sock"), token: "t", pid: process.pid, startedAt: 1 });
+  register({ sessionId: "dead", name: "dead", cwd: "/b", socket: sockOf("m.sock"), token: "t", pid: 999_999, startedAt: 2 });
   const ids = liveSessions().map(s => s.sessionId);
-  expect(ids).toContain("viva");
-  expect(ids).not.toContain("muerta");
-  unregister("viva");
+  expect(ids).toContain("alive");
+  expect(ids).not.toContain("dead");
+  unregister("alive");
 });
 
-test("una sesion sin socket en disco tampoco cuenta", () => {
-  register({ sessionId: "sin-socket", name: "x", cwd: "/c", socket: "/tmp/no-existe-x.sock", token: "t", pid: process.pid, startedAt: 3 });
-  expect(liveSessions().map(s => s.sessionId)).not.toContain("sin-socket");
+test("a session without a socket on disk does not count either", () => {
+  register({ sessionId: "no-socket", name: "x", cwd: "/c", socket: "/tmp/does-not-exist-x.sock", token: "t", pid: process.pid, startedAt: 3 });
+  expect(liveSessions().map(s => s.sessionId)).not.toContain("no-socket");
 });
 
-test("un id con barras no revienta el alta de la sesion", () => {
-  // Pasa de verdad: si el hook SessionStart no trae session_id, se usa la ruta del
-  // socket, y con barras writeFileSync se iba en ENOENT sin que nadie se enterara.
+test("an id with slashes does not break registering the session", () => {
+  // It really happens: if the SessionStart hook brings no session_id, the socket path is
+  // used, and with slashes writeFileSync died with ENOENT without anyone noticing.
   const socket = sockOf("4242.sock");
-  register({ sessionId: socket, name: "raro", cwd: "/tmp", socket, token: "t", pid: process.pid, startedAt: Date.now() });
-  const encontrada = liveSessions().find(s => s.sessionId === socket);
-  expect(encontrada).toBeDefined();
-  expect(encontrada!.socket).toBe(socket);
+  register({ sessionId: socket, name: "odd", cwd: "/tmp", socket, token: "t", pid: process.pid, startedAt: Date.now() });
+  const found = liveSessions().find(s => s.sessionId === socket);
+  expect(found).toBeDefined();
+  expect(found!.socket).toBe(socket);
   unregister(socket);
   expect(liveSessions().find(s => s.sessionId === socket)).toBeUndefined();
 });

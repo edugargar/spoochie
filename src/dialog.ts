@@ -1,30 +1,33 @@
 /**
- * El aviso de un spoochie que llega, fuera de cualquier terminal.
+ * The notice for an incoming spoochie, outside any terminal.
  *
- * La invitacion entraba en la sesion de Claude donde la persona estaba trabajando, y
- * eso ensuciaba justo la terminal que no habia que tocar: su Claude se ponia a hablar
- * del spoochie en mitad de otra cosa. Ahora, en macOS, el aviso es una ventana del
- * sistema: quien lo abre, el asunto, lo que ha dicho, y tres botones. Aceptar abre la
- * ventana del Claude aparte; Rechazar cierra el tunel; Ver en Slack abre el hilo, donde
- * tambien se puede aceptar escribiendo. Ninguna sesion interactiva se entera.
+ * The invitation used to land in the Claude session where the person was working, and
+ * that dirtied exactly the terminal nobody should touch: their Claude started talking
+ * about the spoochie in the middle of something else. Now, on macOS, the notice is a
+ * system window: who opens it, the subject, what they said, and three buttons. Accept
+ * opens the aside Claude's window; Decline closes the tunnel; Open in Slack opens the
+ * thread, where you can also accept by typing. No interactive session finds out.
  *
- * Como se pinta esa ventana esta en `ventana.ts`. Aqui esta lo de fuera: elegir pintor,
- * leer el boton, y el plan B.
+ * How that window gets painted lives in `window.ts`. This file holds the outside part:
+ * picking the painter, reading the button, and the fallback.
  *
- * Sin escritorio (Linux, tests) se vuelve a la entrega en la terminal. SPOOCHIE_AVISO
- * lo fija: "terminal", "dialogo", o un programa que recibe el texto y responde con el
- * nombre del boton (para los tests).
+ * Without a desktop (Linux, tests) delivery goes back to the terminal. SPOOCHIE_NOTICE
+ * sets it: "terminal", "dialog", or a program that gets the text and answers with the
+ * button name (for the tests).
  */
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import * as T from "./threads.ts";
 import * as V from "./window.ts";
-// El logo, como icono del aviso. Con `type: "file"` Bun lo empaqueta dentro del binario
-// compilado y aqui llega una ruta valida en los dos casos, fuente o binario.
+// The logo, as the notice icon. With `type: "file"` Bun bundles it into the compiled
+// binary and a valid path arrives here in both cases, source or binary.
 import poochie from "../docs/spoochie.png" with { type: "file" };
 import { envVar } from "./paths.ts";
 
+// The values stay in Spanish: the daemon writes them to its log and scripts/real-test.ts
+// reads them back from there.
 export type Answer = "acepto" | "rechazo" | "slack" | null;
+// "dialogo" stays too: src/daemon.ts compares against it.
 export type Mode = "dialogo" | "terminal";
 
 export function noticeMode(): Mode {
@@ -35,11 +38,11 @@ export function noticeMode(): Mode {
 }
 
 /**
- * El aviso en texto plano.
+ * The notice as plain text.
  *
- * La ventana nativa coloca cada pieza por su cuenta; esto es la version de una sola
- * columna, que es lo que reciben el plan B (`display dialog`) y el programa de los
- * tests. Las dos salen de `V.piezas`, asi que no pueden decir cosas distintas.
+ * The native window places each piece on its own; this is the single-column version,
+ * which is what the fallback (`display dialog`) and the test program get. Both come
+ * from `V.parts`, so they cannot say different things.
  */
 export function dialogParts(t: T.Thread): { titular: string; cuerpo: string } {
   const p = V.parts(t);
@@ -50,7 +53,7 @@ export function dialogParts(t: T.Thread): { titular: string; cuerpo: string } {
   };
 }
 
-/** Todo seguido, para la caja que no separa titular de cuerpo (y para los tests). */
+/** All in one piece, for the box that does not separate headline from body (and for the tests). */
 export function dialogText(t: T.Thread): string {
   const { titular, cuerpo } = dialogParts(t);
   return `${titular}\n\n${cuerpo}`;
@@ -60,113 +63,120 @@ const esc = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 
 export const BUTTONS = V.BUTTONS;
 
-export function interpret(salida: string, codigo: number | null): Answer {
-  if (/gave up:true/.test(salida)) return null;
-  if (salida.includes(`button returned:${BUTTONS.aceptar}`) || /^\s*(Aceptar|Que pase)\s*$/m.test(salida)) return "acepto";
-  if (salida.includes(`button returned:${BUTTONS.slack}`) || /^\s*Ver en Slack\s*$/m.test(salida)) return "slack";
-  if (salida.includes(`button returned:${BUTTONS.rechazar}`) || /^\s*(Rechazar|Ahora no)\s*$/m.test(salida)) return "rechazo";
-  // El boton de cancelar hace que osascript termine con error "User canceled".
-  if (codigo !== 0 && /canceled|cancelled|-128/i.test(salida)) return "rechazo";
+/** What a custom notice program may print on a line of its own. The Spanish words are
+ *  the labels up to 0.9.10, still read so an older program keeps working. */
+const ACCEPT_WORDS = /^\s*(Let it in|Accept|Aceptar|Que pase)\s*$/m;
+const SLACK_WORDS = /^\s*(Open in Slack|Ver en Slack)\s*$/m;
+const DECLINE_WORDS = /^\s*(Not now|Decline|Rechazar|Ahora no)\s*$/m;
+
+export function interpret(output: string, code: number | null): Answer {
+  if (/gave up:true/.test(output)) return null;
+  if (output.includes(`button returned:${BUTTONS.aceptar}`) || ACCEPT_WORDS.test(output)) return "acepto";
+  if (output.includes(`button returned:${BUTTONS.slack}`) || SLACK_WORDS.test(output)) return "slack";
+  if (output.includes(`button returned:${BUTTONS.rechazar}`) || DECLINE_WORDS.test(output)) return "rechazo";
+  // The cancel button makes osascript exit with the error "User canceled".
+  if (code !== 0 && /canceled|cancelled|-128/i.test(output)) return "rechazo";
   return null;
 }
 
 /**
- * El plan B: la caja de AppleScript de toda la vida.
+ * The fallback: the plain old AppleScript box.
  *
- * Se usa solo si el programa de la ventana no arranca. No es hipotetico: `NSWindow`,
- * `NSVisualEffectView` y `ObjC.registerSubclass` los pone el sistema, y una version de
- * macOS que cambie cualquiera de los tres deja a la persona sin aviso ninguno. Un aviso
- * feo es infinitamente mejor que un spoochie que nadie ve llegar.
+ * Used only if the window program does not start. That is not hypothetical: `NSWindow`,
+ * `NSVisualEffectView` and `ObjC.registerSubclass` come from the system, and a macOS
+ * version that changes any of the three leaves the person with no notice at all. An
+ * ugly notice is far better than a spoochie nobody sees arrive.
  *
- * `display alert`, que separa titular de cuerpo, se probo y se rechazo: no admite icono
- * propio (sale la carpeta naranja generica de osascript), la caja es mas estrecha y
- * parte las frases, y los tres botones se apilan en vertical, que hace que parezca un
- * error del sistema en vez de alguien llamando.
+ * `display alert`, which separates headline from body, was tried and rejected: it
+ * takes no custom icon (you get osascript's generic orange folder), the box is narrower
+ * and breaks the sentences, and the three buttons stack vertically, which makes it look
+ * like a system error instead of someone calling.
  */
-export function osascriptScript(t: T.Thread, esperaSeg = 3600): string {
-  const icono = existsSync(poochie) ? ` with icon POSIX file "${esc(poochie)}"` : "";
-  return `display dialog "${esc(dialogText(t))}" with title "spoochie"${icono}`
+export function osascriptScript(t: T.Thread, waitSec = 3600): string {
+  const icon = existsSync(poochie) ? ` with icon POSIX file "${esc(poochie)}"` : "";
+  return `display dialog "${esc(dialogText(t))}" with title "spoochie"${icon}`
     + ` buttons {"${BUTTONS.rechazar}", "${BUTTONS.slack}", "${BUTTONS.aceptar}"}`
-    + ` default button "${BUTTONS.aceptar}" cancel button "${BUTTONS.rechazar}" giving up after ${esperaSeg}`;
+    + ` default button "${BUTTONS.aceptar}" cancel button "${BUTTONS.rechazar}" giving up after ${waitSec}`;
 }
 
-/** El programa JXA de la ventana, con el icono si existe. */
+/** The window's JXA program, with the icon if it exists. */
 export function windowScript(t: T.Thread): string {
   return V.windowScript(t, existsSync(poochie) ? poochie : null);
 }
 
-type Aviso = { cerrar: () => void; respuesta: Promise<Answer> };
+type Notice = { cerrar: () => void; respuesta: Promise<Answer> };
 
-function correr(cmd: string, args: string[]): { child: ChildProcess; fin: Promise<{ salida: string; codigo: number | null }> } {
+function run(cmd: string, args: string[]): { child: ChildProcess; done: Promise<{ output: string; code: number | null }> } {
   const child = spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
-  let salida = "";
-  child.stdout?.on("data", d => { salida += d.toString(); });
-  child.stderr?.on("data", d => { salida += d.toString(); });
-  const fin = new Promise<{ salida: string; codigo: number | null }>(resolve => {
-    child.on("error", () => resolve({ salida, codigo: -1 }));
-    child.on("close", codigo => resolve({ salida, codigo }));
+  let output = "";
+  child.stdout?.on("data", d => { output += d.toString(); });
+  child.stderr?.on("data", d => { output += d.toString(); });
+  const done = new Promise<{ output: string; code: number | null }>(resolve => {
+    child.on("error", () => resolve({ output, code: -1 }));
+    child.on("close", code => resolve({ output, code }));
   });
-  return { child, fin };
+  return { child, done };
 }
 
 /**
- * Muestra el aviso y espera al boton. Hasta una hora; si nadie pulsa, null.
+ * Shows the notice and waits for the button. Up to an hour; if nobody presses, null.
  *
- * La espera la lleva este lado y no `giving up after`, porque la ventana nativa no tiene
- * esa clausula y con un temporizador aqui las dos rutas caducan igual. Matar al hijo da
- * el mismo null que el "gave up:true" de AppleScript.
+ * This side keeps the clock instead of `giving up after`, because the native window has
+ * no such clause, and with a timer here both paths expire the same way. Killing the
+ * child gives the same null as AppleScript's "gave up:true".
  */
-export function ask(t: T.Thread, esperaSeg = 3600): Aviso {
+export function ask(t: T.Thread, waitSec = 3600): Notice {
   const custom = envVar("SPOOCHIE_NOTICE", "SPOOCHIE_AVISO");
-  let vivo: ChildProcess | null = null;
-  let matado = false;
-  const cerrar = () => { matado = true; try { vivo?.kill(); } catch {} };
+  let live: ChildProcess | null = null;
+  let killed = false;
+  const cerrar = () => { killed = true; try { live?.kill(); } catch {} };
 
   const respuesta = (async (): Promise<Answer> => {
     if (custom && custom !== "dialog") {
-      const { child, fin } = correr(custom, [dialogText(t)]);
-      vivo = child;
-      const r = await fin;
-      return interpret(r.salida, r.codigo);
+      const { child, done } = run(custom, [dialogText(t)]);
+      live = child;
+      const r = await done;
+      return interpret(r.output, r.code);
     }
-    const ventana = correr("osascript", ["-l", "JavaScript", "-e", windowScript(t)]);
-    vivo = ventana.child;
-    const r = await ventana.fin;
-    const leida = interpret(r.salida, r.codigo);
-    if (leida !== null || matado || r.codigo === 0) return leida;
-    // La ventana no llego a pintarse. Se dice en el log del demonio por stderr y se
-    // vuelve a preguntar con la caja de siempre.
-    console.error("spoochie: la ventana del aviso no arranco, voy con el dialogo simple:", r.salida.trim().split("\n")[0] ?? "");
-    const caja = correr("osascript", ["-e", osascriptScript(t, esperaSeg)]);
-    vivo = caja.child;
-    const r2 = await caja.fin;
-    return interpret(r2.salida, r2.codigo);
+    const win = run("osascript", ["-l", "JavaScript", "-e", windowScript(t)]);
+    live = win.child;
+    const r = await win.done;
+    const read = interpret(r.output, r.code);
+    if (read !== null || killed || r.code === 0) return read;
+    // The window never got painted. Say so in the daemon log through stderr and ask
+    // again with the usual box.
+    console.error("spoochie: the notice window did not start, falling back to the plain dialog:", r.output.trim().split("\n")[0] ?? "");
+    const box = run("osascript", ["-e", osascriptScript(t, waitSec)]);
+    live = box.child;
+    const r2 = await box.done;
+    return interpret(r2.output, r2.code);
   })();
 
-  const reloj = setTimeout(cerrar, esperaSeg * 1000);
-  if (typeof (reloj as any).unref === "function") (reloj as any).unref();
-  void respuesta.then(() => clearTimeout(reloj));
+  const timer = setTimeout(cerrar, waitSec * 1000);
+  if (typeof (timer as any).unref === "function") (timer as any).unref();
+  void respuesta.then(() => clearTimeout(timer));
   return { cerrar, respuesta };
 }
 
 /**
- * Una notificacion del sistema, sin botones. Para lo que la persona tiene que saber
- * pero no tiene que contestar ya.
+ * A system notification, no buttons. For what the person has to know but does not
+ * have to answer right now.
  *
- * El texto va como argumento de `on run argv`, nunca pegado dentro del guion: parte de
- * lo que se ensena lo dice un sobre de fuera, y con comillas en un nombre el guion
- * seria suyo. Sin escritorio, o con SPOOCHIE_AVISO fijado (los tests), no hace nada.
+ * The text goes in as an `on run argv` argument, never pasted inside the script: part
+ * of what is shown comes from an outside envelope, and with quotes in a name the script
+ * would be theirs. Without a desktop, or with SPOOCHIE_NOTICE set (the tests), it does
+ * nothing.
  */
-export function notify(titulo: string, texto: string): boolean {
+export function notify(title: string, text: string): boolean {
   if (process.platform !== "darwin" || envVar("SPOOCHIE_NOTICE", "SPOOCHIE_AVISO")) return false;
-  const guion = "on run argv\ndisplay notification (item 2 of argv) with title (item 1 of argv)\nend run";
-  const p = spawn("osascript", ["-e", guion, titulo, texto], { detached: true, stdio: "ignore" });
+  const script = "on run argv\ndisplay notification (item 2 of argv) with title (item 1 of argv)\nend run";
+  const p = spawn("osascript", ["-e", script, title, text], { detached: true, stdio: "ignore" });
   p.on("error", () => {});
   p.unref();
   return true;
 }
 
-/** Abre el hilo del spoochie en la app de Slack. */
+/** Opens the spoochie's thread in the Slack app. */
 export function openInSlack(teamId: string | null, channel: string, ts: string) {
   const url = teamId
     ? `slack://channel?team=${teamId}&id=${channel}&message=${ts.replace(".", "")}`

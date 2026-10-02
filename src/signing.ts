@@ -1,25 +1,25 @@
 /**
- * Firma de sobres. Sin esto el `from` de un sobre es lo que diga quien lo postea, y
- * todo el mundo postea con el mismo token de bot: cualquiera del equipo podia firmar
- * como cualquiera. Ahora cada persona tiene una clave ed25519 que nace en el alta;
- * la publica viaja en la invitacion y en cada sobre, y se fija la primera vez que se
- * ve (como SSH). A partir de ahi, un sobre de ese id con otra clave se descarta.
+ * Envelope signatures. Without this, an envelope's `from` is whatever the poster says,
+ * and everyone posts with the same bot token: anyone on the team could sign as anyone.
+ * Now each person has an ed25519 key born at join; the public half travels in the invite
+ * and in every envelope, and is pinned the first time it is seen (like SSH). From then on,
+ * an envelope from that id with a different key is dropped.
  */
 import { createHash, generateKeyPairSync, sign, verify, createPrivateKey, createPublicKey } from "node:crypto";
 import * as Cfg from "./config.ts";
 
 export type Keys = { pub: string; priv: string };
-/** El resultado de mirar la firma de un sobre.
- *   ok         firmada con la v2 y con la clave que ya tenia fijada para ese id
- *   nueva      primera vez que veo una clave para ese id: se fija, como SSH
- *   vieja      firma valida pero de la v1 (anterior a 0.9.9): no ata destinatario ni hora
- *   caducada   firma buena, pero el sobre es de hace mas de un dia o del futuro
- *   ajena      firma buena, pero el sobre iba dirigido a otra persona
- *   desconocida  la firma cuadra, pero ese id no esta en tu agenda: no lo invitaste
- *                nadie ni te invito, asi que su clave no se fija
- *   degradada  no trae firma, pero de ese id ya tenia una clave fijada
- *   sin-firma  no trae firma, y de ese id no se nada todavia
- *   mala       la firma no cuadra, o la clave no es la que tenia fijada */
+/** The result of checking an envelope's signature.
+ *   ok           signed with v2 and with the key already pinned for that id
+ *   nueva        first time I see a key for that id: it gets pinned, like SSH
+ *   vieja        valid signature but v1 (before 0.9.9): binds neither recipient nor time
+ *   caducada     good signature, but the envelope is more than a day old or from the future
+ *   ajena        good signature, but the envelope was addressed to someone else
+ *   desconocida  the signature checks out, but that id is not in your contacts: you did
+ *                not invite them and they did not invite you, so their key is not pinned
+ *   degradada    no signature, but I already had a key pinned for that id
+ *   sin-firma    no signature, and I know nothing about that id yet
+ *   mala         the signature does not check out, or the key is not the pinned one */
 export type Verdict = "ok" | "nueva" | "vieja" | "caducada" | "ajena" | "degradada" | "desconocida" | "sin-firma" | "mala";
 
 export function newKeys(): Keys {
@@ -30,8 +30,8 @@ export function newKeys(): Keys {
   };
 }
 
-/** Slack toca el texto por el camino (escapa &, <, >, enlaza URLs). Se firma la forma
- *  que sobrevive al viaje, que es la misma que reconstruye `bodyFromBlocks`. */
+/** Slack touches the text in transit (escapes &, <, >, links URLs). What gets signed is
+ *  the form that survives the trip, which is the same one `bodyFromBlocks` rebuilds. */
 export function canon(text: string): string {
   return (text ?? "")
     .replace(/\r\n/g, "\n")
@@ -42,54 +42,54 @@ export function canon(text: string): string {
 }
 
 /**
- * Lo que cubre una firma.
+ * What a signature covers.
  *
- * La v1 firmaba id, kind, from y el hash del texto, y nada mas. Con eso, un sobre
- * legitimo seguia valiendo si alguien lo reenviaba a otra persona (no iba atado a un
- * destinatario), si lo volvia a postear meses despues (no llevaba hora), o si le
- * cambiaba el asunto, el hilo al que apunta o la version que dice traer (esos campos
- * viajaban fuera de la firma). La v2 ata todo eso.
+ * v1 signed id, kind, from and the text hash, and nothing else. With that, a legitimate
+ * envelope stayed valid if someone forwarded it to another person (it was not bound to a
+ * recipient), reposted it months later (it carried no time), or changed its subject, the
+ * thread it points to or the version it claims (those fields travelled outside the
+ * signature). v2 binds all of that.
  *
- * `to` y `thread` pueden ir vacios cuando no aplican, por ejemplo en un "hola", que se
- * deja en el DM antes de que exista ningun hilo. Lo que nunca va vacio es `ts`.
+ * `to` and `thread` may be empty when they do not apply, for example in a "hola", which
+ * is left in the DM before any thread exists. `ts` is never empty.
  */
 export type EnvelopeData = {
   id: string;
   kind: string;
   from: string;
-  /** Para quien va, por su id de Slack. Vacio en un hola. */
+  /** Who it is for, by Slack id. Empty in a hello. */
   to?: string;
-  /** Segundos desde epoch, puestos por quien firma. */
+  /** Seconds since epoch, set by the signer. */
   ts?: number;
-  /** Version de spoochie de quien firma: viajaba fuera de la firma y se podia cambiar. */
+  /** The signer's spoochie version: it travelled outside the signature and could be changed. */
   app?: string;
   subject?: string;
   thread?: { channel: string; ts: string };
-  /** Si el turno es texto, parche o rama. Viajaba fuera de la firma, y decide si el
-   *  vigilante mira el mensaje: `kind !== "text"` se lo salta entero. O sea que mover
-   *  una palabra que nadie firmaba apagaba el vigilante para ese mensaje. */
+  /** Whether the turn is text, patch or branch. It travelled outside the signature, and it
+   *  decides whether the guardian reads the message: `kind !== "text"` skips it entirely.
+   *  So changing one word nobody signed switched the guardian off for that message. */
   kindOfMsg?: string;
 };
 
-/** Cuanto vale una firma. Un sobre de hace mas de un dia no es un mensaje que llega
- *  tarde: es uno que alguien ha guardado. El limite es generoso a proposito, porque el
- *  reloj de las dos maquinas no tiene por que coincidir al minuto. */
+/** How long a signature is good for. An envelope more than a day old is not a message
+ *  that arrived late: it is one someone kept. The limit is generous on purpose, because
+ *  the clocks on the two machines need not agree to the minute. */
 export const WINDOW_MS = 24 * 60 * 60 * 1000;
 
 const hash = (text: string) => createHash("sha256").update(canon(text)).digest("hex");
 
-/** La v1, que se sigue comprobando para sobres de versiones anteriores. */
-const datosV1 = (id: string, kind: string, from: string, text: string) =>
+/** v1, still checked for envelopes from earlier versions. */
+const signedBytesV1 = (id: string, kind: string, from: string, text: string) =>
   Buffer.from(`${id}\n${kind}\n${from}\n${hash(text)}`);
 
-/** La v2: un array en JSON, con el orden fijo y todos los campos presentes aunque esten
- *  vacios, para que dos sobres distintos no puedan producir los mismos bytes.
+/** v2: a JSON array, fixed order and every field present even when empty, so two
+ *  different envelopes cannot produce the same bytes.
  *
- *  `kindOfMsg` entra aqui porque decide si el vigilante mira el mensaje: el vigilante se
- *  salta todo lo que no sea "text", asi que esa palabra, que no firmaba nadie, valia por
- *  el vigilante entero. Se puede anadir sin romper a nadie porque la v2 no ha salido en
- *  ninguna version publicada: la ultima es la 0.9.8 y firma con la v1. */
-const datosV2 = (d: EnvelopeData, text: string) =>
+ *  `kindOfMsg` is in here because it decides whether the guardian reads the message: the
+ *  guardian skips anything that is not "text", so that word, which nobody signed, was
+ *  worth the whole guardian. It can be added without breaking anyone because v2 has not
+ *  shipped in any published version: the latest is 0.9.8 and it signs with v1. */
+const signedBytesV2 = (d: EnvelopeData, text: string) =>
   Buffer.from(JSON.stringify([
     2, d.id, d.kind, d.from, d.to ?? "", d.ts ?? 0, d.app ?? "", d.subject ?? "",
     d.thread ? `${d.thread.channel}/${d.thread.ts}` : "",
@@ -99,86 +99,86 @@ const datosV2 = (d: EnvelopeData, text: string) =>
 
 export function makeSignature(priv: string, d: EnvelopeData, text: string): string {
   const key = createPrivateKey({ key: Buffer.from(priv, "base64"), type: "pkcs8", format: "der" });
-  return sign(null, datosV2(d, text), key).toString("base64");
+  return sign(null, signedBytesV2(d, text), key).toString("base64");
 }
 
 export function checkSignature(pub: string, d: EnvelopeData, text: string, sig: string): boolean {
   try {
     const key = createPublicKey({ key: Buffer.from(pub, "base64"), type: "spki", format: "der" });
-    return verify(null, datosV2(d, text), key, Buffer.from(sig, "base64"));
+    return verify(null, signedBytesV2(d, text), key, Buffer.from(sig, "base64"));
   } catch { return false; }
 }
 
-/** La firma de antes de 0.9.9. Se exporta para poder probar que un sobre de la version
- *  anterior sigue verificando: nadie deberia firmar asi ya. */
+/** The signature from before 0.9.9. Exported so a test can prove that an envelope from
+ *  the previous version still verifies: nobody should sign this way anymore. */
 export function makeSignatureV1(priv: string, id: string, kind: string, from: string, text: string): string {
   const key = createPrivateKey({ key: Buffer.from(priv, "base64"), type: "pkcs8", format: "der" });
-  return sign(null, datosV1(id, kind, from, text), key).toString("base64");
+  return sign(null, signedBytesV1(id, kind, from, text), key).toString("base64");
 }
 
-/** Igual, contra la firma de antes de 0.9.9. Solo para sobres sin `sv`. */
+/** Same, against the signature from before 0.9.9. Only for envelopes with no `sv`. */
 export function checkSignatureV1(pub: string, id: string, kind: string, from: string, text: string, sig: string): boolean {
   try {
     const key = createPublicKey({ key: Buffer.from(pub, "base64"), type: "spki", format: "der" });
-    return verify(null, datosV1(id, kind, from, text), key, Buffer.from(sig, "base64"));
+    return verify(null, signedBytesV1(id, kind, from, text), key, Buffer.from(sig, "base64"));
   } catch { return false; }
 }
 
-/** Mis claves, creandolas la primera vez. */
+/** My keys, created the first time. */
 export function myKeys(c: Cfg.Config): Keys {
   if (!c.keys) { c.keys = newKeys(); Cfg.save(c); }
   return c.keys;
 }
 
-/** Que hacer con un sobre que llega. Fija la clave la primera vez que se ve un id
- *  ("nueva"), y a partir de ahi exige la misma. Un sobre sin firma se entrega pero se
- *  dice: es de una version anterior o de alguien sin claves, y eso el humano lo tiene
- *  que ver. Uno con firma mala no se entrega. */
+/** What to do with an incoming envelope. Pins the key the first time an id is seen
+ *  ("nueva"), and from then on demands the same one. An unsigned envelope is delivered
+ *  but labelled: it comes from an earlier version or from someone without keys, and the
+ *  human has to see that. One with a bad signature is not delivered. */
 export type EnvelopeToVerify = EnvelopeData & {
   fromName?: string;
   pk?: string;
   sig?: string;
-  /** Version de la firma. 2 desde 0.9.9; ausente en sobres anteriores. */
+  /** Signature version. 2 since 0.9.9; absent in earlier envelopes. */
   sv?: number;
 };
 
-export function verifyEnvelope(env: EnvelopeToVerify, text: string, ahora = Date.now()): Verdict {
+export function verifyEnvelope(env: EnvelopeToVerify, text: string, now = Date.now()): Verdict {
   if (!env.sig || !env.pk) {
-    // Si ya tengo fijada una clave para ese id, un sobre suyo sin firma no es una
-    // version vieja: es alguien quitando la firma para colarse por la puerta que
-    // dejamos abierta a las versiones viejas. Tolerar eso convierte la firma en un
-    // adorno, porque atacar es no firmar.
+    // If I already have a key pinned for that id, an unsigned envelope from them is not
+    // an old version: it is someone stripping the signature to slip through the door we
+    // left open for old versions. Tolerating that turns the signature into decoration,
+    // because attacking would just mean not signing.
     return Cfg.contactById(Cfg.load(), env.from)?.pk ? "degradada" : "sin-firma";
   }
 
   if (env.sv === 2) {
     if (!checkSignature(env.pk, env, text, env.sig)) return "mala";
-    // Atado a un momento: un sobre bien firmado que alguien guardo y vuelve a soltar
-    // no es un mensaje que llega tarde.
+    // Bound to a moment: a correctly signed envelope that someone kept and releases
+    // again is not a message that arrived late.
     const ts = (env.ts ?? 0) * 1000;
-    if (!ts || Math.abs(ahora - ts) > WINDOW_MS) return "caducada";
-    // Atado a un destinatario: reenviar a otra persona un sobre firmado para mi ya no
-    // cuela. Un `to` vacio es el hola, que se deja antes de que haya hilo ni pareja.
+    if (!ts || Math.abs(now - ts) > WINDOW_MS) return "caducada";
+    // Bound to a recipient: forwarding to someone else an envelope signed for me no
+    // longer works. An empty `to` is the hello, sent before there is any thread or pair.
     if (env.to) {
-      const yo = Cfg.load().slack?.userId;
-      if (yo && env.to !== yo) return "ajena";
+      const me = Cfg.load().slack?.userId;
+      if (me && env.to !== me) return "ajena";
     }
   } else if (!checkSignatureV1(env.pk, env.id, env.kind, env.from, text, env.sig)) {
     return "mala";
   }
 
   const c = Cfg.load();
-  const conocido = Cfg.contactById(c, env.from);
-  const vieja = env.sv !== 2;
-  if (conocido?.pk) return conocido.pk === env.pk ? (vieja ? "vieja" : "ok") : "mala";
-  // La regla de 0.9.8 dicha entera, y aqui dentro, que es por donde pasa TODO el
-  // trafico: una clave se fija la primera vez que se ve, pero solo de un id que ya
-  // esta en tu agenda, o sea de alguien a quien invitaste o que te invito. Antes esta
-  // funcion daba de alta al remitente por el mero hecho de ver un sobre suyo, con el
-  // nombre que el mismo dijera, asi que quien pudiera postear con el token del bot se
-  // metia en la agenda de todo el equipo escribiendo una vez.
-  if (!conocido) return "desconocida";
-  Cfg.addContact(c, { id: env.from, name: conocido.name ?? env.fromName ?? env.from, pk: env.pk });
+  const known = Cfg.contactById(c, env.from);
+  const old = env.sv !== 2;
+  if (known?.pk) return known.pk === env.pk ? (old ? "vieja" : "ok") : "mala";
+  // The 0.9.8 rule stated in full, and here, which is where ALL traffic passes: a key is
+  // pinned the first time it is seen, but only for an id already in your contacts, that
+  // is, someone you invited or who invited you. This function used to add the sender to
+  // your contacts just for seeing an envelope from them, under the name they gave
+  // themselves, so anyone able to post with the bot token got into the whole team's
+  // contacts by writing once.
+  if (!known) return "desconocida";
+  Cfg.addContact(c, { id: env.from, name: known.name ?? env.fromName ?? env.from, pk: env.pk });
   Cfg.save(c);
   return "nueva";
 }

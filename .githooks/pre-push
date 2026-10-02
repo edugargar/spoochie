@@ -25,5 +25,5 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     exit 1
   fi
   if git cat-file -e "$remote_sha" 2>/dev/null; then since="$remote_sha"; else since=""; fi
-  bun scripts/leaks.ts ${since:+--desde "$since"}
+  bun scripts/leaks.ts ${since:+--since "$since"}
 done

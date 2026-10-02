@@ -3,13 +3,13 @@ import { renderHtml } from "../src/transcript.ts";
 import type { Thread } from "../src/threads.ts";
 
 const base: Thread = {
-  id: "t1", subject: "asunto",
+  id: "t1", subject: "subject",
   from: { sessionId: "A", name: "a", cwd: "/a", human: "Edu" },
   to: { sessionId: "B", name: "b", cwd: "/b", human: "Sam" },
   state: "open", createdAt: 0, lastActivityAt: 0, context: {}, messages: [],
 };
 
-test("escapa el HTML del contenido", () => {
+test("escapes HTML in the content", () => {
   const html = renderHtml({ ...base, messages: [
     { at: 0, from: "A", author: "claude", kind: "text", text: '<img src=x onerror="alert(1)">' },
   ]});
@@ -17,7 +17,7 @@ test("escapa el HTML del contenido", () => {
   expect(html).toContain("&lt;img src=x");
 });
 
-test("cada tema define sus colores en su bloque, y el body pinta fondo propio", () => {
+test("each theme defines its colors in its own block, and body paints its own background", () => {
   const html = renderHtml(base);
   expect(html).toContain(":root{");
   expect(html).toContain("prefers-color-scheme:dark");
@@ -26,39 +26,39 @@ test("cada tema define sus colores en su bloque, y el body pinta fondo propio", 
   expect(html).toContain("background:var(--ground)");
 });
 
-test("marca de que lado viene cada mensaje", () => {
+test("marks which side each message comes from", () => {
   const html = renderHtml({ ...base, messages: [
-    { at: 0, from: "A", author: "claude", kind: "text", text: "mio" },
-    { at: 0, from: "B", author: "claude", kind: "text", text: "suyo" },
+    { at: 0, from: "A", author: "claude", kind: "text", text: "mine" },
+    { at: 0, from: "B", author: "claude", kind: "text", text: "theirs" },
   ]});
   expect(html).toContain('class="msg a"');
   expect(html).toContain('class="msg b"');
 });
 
-test("resalta las lineas del diff sin romper el escapado", () => {
+test("highlights diff lines without breaking escaping", () => {
   const html = renderHtml({ ...base, messages: [
     { at: 0, from: "A", author: "claude", kind: "patch", text: "--- a\n+++ b\n-  <old>\n+  <new>" },
   ]});
   expect(html).toContain('<span class="del">-  &lt;old&gt;</span>');
   expect(html).toContain('<span class="add">+  &lt;new&gt;</span>');
-  // Las cabeceras --- y +++ no son cambios y no se resaltan.
+  // The --- and +++ headers are not changes and are not highlighted.
   expect(html).not.toContain('<span class="del">--- a</span>');
 });
 
-test("el aviso del vigilante sale como chip, no borra el mensaje", () => {
+test("the watcher notice shows as a chip and does not hide the message", () => {
   const html = renderHtml({ ...base, messages: [
-    { at: 0, from: "B", author: "claude", kind: "text", text: "de comer", offTopic: { verdict: "fuera", why: "comida" } },
+    { at: 0, from: "B", author: "claude", kind: "text", text: "about lunch", offTopic: { verdict: "fuera", why: "food" } },
   ]});
-  expect(html).toContain("fuera del asunto");
-  expect(html).toContain("de comer");
+  expect(html).toContain("off topic");
+  expect(html).toContain("about lunch");
 });
 
-test("el titulo es el asunto, sin coletilla", () => {
-  expect(renderHtml({ ...base, subject: "el header colapsa" })).toContain("<title>el header colapsa</title>");
+test("the title is the subject, with nothing tacked on", () => {
+  expect(renderHtml({ ...base, subject: "the header collapses" })).toContain("<title>the header collapses</title>");
 });
 
-test("el codigo dentro de un mensaje sale como codigo, no como prosa con saltos", () => {
-  const hook = `Respondo con el codigo delante.
+test("code inside a message renders as code, not as prose with line breaks", () => {
+  const hook = `Answering with the code in front of me.
 
 export function useSaveProfile() {
   const [saving, setSaving] = useState(false);
@@ -68,25 +68,25 @@ export function useSaveProfile() {
   return { save, saving };
 }
 
-Devuelve promesa pero no rechaza nunca.`;
+It returns a promise but never rejects.`;
   const html = renderHtml({ ...base, messages: [{ at: 0, from: "A", author: "claude", kind: "text", text: hook }] });
   expect(html).toContain('<pre class="code">');
   expect(html).toContain("export function useSaveProfile");
-  // La prosa sigue siendo prosa, en parrafos separados.
-  expect(html).toContain("<p>Respondo con el codigo delante.</p>");
-  expect(html).toContain("<p>Devuelve promesa pero no rechaza nunca.</p>");
+  // Prose stays prose, in separate paragraphs.
+  expect(html).toContain("<p>Answering with the code in front of me.</p>");
+  expect(html).toContain("<p>It returns a promise but never rejects.</p>");
 });
 
-test("un bloque cercado con acentos graves manda sobre la heuristica", () => {
+test("a backtick-fenced block wins over the heuristic", () => {
   const html = renderHtml({ ...base, messages: [
-    { at: 0, from: "A", author: "claude", kind: "text", text: "mira:\n```\nhola\n```" },
+    { at: 0, from: "A", author: "claude", kind: "text", text: "look:\n```\nhello\n```" },
   ]});
-  expect(html).toContain('<pre class="code">hola</pre>');
+  expect(html).toContain('<pre class="code">hello</pre>');
 });
 
-test("una frase suelta no se confunde con codigo", () => {
+test("a single sentence is not mistaken for code", () => {
   const html = renderHtml({ ...base, messages: [
-    { at: 0, from: "A", author: "claude", kind: "text", text: "El await falta y por eso se cierra el modal." },
+    { at: 0, from: "A", author: "claude", kind: "text", text: "The await is missing and that is why the modal closes." },
   ]});
   expect(html).not.toContain("pre class=\"code\"");
 });

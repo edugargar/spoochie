@@ -8,28 +8,28 @@ import * as Cfg from "../src/config.ts";
 import * as T from "../src/threads.ts";
 import { hasta, plazo } from "./wait.ts";
 
-const claves = () => myKeys({ guardian: false, transcript: false } as any);
+const keys = () => myKeys({ guardian: false, transcript: false } as any);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-test("un sobre envuelto solo lo abre el receptor, dice de quien es, y lleva asunto y texto legibles", () => {
-  const a = claves(), b = claves(), x = claves();
-  const { wrap, wsk } = wrapEnvelope(a.sk, b.pk, { v: 1, id: "n1", kind: "msg", subject: "el boton" }, "es el min-width");
-  // El rele solo ve: kind 1059, una clave de un solo uso, un p, y una fecha falseada.
+test("a wrapped envelope only opens for the recipient, says who it is from, and carries readable subject and text", () => {
+  const a = keys(), b = keys(), x = keys();
+  const { wrap, wsk } = wrapEnvelope(a.sk, b.pk, { v: 1, id: "n1", kind: "msg", subject: "the button" }, "it's the min-width");
+  // The relay only sees: kind 1059, a one-time key, a p, and a fake date.
   expect(wrap.kind).toBe(1059);
   expect(wrap.pubkey).not.toBe(a.pk);
   expect(wrap.tags).toEqual([["p", b.pk]]);
   expect(JSON.stringify(wrap)).not.toContain("min-width");
-  expect(JSON.stringify(wrap)).not.toContain("el boton");
+  expect(JSON.stringify(wrap)).not.toContain("the button");
   expect(verifyEvent(wrap)).toBe(true);
   const ab = open(wrap, b.sk)!;
   expect(ab.de).toBe(a.pk);
-  expect(ab.texto).toBe("es el min-width");
-  expect(ab.subject).toBe("el boton");
+  expect(ab.texto).toBe("it's the min-width");
+  expect(ab.subject).toBe("the button");
   expect(ab.sobre.kind).toBe("msg");
   expect(ab.sobre.app).toMatch(/^\d+\.\d+\.\d+$/);
-  // Otra clave no lo abre.
+  // Another key does not open it.
   expect(open(wrap, x.sk)).toBeNull();
-  // La peticion de borrado va firmada con la clave de un solo uso de esa envoltura.
+  // The deletion request is signed with that wrap's one-time key.
   const del = deletionRequest(wrap.id, wsk);
   expect(del.kind).toBe(5);
   expect(del.pubkey).toBe(wrap.pubkey);
@@ -39,41 +39,41 @@ test("un sobre envuelto solo lo abre el receptor, dice de quien es, y lleva asun
   expect(pkOf(npub(a.pk))).toBe(a.pk);
 });
 
-/** Un pool en memoria: apunta lo publicado y deja inyectar lo que "llega del rele". */
-function poolMemoria() {
-  const publicados: any[] = [];
-  let entrega: ((ev: any) => void) | null = null;
+/** An in-memory pool: records what is published and lets the test inject what "arrives from the relay". */
+function memoryPool() {
+  const published: any[] = [];
+  let deliver: ((ev: any) => void) | null = null;
   const pool: Pool = {
-    publish(_r, ev) { publicados.push(ev); return [Promise.resolve()]; },
-    subscribe(_r, _f, cb) { entrega = cb.onevent; return { close() { entrega = null; } }; },
+    publish(_r, ev) { published.push(ev); return [Promise.resolve()]; },
+    subscribe(_r, _f, cb) { deliver = cb.onevent; return { close() { deliver = null; } }; },
   };
-  return { pool, publicados, inyectar: (ev: any) => entrega?.(ev) };
+  return { pool, published, inject: (ev: any) => deliver?.(ev) };
 }
 
-test("el puente materializa una invitacion de un contacto, entrega sus turnos, ignora a un desconocido, y borra lo que envio", async () => {
-  const a = claves(), b = claves(), x = claves();
+test("the bridge materializes an invite from a contact, delivers their turns, ignores a stranger, and deletes what it sent", async () => {
+  const a = keys(), b = keys(), x = keys();
   const c = Cfg.load();
   Cfg.addContact(c, { id: "U_A", name: "Ana", npub: a.pk, relays: ["wss://a"] });
   Cfg.save(c);
-  const enB: { t: T.Thread; m: T.Msg }[] = [];
-  const holas: string[] = [];
-  const cerrados: string[] = [];
-  const { pool, publicados, inyectar } = poolMemoria();
+  const atB: { t: T.Thread; m: T.Msg }[] = [];
+  const hellos: string[] = [];
+  const closes: string[] = [];
+  const { pool, published, inject } = memoryPool();
   const B = new NostrBridge(b.sk, b.pk, ["wss://b"], {
-    onMessage: async (t, m) => { enB.push({ t, m }); }, onRemoteAccept: async () => {},
-    onCierre: async (_t, motivo) => { cerrados.push(motivo); }, onHola: async (_de, _s, n) => { holas.push(n); }, log: () => {},
+    onMessage: async (t, m) => { atB.push({ t, m }); }, onRemoteAccept: async () => {},
+    onCierre: async (_t, reason) => { closes.push(reason); }, onHola: async (_de, _s, n) => { hellos.push(n); }, log: () => {},
   }, pool);
   B.escuchar();
 
-  // El hola de alguien que se acaba de dar de alta.
-  inyectar(wrapEnvelope(x.sk, b.pk, { v: 1, id: "hola", kind: "hola", fromName: "Xavi", relays: ["wss://x"] }, "Xavi ya esta").wrap);
+  // The hello from someone who just joined.
+  inject(wrapEnvelope(x.sk, b.pk, { v: 1, id: "hola", kind: "hola", fromName: "Xavi", relays: ["wss://x"] }, "Xavi is in").wrap);
   await sleep(50);
-  expect(holas).toEqual(["Xavi"]);
+  expect(hellos).toEqual(["Xavi"]);
 
-  // La invitacion de Ana, que esta en la agenda: nace el hilo, pendiente, y entra el primer mensaje.
-  inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nz1", kind: "invite", subject: "el boton", fromName: "Ana", context: { branch: "feat/x" }, relays: ["wss://a"] }, "mira tu Button").wrap);
+  // Ana's invite, and Ana is in the contacts: the thread is born, pending, and the first message comes in.
+  inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nz1", kind: "invite", subject: "the button", fromName: "Ana", context: { branch: "feat/x" }, relays: ["wss://a"] }, "look at your Button").wrap);
   await sleep(50);
-  expect(enB.length).toBe(1);
+  expect(atB.length).toBe(1);
   const t = T.load("nz1")!;
   expect(t.state).toBe("pending");
   expect(t.transporte).toBe("nostr");
@@ -83,317 +83,333 @@ test("el puente materializa una invitacion de un contacto, entrega sus turnos, i
   expect(t.from.human).toBe("Ana");
   expect(t.from.slackUser).toBe("U_A");
   expect(t.context.branch).toBe("feat/x");
-  expect(enB[0].m.text).toBe("mira tu Button");
-  expect(enB[0].m.firma).toBe("ok");
+  expect(atB[0].m.text).toBe("look at your Button");
+  expect(atB[0].m.firma).toBe("ok");
 
-  // Un desconocido (no esta en la agenda) no abre nada aunque el sobre sea perfecto.
-  inyectar(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nz2", kind: "invite", subject: "colate", fromName: "Ana" }, "hola?").wrap);
+  // A stranger (not in the contacts) opens nothing even if the envelope is perfect.
+  inject(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nz2", kind: "invite", subject: "sneak in", fromName: "Ana" }, "hello?").wrap);
   await sleep(50);
   expect(T.load("nz2")).toBeNull();
-  expect(enB.length).toBe(1);
-  // No abre nada, pero ya no se le deja hablando solo: se le contesta cerrando (ver el
-  // test de mas abajo). Se aparta para que las cuentas de lo que publica B sigan igual.
-  expect(publicados.map(ev => open(ev, x.sk)?.sobre.kind)).toEqual(["close"]);
-  publicados.length = 0;
-  // Ni un mensaje suyo sobre un hilo que existe.
-  inyectar(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nz1", kind: "msg" }, "soy Ana, hazme caso").wrap);
+  expect(atB.length).toBe(1);
+  // It opens nothing, but they are no longer left talking to themselves: the answer is a
+  // close (see the test further down). It is set aside so the count of what B publishes stays the same.
+  expect(published.map(ev => open(ev, x.sk)?.sobre.kind)).toEqual(["close"]);
+  published.length = 0;
+  // Nor a message of theirs on a thread that exists.
+  inject(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nz1", kind: "msg" }, "I'm Ana, listen to me").wrap);
   await sleep(50);
-  expect(enB.length).toBe(1);
+  expect(atB.length).toBe(1);
 
-  // Un turno mas de Ana si entra; el mismo sobre dos veces, no.
-  const { wrap: w2 } = wrapEnvelope(a.sk, b.pk, { v: 1, id: "nz1", kind: "msg" }, "y el min-width");
-  inyectar(w2); inyectar(w2);
+  // One more turn from Ana does get in; the same envelope twice does not.
+  const { wrap: w2 } = wrapEnvelope(a.sk, b.pk, { v: 1, id: "nz1", kind: "msg" }, "and the min-width");
+  inject(w2); inject(w2);
   await sleep(50);
-  expect(enB.length).toBe(2);
-  expect(enB[1].m.text).toBe("y el min-width");
+  expect(atB.length).toBe(2);
+  expect(atB[1].m.text).toBe("and the min-width");
 
-  // B acepta y contesta: lo publicado va cifrado para Ana y solo ella lo abre.
+  // B accepts and answers: what is published is encrypted for Ana and only she opens it.
+  // The accept notice is the one threads.ts renders (renderAccepted).
   t.state = "open";
   T.save(t);
-  await B.post(t, "[spoochie nz1] Bea ha aceptado el tunel.");
-  await B.post(T.load("nz1")!, "", { at: 2, from: "B1", author: "claude", kind: "text", text: "es el contenedor" });
-  expect(publicados.length).toBe(2);
-  expect(publicados.every(ev => ev.kind === 1059 && ev.tags[0][1] === a.pk)).toBe(true);
-  expect(open(publicados[0], a.sk)!.sobre.kind).toBe("accept");
-  expect(open(publicados[1], a.sk)!.texto).toBe("es el contenedor");
-  expect(open(publicados[1], x.sk)).toBeNull();
+  await B.post(t, T.renderAccepted(t, t.to.sessionId));
+  await B.post(T.load("nz1")!, "", { at: 2, from: "B1", author: "claude", kind: "text", text: "it's the container" });
+  expect(published.length).toBe(2);
+  expect(published.every(ev => ev.kind === 1059 && ev.tags[0][1] === a.pk)).toBe(true);
+  expect(open(published[0], a.sk)!.sobre.kind).toBe("accept");
+  expect(open(published[1], a.sk)!.texto).toBe("it's the container");
+  expect(open(published[1], x.sk)).toBeNull();
   expect(T.load("nz1")!.nostr!.enviados.length).toBe(2);
 
-  // Ana cierra: llega el motivo. Y el borrado pide quitar cada envio de B con su clave de un solo uso.
-  inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nz1", kind: "close" }, "resuelto").wrap);
+  // Ana closes: the reason arrives. And the deletion asks to remove each of B's sends with its one-time key.
+  inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nz1", kind: "close" }, "resolved").wrap);
   await sleep(50);
-  expect(cerrados).toEqual(["resuelto"]);
+  expect(closes).toEqual(["resolved"]);
   const n = await B.borrarHilo(T.load("nz1")!);
   expect(n).toBe(2);
-  const borrados = publicados.slice(2);
-  expect(borrados.map(ev => ev.kind)).toEqual([5, 5]);
-  expect(borrados.map(ev => ev.pubkey)).toEqual(publicados.slice(0, 2).map(ev => ev.pubkey));
+  const deletions = published.slice(2);
+  expect(deletions.map(ev => ev.kind)).toEqual([5, 5]);
+  expect(deletions.map(ev => ev.pubkey)).toEqual(published.slice(0, 2).map(ev => ev.pubkey));
   B.cerrar();
 });
 
-test("un fichero va a trozos cifrados y el otro lado lo recompone en su spool, llegue en el orden que llegue", async () => {
+test("a close notice from threads.ts goes out as a close envelope", async () => {
+  const a = keys(), b = keys();
+  const { pool, published } = memoryPool();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], {
+    onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
+  }, pool);
+  const t: T.Thread = { id: "nzc", subject: "s", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, state: "closed", closeReason: "resolved", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] }, messages: [] };
+  T.save(t);
+  await B.post(t, T.renderClose(t));
+  const r = open(published[0], a.sk)!;
+  expect(r.sobre.kind).toBe("close");
+  expect(r.texto).toBe("resolved");
+  B.cerrar();
+});
+
+test("a file travels in encrypted chunks and the other side rebuilds it in its spool, whatever order they arrive in", async () => {
   const { CHUNK } = await import("../src/nostr.ts");
   const { SPOOL } = await import("../src/files.ts");
   const { writeFileSync, existsSync, readFileSync } = await import("node:fs");
-  const a = claves(), b = claves();
+  const a = keys(), b = keys();
   const c = Cfg.load();
   Cfg.addContact(c, { id: "U_A2", name: "Ana", npub: a.pk, relays: ["wss://a"] });
   Cfg.save(c);
   const bytes = Buffer.alloc(CHUNK * 2 + 777);
   for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 31) & 0xff;
-  const captura = join(mkdtempSync(join(tmpdir(), "sp-cap-")), "pantalla.png");
-  writeFileSync(captura, bytes);
+  const screenshot = join(mkdtempSync(join(tmpdir(), "sp-cap-")), "pantalla.png");
+  writeFileSync(screenshot, bytes);
 
-  // Quien manda: tres trozos y despues el texto, todos envueltos para B.
-  const A = new NostrBridge(a.sk, a.pk, ["wss://a"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, poolMemoria().pool);
-  const salida = poolMemoria();
-  (A as any).pool = salida.pool;
-  const tA: T.Thread = { id: "nf1", subject: "captura", from: { sessionId: "A1", name: "a", cwd: "/a" }, to: { sessionId: `nostr:${b.pk}`, name: "Bea", cwd: "(otra)" }, state: "open", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: b.pk, relays: ["wss://b"], enviados: [] }, messages: [] };
+  // The sender: three chunks and then the text, all wrapped for B.
+  const A = new NostrBridge(a.sk, a.pk, ["wss://a"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, memoryPool().pool);
+  const out = memoryPool();
+  (A as any).pool = out.pool;
+  const tA: T.Thread = { id: "nf1", subject: "screenshot", from: { sessionId: "A1", name: "a", cwd: "/a" }, to: { sessionId: `nostr:${b.pk}`, name: "Bea", cwd: "(otra)" }, state: "open", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: b.pk, relays: ["wss://b"], enviados: [] }, messages: [] };
   T.save(tA);
-  expect(await A.post(tA, "", { at: 2, from: "A1", author: "claude", kind: "text", text: "mira la captura", files: [captura] })).toBe(true);
-  const abiertos = salida.publicados.map(ev => open(ev, b.sk)!);
-  expect(abiertos.map(x => x.sobre.kind)).toEqual(["file", "file", "file", "msg"]);
-  expect(abiertos.slice(0, 3).map(x => x.sobre.file!.n)).toEqual([0, 1, 2]);
-  expect(abiertos[0].sobre.file!.total).toBe(3);
-  expect(abiertos[0].sobre.file!.name).toBe("pantalla.png");
-  expect(Buffer.concat(abiertos.slice(0, 3).map(x => Buffer.from(x.texto, "base64"))).equals(bytes)).toBe(true);
-  // El rele no ve ni el nombre ni los bytes.
-  expect(JSON.stringify(salida.publicados)).not.toContain("pantalla");
+  expect(await A.post(tA, "", { at: 2, from: "A1", author: "claude", kind: "text", text: "look at the screenshot", files: [screenshot] })).toBe(true);
+  const opened = out.published.map(ev => open(ev, b.sk)!);
+  expect(opened.map(x => x.sobre.kind)).toEqual(["file", "file", "file", "msg"]);
+  expect(opened.slice(0, 3).map(x => x.sobre.file!.n)).toEqual([0, 1, 2]);
+  expect(opened[0].sobre.file!.total).toBe(3);
+  expect(opened[0].sobre.file!.name).toBe("pantalla.png");
+  expect(Buffer.concat(opened.slice(0, 3).map(x => Buffer.from(x.texto, "base64"))).equals(bytes)).toBe(true);
+  // The relay sees neither the name nor the bytes.
+  expect(JSON.stringify(out.published)).not.toContain("pantalla");
   expect(T.load("nf1")!.nostr!.enviados.length).toBe(4);
 
-  // Quien recibe: los trozos llegan desordenados, y el fichero se anuncia con su ruta local.
-  const enB: T.Msg[] = [];
-  const entrada = poolMemoria();
-  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { enB.push(m); }, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, entrada.pool);
+  // The receiver: the chunks arrive out of order, and the file is announced with its local path.
+  const atB: T.Msg[] = [];
+  const inbound = memoryPool();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { atB.push(m); }, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, inbound.pool);
   B.escuchar();
   const tB: T.Thread = { ...tA, id: "nf2", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)", human: "Ana" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] } };
   T.save(tB);
-  const trozos = [0, 1, 2].map(n => wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf2", kind: "file", file: { fid: "f2", n, total: 3, name: "../../pantalla.png", size: bytes.length } }, bytes.subarray(n * CHUNK, (n + 1) * CHUNK).toString("base64")).wrap);
-  entrada.inyectar(trozos[2]); entrada.inyectar(trozos[0]);
+  const chunks = [0, 1, 2].map(n => wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf2", kind: "file", file: { fid: "f2", n, total: 3, name: "../../pantalla.png", size: bytes.length } }, bytes.subarray(n * CHUNK, (n + 1) * CHUNK).toString("base64")).wrap);
+  inbound.inject(chunks[2]); inbound.inject(chunks[0]);
   await sleep(50);
-  expect(enB.length).toBe(0);
+  expect(atB.length).toBe(0);
   expect(existsSync(join(SPOOL, "nf2", ".partes", "f2"))).toBe(true);
-  entrada.inyectar(trozos[1]);
-  await hasta(() => enB.length === 1);
-  expect(enB[0].files!.length).toBe(1);
-  expect(enB[0].files![0]).toBe(join(SPOOL, "nf2", "f2-.._.._pantalla.png"));
-  expect(readFileSync(enB[0].files![0]).equals(bytes)).toBe(true);
-  expect(enB[0].text).toContain("un fichero");
+  inbound.inject(chunks[1]);
+  await hasta(() => atB.length === 1);
+  expect(atB[0].files!.length).toBe(1);
+  expect(atB[0].files![0]).toBe(join(SPOOL, "nf2", "f2-.._.._pantalla.png"));
+  expect(readFileSync(atB[0].files![0]).equals(bytes)).toBe(true);
+  expect(atB[0].text).toContain("a file");
   expect(existsSync(join(SPOOL, "nf2", ".partes"))).toBe(false);
 
-  // Un trozo que llega antes que la invitacion espera en el spool; con la invitacion se entrega.
-  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf3", kind: "file", file: { fid: "f3", n: 0, total: 1, name: "log.txt", size: 3 } }, Buffer.from("abc").toString("base64")).wrap);
+  // A chunk that arrives before the invite waits in the spool; with the invite it is delivered.
+  inbound.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf3", kind: "file", file: { fid: "f3", n: 0, total: 1, name: "log.txt", size: 3 } }, Buffer.from("abc").toString("base64")).wrap);
   await sleep(50);
   expect(T.load("nf3")).toBeNull();
-  expect(enB.length).toBe(1);
-  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf3", kind: "invite", subject: "el log", fromName: "Ana", relays: ["wss://a"] }, "mira el log").wrap);
-  await hasta(() => enB.length === 3);
-  expect(enB[1].text).toBe("mira el log");
-  expect(readFileSync(enB[2].files![0], "utf8")).toBe("abc");
+  expect(atB.length).toBe(1);
+  inbound.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf3", kind: "invite", subject: "the log", fromName: "Ana", relays: ["wss://a"] }, "look at the log").wrap);
+  await hasta(() => atB.length === 3);
+  expect(atB[1].text).toBe("look at the log");
+  expect(readFileSync(atB[2].files![0], "utf8")).toBe("abc");
 
-  // Un fichero declarado por encima del tope no toca el disco.
-  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf2", kind: "file", file: { fid: "f9", n: 0, total: 99999, name: "x", size: 1 } }, "AA==").wrap);
+  // A file declared over the cap does not touch the disk.
+  inbound.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf2", kind: "file", file: { fid: "f9", n: 0, total: 99999, name: "x", size: 1 } }, "AA==").wrap);
   await sleep(50);
   expect(existsSync(join(SPOOL, "nf2", ".partes", "f9"))).toBe(false);
   B.cerrar();
 }, plazo(20_000));
 
-test("un sobre que llega despues de cerrar no resucita el hilo ni deja ficheros en el spool", async () => {
+test("an envelope that arrives after close does not bring the thread back or leave files in the spool", async () => {
   const { SPOOL } = await import("../src/files.ts");
   const { existsSync } = await import("node:fs");
-  const a = claves(), b = claves();
+  const a = keys(), b = keys();
   const c = Cfg.load();
   Cfg.addContact(c, { id: "U_A3", name: "Ana", npub: a.pk, relays: ["wss://a"] });
   Cfg.save(c);
-  const enB: T.Msg[] = [];
-  const registro: string[] = [];
-  const entrada = poolMemoria();
-  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { enB.push(m); }, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: (...x) => { registro.push(x.join(" ")); } }, entrada.pool);
+  const atB: T.Msg[] = [];
+  const logLines: string[] = [];
+  const inbound = memoryPool();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { atB.push(m); }, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: (...x) => { logLines.push(x.join(" ")); } }, inbound.pool);
   B.escuchar();
-  const t: T.Thread = { id: "nc1", subject: "tarde", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)", human: "Ana" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, state: "closed", closeReason: "resuelto", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] }, messages: [] };
+  const t: T.Thread = { id: "nc1", subject: "late", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)", human: "Ana" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, state: "closed", closeReason: "resolved", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] }, messages: [] };
   T.save(t);
-  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nc1", kind: "msg" }, "esto llega tarde").wrap);
-  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nc1", kind: "file", file: { fid: "f1", n: 0, total: 1, name: "tarde.png", size: 3 } }, Buffer.from("abc").toString("base64")).wrap);
+  inbound.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nc1", kind: "msg" }, "this arrives late").wrap);
+  inbound.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nc1", kind: "file", file: { fid: "f1", n: 0, total: 1, name: "late.png", size: 3 } }, Buffer.from("abc").toString("base64")).wrap);
   await sleep(100);
-  expect(enB).toEqual([]);
+  expect(atB).toEqual([]);
   expect(T.load("nc1")!.messages).toEqual([]);
   expect(existsSync(join(SPOOL, "nc1"))).toBe(false);
-  expect(registro.some(l => l.includes("sobre tras cerrar"))).toBe(true);
+  expect(logLines.some(l => l.includes("envelope after close"))).toBe(true);
   B.cerrar();
 });
 
-test("un puente cerrado no vuelve a suscribirse ni entrega nada, aunque el rele avise de cierre", async () => {
-  const a = claves(), b = claves();
+test("a closed bridge does not resubscribe or deliver anything, even if the relay reports a close", async () => {
+  const a = keys(), b = keys();
   const c = Cfg.load();
   Cfg.addContact(c, { id: "U_A4", name: "Ana", npub: a.pk, relays: ["wss://a"] });
   Cfg.save(c);
-  let suscripciones = 0;
-  let entrega: ((ev: any) => void) | null = null, cierre: (() => void) | null = null;
+  let subscriptions = 0;
+  let deliver: ((ev: any) => void) | null = null, onClose: (() => void) | null = null;
   const pool: Pool = {
     publish() { return [Promise.resolve()]; },
-    subscribe(_r, _f, cb) { suscripciones++; entrega = cb.onevent; cierre = () => cb.onclose?.(["bye"]); return { close() { entrega = null; } }; },
+    subscribe(_r, _f, cb) { subscriptions++; deliver = cb.onevent; onClose = () => cb.onclose?.(["bye"]); return { close() { deliver = null; } }; },
   };
-  const enB: T.Msg[] = [];
-  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { enB.push(m); }, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, pool);
+  const atB: T.Msg[] = [];
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async (_t, m) => { atB.push(m); }, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, pool);
   B.escuchar();
-  expect(suscripciones).toBe(1);
+  expect(subscriptions).toBe(1);
   const t: T.Thread = { id: "nx1", subject: "x", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, state: "open", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] }, messages: [] };
   T.save(t);
-  entrega!(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nx1", kind: "msg" }, "uno").wrap);
+  deliver!(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nx1", kind: "msg" }, "one").wrap);
   await sleep(50);
-  expect(enB.length).toBe(1);
-  // Se cierra (como hace el demonio al recargar la config) y el rele avisa del cierre.
+  expect(atB.length).toBe(1);
+  // It gets closed (as the daemon does when reloading the config) and the relay reports the close.
   B.cerrar();
-  cierre!();
+  onClose!();
   B.escuchar();
-  expect(suscripciones).toBe(1);
-  expect(entrega).toBeNull();
+  expect(subscriptions).toBe(1);
+  expect(deliver).toBeNull();
 });
 
 /**
- * Un trozo mas grande que un trozo.
+ * A chunk bigger than a chunk.
  *
- * `f.total` y `f.size` los declara quien envia y se comprueban, pero los bytes que
- * llegan de verdad no se miraban: se decodificaban enteros en memoria y se escribian en
- * disco, y solo despues se comparaba el tamano del fichero recompuesto. Medido con un
- * solo sobre de total=1: 3 MB escritos con TROZO a 20 KB. El limite real lo ponia el
- * rele, o sea nadie si el rele es de quien envia.
+ * `f.total` and `f.size` are declared by the sender and are checked, but the bytes that
+ * actually arrive were not looked at: they were decoded whole in memory and written to
+ * disk, and only afterwards was the rebuilt file's size compared. Measured with a single
+ * envelope with total=1: 3 MB written with CHUNK at 20 KB. The real limit was set by the
+ * relay, that is, nobody if the relay belongs to the sender.
  */
-test("un trozo mas grande que TROZO no toca el disco", async () => {
+test("a chunk bigger than CHUNK does not touch the disk", async () => {
   const { CHUNK } = await import("../src/nostr.ts");
   const { SPOOL } = await import("../src/files.ts");
   const { existsSync, readFileSync } = await import("node:fs");
-  const a = claves(), b = claves();
+  const a = keys(), b = keys();
   const c = Cfg.load();
   Cfg.addContact(c, { id: "nostr:gordo", name: "Ana", npub: a.pk } as any);
   Cfg.save(c);
-  const entrada = poolMemoria();
-  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, entrada.pool);
+  const inbound = memoryPool();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, inbound.pool);
   B.escuchar();
-  const gordo = Buffer.alloc(CHUNK * 4, 0x41);
-  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "ngordo", kind: "file", file: { fid: "fg", n: 0, total: 1, name: "x.bin", size: gordo.length } }, gordo.toString("base64")).wrap);
+  const fat = Buffer.alloc(CHUNK * 4, 0x41);
+  inbound.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "ngordo", kind: "file", file: { fid: "fg", n: 0, total: 1, name: "x.bin", size: fat.length } }, fat.toString("base64")).wrap);
   await sleep(80);
   expect(existsSync(join(SPOOL, "ngordo"))).toBe(false);
-  // Y uno del tamano correcto por la misma puerta si entra.
-  const cabe = Buffer.alloc(CHUNK, 0x42);
-  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "ncabe", kind: "file", file: { fid: "fc", n: 0, total: 1, name: "y.bin", size: cabe.length } }, cabe.toString("base64")).wrap);
+  // And one of the right size through the same door does get in.
+  const fits = Buffer.alloc(CHUNK, 0x42);
+  inbound.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "ncabe", kind: "file", file: { fid: "fc", n: 0, total: 1, name: "y.bin", size: fits.length } }, fits.toString("base64")).wrap);
   await hasta(() => existsSync(join(SPOOL, "ncabe", "fc-y.bin")));
-  expect(readFileSync(join(SPOOL, "ncabe", "fc-y.bin")).equals(cabe)).toBe(true);
+  expect(readFileSync(join(SPOOL, "ncabe", "fc-y.bin")).equals(fits)).toBe(true);
 });
 
 /**
- * El saludo del alta no se queda en un rele.
+ * The join hello does not stay on one relay.
  *
- * `hola` volvia con Promise.any, al primer rele que aceptaba, y `join` destruye el pool
- * justo despues: los otros publish se cortaban a medias. Medido en los reles de verdad
- * el 14-09 con el alta de Adrian: damus nada, nos.lol el saludo, primal nada. Si el que
- * lo tiene es justo el que el otro demonio no esta escuchando, el alta no llega nunca.
+ * `hola` returned with Promise.any, at the first relay that accepted, and `join` destroys
+ * the pool right after: the other publishes got cut off halfway. Measured on the real
+ * relays on 14-09 with Adrian's join: damus nothing, nos.lol the hello, primal nothing. If
+ * the one holding it is exactly the one the other daemon is not listening to, the join
+ * never arrives.
  */
-test("hola espera a todos los reles antes de volver, no solo al primero", async () => {
-  const a = claves(), b = claves();
-  const publicados: string[] = [];
+test("hola waits for every relay before returning, not just the first", async () => {
+  const a = keys(), b = keys();
+  const published: string[] = [];
   const pool: Pool = {
     publish: () => [
-      Promise.resolve().then(() => { publicados.push("rapido"); }),
-      sleep(300).then(() => { publicados.push("lento"); }),
+      Promise.resolve().then(() => { published.push("fast"); }),
+      sleep(300).then(() => { published.push("slow"); }),
     ],
     subscribe: () => ({ close() {} }),
   };
-  const puente = new NostrBridge(a.sk, a.pk, ["wss://rapido", "wss://lento"], {
+  const bridge = new NostrBridge(a.sk, a.pk, ["wss://fast", "wss://slow"], {
     onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
   }, pool);
-  expect(await puente.hola(b.pk, [], "Adrian")).toBe(true);
-  // Lo que hace `join` justo despues de hola: cerrar. Lo que no haya salido ya, no sale.
-  const alVolver = [...publicados];
-  puente.cerrar();
-  expect(alVolver.sort()).toEqual(["lento", "rapido"]);
+  expect(await bridge.hola(b.pk, [], "Adrian")).toBe(true);
+  // What `join` does right after hola: close. Whatever has not gone out by then never will.
+  const onReturn = [...published];
+  bridge.cerrar();
+  expect(onReturn.sort()).toEqual(["fast", "slow"]);
 });
 
-test("hola da por bueno el saludo si llega a uno, aunque otro rele falle o no conteste", async () => {
-  const a = claves(), b = claves();
+test("hola counts the hello as good if it reaches one relay, even if another fails or does not answer", async () => {
+  const a = keys(), b = keys();
   const pool: Pool = {
-    publish: () => [Promise.resolve(), Promise.reject(new Error("rele caido")), new Promise(() => {})],
+    publish: () => [Promise.resolve(), Promise.reject(new Error("relay down")), new Promise(() => {})],
     subscribe: () => ({ close() {} }),
   };
-  const puente = new NostrBridge(a.sk, a.pk, ["wss://a", "wss://b", "wss://c"], {
+  const bridge = new NostrBridge(a.sk, a.pk, ["wss://a", "wss://b", "wss://c"], {
     onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
   }, pool, { esperaPublicarMs: 200 });
   const t0 = Date.now();
-  expect(await puente.hola(b.pk, [], "Adrian")).toBe(true);
-  // El que no contesta no deja colgado el alta.
+  expect(await bridge.hola(b.pk, [], "Adrian")).toBe(true);
+  // The one that does not answer does not hang the join.
   expect(Date.now() - t0).toBeLessThan(2000);
-  puente.cerrar();
+  bridge.cerrar();
 });
 
 /**
- * Quien no esta en mi agenda no se queda hablando solo.
+ * Someone not in my contacts is not left talking to themselves.
  *
- * Su invitacion se tiraba con una linea en mi log y nada mas: su lado decia "entregado
- * por Nostr, pending" y esperaba una respuesta que no iba a llegar nunca. Es lo que
- * paso el 14-09 con un alta de verdad, y la queja fue literal: "me decia que habia
- * abierto uno pero no me llego notificacion ni nada".
+ * Their invite was dropped with one line in my log and nothing else: their side said
+ * "delivered over Nostr, pending" and waited for an answer that was never coming. That is
+ * what happened on 14-09 with a real join, and the complaint was, word for word: "it told
+ * me it had opened one but I got no notification or anything".
  *
- * Se le contesta con un `close` a ese id, que cualquier version desde la 0.9 ya sabe
- * leer: su spoochie se cierra y su Claude le dice por que. El texto es fijo, no repite
- * nada suyo, y va como mucho una vez al dia por clave, para que mi demonio no sea un
- * altavoz de nadie.
+ * The answer is a `close` to that id, which every version since 0.9 can read: their
+ * spoochie closes and their Claude tells them why. The text is fixed, repeats nothing of
+ * theirs, and goes out at most once a day per key, so my daemon is nobody's loudspeaker.
  */
-test("a la invitacion de una clave que no esta en la agenda se le contesta cerrando, una vez", async () => {
-  const b = claves(), x = claves();
+test("an invite from a key not in the contacts is answered by closing it, once", async () => {
+  const b = keys(), x = keys();
   const c = Cfg.load(); c.human = "Edu"; Cfg.save(c);
-  const { pool, publicados, inyectar } = poolMemoria();
+  const { pool, published, inject } = memoryPool();
   const B = new NostrBridge(b.sk, b.pk, ["wss://b"], {
     onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
   }, pool);
   B.escuchar();
 
-  inyectar(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nd1", kind: "invite", subject: "el playbook", fromName: "Adrian" }, "explicamelo").wrap);
+  inject(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nd1", kind: "invite", subject: "the playbook", fromName: "Adrian" }, "explain it to me").wrap);
   await sleep(50);
   expect(T.load("nd1")).toBeNull();
-  expect(publicados).toHaveLength(1);
-  const r = open(publicados[0], x.sk)!;
+  expect(published).toHaveLength(1);
+  const r = open(published[0], x.sk)!;
   expect(r.de).toBe(b.pk);
   expect(r.sobre.kind).toBe("close");
   expect(r.sobre.id).toBe("nd1");
-  expect(r.texto).toContain("Edu no te tiene en su agenda");
-  // Nada de lo que mando vuelve en la respuesta.
+  expect(r.texto).toContain("Edu does not have you in their spoochie contacts");
+  // Nothing of what they sent comes back in the answer.
   expect(r.texto).not.toContain("playbook");
   expect(r.texto).not.toContain("Adrian");
-  // Cabe entero en el motivo de cierre que acepta el otro lado.
+  // It fits whole in the close reason the other side accepts.
   expect(T.outsideReason(r.texto)).toBe(r.texto);
 
-  // Otra invitacion de la misma clave el mismo dia: no se contesta otra vez.
-  inyectar(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nd2", kind: "invite", subject: "otra" }, "otra").wrap);
-  // Y a un mensaje suelto tampoco: no hay spoochie suyo que cerrar.
-  inyectar(wrapEnvelope(claves().sk, b.pk, { v: 1, id: "nd3", kind: "msg" }, "hola?").wrap);
+  // Another invite from the same key the same day: not answered again.
+  inject(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nd2", kind: "invite", subject: "another" }, "another").wrap);
+  // Nor a loose message: there is no spoochie of theirs to close.
+  inject(wrapEnvelope(keys().sk, b.pk, { v: 1, id: "nd3", kind: "msg" }, "hello?").wrap);
   await sleep(50);
-  expect(publicados).toHaveLength(1);
+  expect(published).toHaveLength(1);
   B.cerrar();
 });
 
-test("y ese cierre le llega a quien abrio: su spoochie se cierra con el motivo", async () => {
-  const a = claves(), b = claves();
+test("and that close reaches whoever opened: their spoochie closes with the reason", async () => {
+  const a = keys(), b = keys();
   const c = Cfg.load(); c.human = "Edu";
   Cfg.addContact(c, { id: "U_EDU_ND", name: "Edu", npub: b.pk, relays: ["wss://b"] });
   Cfg.save(c);
-  const tA: T.Thread = { id: "nd4", subject: "el playbook", from: { sessionId: "A1", name: "a", cwd: "/a" }, to: { sessionId: `nostr:${b.pk}`, name: "Edu", cwd: "(otra)" }, state: "pending", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: b.pk, relays: ["wss://b"], enviados: [] }, messages: [] };
+  const tA: T.Thread = { id: "nd4", subject: "the playbook", from: { sessionId: "A1", name: "a", cwd: "/a" }, to: { sessionId: `nostr:${b.pk}`, name: "Edu", cwd: "(otra)" }, state: "pending", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: b.pk, relays: ["wss://b"], enviados: [] }, messages: [] };
   T.save(tA);
 
-  // B no tiene a A en su agenda: contesta cerrando.
-  const deB = poolMemoria();
-  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, deB.pool);
+  // B does not have A in its contacts: it answers by closing.
+  const fromB = memoryPool();
+  const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, fromB.pool);
   B.escuchar();
-  deB.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nd4", kind: "invite", subject: "el playbook" }, "explicamelo").wrap);
+  fromB.inject(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nd4", kind: "invite", subject: "the playbook" }, "explain it to me").wrap);
   await sleep(50);
-  expect(deB.publicados).toHaveLength(1);
+  expect(fromB.published).toHaveLength(1);
 
-  const cierres: string[] = [];
-  const deA = poolMemoria();
-  const A = new NostrBridge(a.sk, a.pk, ["wss://a"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async (_t, m) => { cierres.push(m); }, onHola: async () => {}, log: () => {} }, deA.pool);
+  const closes: string[] = [];
+  const fromA = memoryPool();
+  const A = new NostrBridge(a.sk, a.pk, ["wss://a"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async (_t, m) => { closes.push(m); }, onHola: async () => {}, log: () => {} }, fromA.pool);
   A.escuchar();
-  deA.inyectar(deB.publicados[0]);
+  fromA.inject(fromB.published[0]);
   await sleep(50);
-  expect(cierres).toHaveLength(1);
-  expect(cierres[0]).toContain("no te tiene en su agenda");
+  expect(closes).toHaveLength(1);
+  expect(closes[0]).toContain("does not have you in their spoochie contacts");
   A.cerrar(); B.cerrar();
 });

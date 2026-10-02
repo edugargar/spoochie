@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { deliver } from "../src/inbox.ts";
 
-/** El formato del buzon no esta en la documentacion: sale del propio binario de
- *  Claude Code, que lo imprime como receta soportada. Si cambia, este test cae. */
-test("entrega la linea de auth y luego el turno de usuario, en ese orden", async () => {
+/** The inbox format is not in the documentation: it comes from Claude Code's own
+ *  binary, which prints it as a supported recipe. If it changes, this test fails. */
+test("delivers the auth line and then the user turn, in that order", async () => {
   const sock = join(mkdtempSync(join(tmpdir(), "sp-")), "s.sock");
   const lines: string[] = [];
   const done = new Promise<void>(resolve => {
@@ -24,17 +24,17 @@ test("entrega la linea de auth y luego el turno de usuario, en ese orden", async
 
   await deliver(
     { sessionId: "X", name: "x", cwd: "/tmp", socket: sock, token: "tok-123", pid: 1, startedAt: 0 },
-    "hola",
+    "hello",
   );
   await done;
 
   expect(JSON.parse(lines[0])).toEqual({ type: "auth", token: "tok-123" });
-  expect(JSON.parse(lines[1])).toEqual({ type: "user", message: { role: "user", content: "hola" } });
+  expect(JSON.parse(lines[1])).toEqual({ type: "user", message: { role: "user", content: "hello" } });
 });
 
-test("un socket que no existe falla, no se cuelga", async () => {
+test("a socket that doesn't exist fails instead of hanging", async () => {
   await expect(deliver(
-    { sessionId: "X", name: "x", cwd: "/tmp", socket: "/tmp/no-existe-spoochie.sock", token: "t", pid: 1, startedAt: 0 },
-    "hola",
+    { sessionId: "X", name: "x", cwd: "/tmp", socket: "/tmp/no-such-spoochie.sock", token: "t", pid: 1, startedAt: 0 },
+    "hello",
   )).rejects.toThrow();
 });

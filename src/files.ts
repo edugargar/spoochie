@@ -1,119 +1,118 @@
 /**
- * Ficheros entre maquinas: capturas, sobre todo.
+ * Files between machines, screenshots mostly.
  *
- * Dentro de una maquina un fichero viaja como ruta absoluta y lo abre el Claude de
- * enfrente con sus propios permisos. Entre maquinas esa ruta no existe, asi que los
- * bytes van por Slack: los sube el bot al hilo y el demonio del otro lado se los baja
- * a su propio spool antes de dar la ruta a su sesion.
+ * On one machine a file travels as an absolute path, and the Claude on the other end
+ * opens it with its own permissions. Across machines that path does not exist, so the
+ * bytes go through Slack: the bot uploads them to the thread and the daemon on the
+ * other side downloads them to its own spool before handing the path to its session.
  *
- * NO se usa `file_attachments` del buzon de Claude Code: existe, pero es superficie
- * sin documentar, con spool e integridad propios. Aqui el fichero se ve ademas en el
- * hilo, que es donde miran las personas.
+ * We do NOT use the Claude Code inbox's `file_attachments`. It exists, but it is
+ * undocumented and has its own spool and integrity rules. Here the file also shows up
+ * in the thread, which is where people look.
  */
 import { readFileSync, writeFileSync, mkdirSync, statSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { basename, join, extname } from "node:path";
 import { ROOT } from "./paths.ts";
 
 const API = "https://slack.com/api/";
-/** Un limite deliberado: spoochie es para pistas, no para mover binarios. */
+/** A deliberate limit: spoochie is for hints, not for moving binaries around. */
 export const MAX_BYTES = 10 * 1024 * 1024;
 export const SPOOL = join(ROOT, "files");
 
-const seguro = (n: string) => n.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120) || "fichero";
+const safe = (n: string) => n.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120) || "file";
 
 export type Uploaded = { id: string; nombre: string };
 
-/** Sube un fichero al hilo. Devuelve null si no cabe o si Slack dice que no. */
-export async function upload(token: string, ruta: string, channel: string, threadTs: string): Promise<Uploaded | null> {
+/** Uploads a file to the thread. Returns null if it is too big or Slack says no. */
+export async function upload(token: string, path: string, channel: string, threadTs: string): Promise<Uploaded | null> {
   let bytes: Buffer;
   try {
-    if (statSync(ruta).size > MAX_BYTES) return null;
-    bytes = readFileSync(ruta);
+    if (statSync(path).size > MAX_BYTES) return null;
+    bytes = readFileSync(path);
   } catch { return null; }
-  const nombre = seguro(basename(ruta));
+  const name = safe(basename(path));
 
-  const cab = { authorization: `Bearer ${token}` };
-  const paso1 = await fetch(`${API}files.getUploadURLExternal?${new URLSearchParams({ filename: nombre, length: String(bytes.length) })}`, { headers: cab });
-  const j1 = await paso1.json();
+  const auth = { authorization: `Bearer ${token}` };
+  const step1 = await fetch(`${API}files.getUploadURLExternal?${new URLSearchParams({ filename: name, length: String(bytes.length) })}`, { headers: auth });
+  const j1 = await step1.json();
   if (!j1.ok) return null;
 
-  const paso2 = await fetch(j1.upload_url, { method: "POST", body: new Blob([bytes as unknown as BlobPart]) });
-  if (!paso2.ok) return null;
+  const step2 = await fetch(j1.upload_url, { method: "POST", body: new Blob([bytes as unknown as BlobPart]) });
+  if (!step2.ok) return null;
 
-  const paso3 = await fetch(`${API}files.completeUploadExternal`, {
+  const step3 = await fetch(`${API}files.completeUploadExternal`, {
     method: "POST",
-    headers: { ...cab, "content-type": "application/json; charset=utf-8" },
-    body: JSON.stringify({ files: [{ id: j1.file_id, title: nombre }], channel_id: channel, thread_ts: threadTs }),
+    headers: { ...auth, "content-type": "application/json; charset=utf-8" },
+    body: JSON.stringify({ files: [{ id: j1.file_id, title: name }], channel_id: channel, thread_ts: threadTs }),
   });
-  const j3 = await paso3.json();
-  return j3.ok ? { id: j1.file_id, nombre } : null;
+  const j3 = await step3.json();
+  return j3.ok ? { id: j1.file_id, nombre: name } : null;
 }
 
 /**
- * De donde se aceptan bytes con el token del bot delante.
+ * Where we accept bytes from with the bot token attached.
  *
- * `bajar` manda `Authorization: Bearer <token del bot>` a la URL que diga el campo
- * `url_private` del mensaje. Hoy ese campo lo pone la API de Slack por TLS, asi que no
- * hay agujero abierto; el problema es que la funcion depende de eso y no lo comprueba.
- * Una URL con otro anfitrion se lleva el token del equipo entero.
+ * `download` sends `Authorization: Bearer <bot token>` to whatever URL the message's
+ * `url_private` field says. Today the Slack API sets that field over TLS, so there is
+ * no open hole; the problem is that the function relies on that without checking it.
+ * A URL on another host walks away with the whole team's token.
  */
-const ANFITRIONES = /^https:\/\/([a-z0-9-]+\.)*slack(-files)?\.com\//i;
+const HOSTS = /^https:\/\/([a-z0-9-]+\.)*slack(-files)?\.com\//i;
 
-/** Baja los ficheros de un mensaje al spool y devuelve sus rutas locales. */
-export async function download(token: string, ficheros: any[], threadId: string): Promise<string[]> {
-  // El id llega validado por `ID_VALIDO` desde que se materializa el hilo, pero esta
-  // funcion no lo sabe: aqui acaba en un `join`, y un id con `../` escribe fuera del
-  // spool. Se limpia igual, que cuesta una linea y no depende de nadie.
-  const dir = join(SPOOL, seguro(threadId));
+/** Downloads a message's files to the spool and returns their local paths. */
+export async function download(token: string, files: any[], threadId: string): Promise<string[]> {
+  // The id arrives validated by `VALID_ID` once the thread is materialized, but this
+  // function does not know that: here it ends up in a `join`, and an id with `../`
+  // writes outside the spool. Clean it anyway; it costs one line and depends on no one.
+  const dir = join(SPOOL, safe(threadId));
   mkdirSync(dir, { recursive: true, mode: 0o700 });
-  const rutas: string[] = [];
-  for (const f of ficheros ?? []) {
+  const paths: string[] = [];
+  for (const f of files ?? []) {
     const url = f?.url_private_download ?? f?.url_private;
-    if (typeof url !== "string" || !ANFITRIONES.test(url)) continue;
+    if (typeof url !== "string" || !HOSTS.test(url)) continue;
     try {
       const res = await fetch(url, { headers: { authorization: `Bearer ${token}` } });
       if (!res.ok) continue;
       const buf = Buffer.from(await res.arrayBuffer());
       if (buf.length > MAX_BYTES) continue;
-      // El nombre lo pone el emisor: se limpia antes de tocar el disco.
-      const nombre = seguro(f.name ?? `${f.id}${extname(f.filetype ? `.${f.filetype}` : "")}`);
-      // El id tambien lo pone el otro lado. Sin limpiarlo, un id con ../ escribe
-      // fuera del spool, que es peor que un nombre feo.
-      const destino = join(dir, `${seguro(String(f.id ?? "s"))}-${nombre}`);
-      writeFileSync(destino, buf, { mode: 0o600 });
-      rutas.push(destino);
+      // The sender picks the name: clean it before it touches the disk.
+      const name = safe(f.name ?? `${f.id}${extname(f.filetype ? `.${f.filetype}` : "")}`);
+      // The other side picks the id too. Uncleaned, an id with ../ writes outside the
+      // spool, which is worse than an ugly name.
+      const dest = join(dir, `${safe(String(f.id ?? "s"))}-${name}`);
+      writeFileSync(dest, buf, { mode: 0o600 });
+      paths.push(dest);
     } catch {}
   }
-  return rutas;
+  return paths;
 }
 
 /**
- * Lo que alguien dejo aparcado en el spool de un hilo que nunca llego a existir.
+ * Whatever someone left parked in the spool of a thread that never came to exist.
  *
- * Los ficheros viajan a trozos y los reles no ordenan, asi que un trozo puede llegar
- * antes que la invitacion y tiene que esperar aqui. Hasta ahi bien. Lo que no estaba
- * previsto es que esa invitacion no llegue nunca: el barrido del demonio recorre los
- * hilos, y de un hilo que no existe no se ocupa nadie. Medido: un contacto manda un
- * fichero con un id inventado y se queda en el spool para siempre, sin aparecer en
- * ningun sitio donde alguien lo vea.
+ * Files travel in chunks and relays do not keep order, so a chunk can arrive before
+ * the invite and has to wait here. Fine so far. What nobody planned for is the invite
+ * never arriving: the daemon's sweep walks the threads, and nobody looks after a thread
+ * that does not exist. Measured: a contact sends a file with a made-up id and it sits
+ * in the spool forever, never showing up anywhere a person would see it.
  *
- * Y contradice la frase que sostiene todo lo demas: hasta que aceptas no pasa nada. Un
- * fichero de otra persona en tu disco antes de que te pregunten es que si pasa algo.
+ * It also breaks the rule everything else rests on: nothing happens until you accept.
+ * Someone else's file on your disk before you were asked means something did happen.
  *
- * Se le da lo mismo que a un spoochie sin aceptar. Un directorio con hilo vivo no se
- * toca: de ese se encarga `purgar` al cerrar.
+ * It gets the same treatment as an unaccepted spoochie. A directory with a live thread
+ * is left alone: `purge` handles that one on close.
  */
-export function sweepOrphans(hayHilo: (id: string) => boolean, ttlMs: number, ahora = Date.now()): string[] {
+export function sweepOrphans(hasThread: (id: string) => boolean, ttlMs: number, now = Date.now()): string[] {
   if (!existsSync(SPOOL)) return [];
-  const barridos: string[] = [];
+  const swept: string[] = [];
   for (const id of readdirSync(SPOOL)) {
-    if (hayHilo(id)) continue;
+    if (hasThread(id)) continue;
     const dir = join(SPOOL, id);
     try {
-      if (ahora - statSync(dir).mtimeMs < ttlMs) continue;
+      if (now - statSync(dir).mtimeMs < ttlMs) continue;
       rmSync(dir, { recursive: true, force: true });
-      barridos.push(id);
+      swept.push(id);
     } catch {}
   }
-  return barridos;
+  return swept;
 }

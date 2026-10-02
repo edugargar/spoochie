@@ -1,12 +1,12 @@
 /**
- * Comprueba el bucle entero en esta maquina, sin necesitar a otra persona.
+ * Checks the whole loop on this machine, without needing another person.
  *
- * Existe para el dia de la instalacion: alguien acaba de poner spoochie y quiere saber
- * si funciona antes de escribirle a un companero. Levanta dos buzones falsos, abre un
- * spoochie de uno a otro y recorre las mismas paradas que un spoochie de verdad: la
- * puerta de aprobacion, la ida y vuelta, el cierre y el aviso al otro lado.
+ * It exists for install day: someone just set up spoochie and wants to know whether it
+ * works before writing to a teammate. It brings up two fake inboxes, opens a spoochie
+ * from one to the other and goes through the same stops as a real spoochie: the approval
+ * gate, the round trip, the close and the notice to the other side.
  *
- * NO toca Slack ni tu estado real: corre en su propio SPOOCHIE_HOME temporal.
+ * It does NOT touch Slack or your real state: it runs in its own temporary SPOOCHIE_HOME.
  */
 import net from "node:net";
 import { spawn } from "node:child_process";
@@ -19,50 +19,50 @@ import { dirname } from "node:path";
 export type Step = { ok: boolean; que: string; detalle: string };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const dormir = (ms: number) => new Promise(r => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-function buzon(nombre: string) {
-  const sock = join(mkdtempSync(join(tmpdir(), `spoochie-st-${nombre}-`)), "s.sock");
-  const recibido: string[] = [];
+function inbox(name: string) {
+  const sock = join(mkdtempSync(join(tmpdir(), `spoochie-st-${name}-`)), "s.sock");
+  const received: string[] = [];
   const server = net.createServer(c => {
     let buf = "";
     c.on("data", d => {
       buf += d.toString();
       let i: number;
       while ((i = buf.indexOf("\n")) >= 0) {
-        const linea = buf.slice(0, i); buf = buf.slice(i + 1);
-        try { const f = JSON.parse(linea); if (f.type === "user") recibido.push(f.message.content); } catch {}
+        const line = buf.slice(0, i); buf = buf.slice(i + 1);
+        try { const f = JSON.parse(line); if (f.type === "user") received.push(f.message.content); } catch {}
       }
     });
     c.on("error", () => {});
   });
   server.listen(sock);
-  return { sock, recibido, server };
+  return { sock, received, server };
 }
 
 export async function selftest(): Promise<Step[]> {
-  const pasos: Step[] = [];
+  const steps: Step[] = [];
   const home = mkdtempSync(join(tmpdir(), "spoochie-selftest-"));
-  const A = buzon("a"), B = buzon("b");
-  let demonio: ReturnType<typeof spawn> | null = null;
+  const A = inbox("a"), B = inbox("b");
+  let daemon: ReturnType<typeof spawn> | null = null;
 
   const rpc = (req: any): Promise<any> => new Promise((res, rej) => {
     const c = net.createConnection({ path: join(home, "daemon.sock") });
     let buf = "";
-    c.setTimeout(10_000, () => { c.destroy(); rej(new Error("el demonio no contesta")); });
+    c.setTimeout(10_000, () => { c.destroy(); rej(new Error("the daemon is not answering")); });
     c.on("error", rej);
     c.on("connect", () => c.write(JSON.stringify(req) + "\n"));
     c.on("data", d => { buf += d; const i = buf.indexOf("\n"); if (i >= 0) { c.destroy(); res(JSON.parse(buf.slice(0, i))); } });
   });
 
-  // Un paso que depende de otro roto no se ejecuta: daria "ok" por el motivo
-  // equivocado, que es peor que un fallo porque te hace creer que algo funciona.
-  const saltar = (que: string) => { pasos.push({ ok: false, que, detalle: "no se ha llegado a probar" }); };
+  // A step that depends on a broken one does not run: it would say "ok" for the wrong
+  // reason, which is worse than a failure because it makes you believe something works.
+  const skip = (what: string) => { steps.push({ ok: false, que: what, detalle: "never got to test it" }); };
 
   try {
-    const entorno = { ...process.env, SPOOCHIE_HOME: home };
-    // El registro se escribe a mano: paths.ts fija su raiz al cargarse, asi que
-    // cambiar la variable de entorno a mitad de proceso no la mueve.
+    const env = { ...process.env, SPOOCHIE_HOME: home };
+    // The registry is written by hand: paths.ts fixes its root when it loads, so
+    // changing the environment variable halfway through the process does not move it.
     mkdirSync(join(home, "sessions"), { recursive: true, mode: 0o700 });
     for (const [id, b, cwd] of [["st-a", A, "/tmp/st-a"], ["st-b", B, "/tmp/st-b"]] as const) {
       writeFileSync(
@@ -71,75 +71,79 @@ export async function selftest(): Promise<Step[]> {
         { mode: 0o600 },
       );
     }
-    writeFileSync(join(home, "config.json"), JSON.stringify({ guardian: false, transcript: false, aparte: false, human: "prueba" }), { mode: 0o600 });
+    writeFileSync(join(home, "config.json"), JSON.stringify({ guardian: false, transcript: false, aparte: false, human: "selftest" }), { mode: 0o600 });
 
     const { daemonCommand } = await import("./startup.ts");
     const [cmd, ...args] = daemonCommand();
-    demonio = spawn(cmd, args, { env: entorno, stdio: "ignore" });
-    // Sin este oyente, un bun que no arranca tumba el proceso con un error sin recoger
-    // en vez de contarte que el demonio no arranco, que es justo lo que vienes a saber.
-    demonio.on("error", () => {});
-    for (let i = 0; i < 60 && !existsSync(join(home, "daemon.sock")); i++) await dormir(100);
+    daemon = spawn(cmd, args, { env, stdio: "ignore" });
+    // Without this listener, a bun that fails to start kills the process with an
+    // unhandled error instead of telling you the daemon did not start, which is exactly
+    // what you came to find out.
+    daemon.on("error", () => {});
+    for (let i = 0; i < 60 && !existsSync(join(home, "daemon.sock")); i++) await sleep(100);
     const pong = await rpc({ op: "ping" });
-    pasos.push({ ok: pong.ok === true, que: "el demonio arranca y contesta", detalle: `pid ${pong.pid}` });
+    steps.push({ ok: pong.ok === true, que: "the daemon starts and answers", detalle: `pid ${pong.pid}` });
 
-    const abierto = await rpc({ op: "open", sessionId: "st-a", to: "st-b", subject: "prueba de instalacion", body: "si lees esto, el buzon funciona" });
-    pasos.push({ ok: abierto.ok && abierto.delivered === true, que: "la invitacion llega al otro buzon", detalle: abierto.ok ? `spoochie ${abierto.id}` : abierto.error });
-    if (!abierto.ok) {
-      for (const q of ["el sobre dice como aceptar", "la puerta: no se contesta sin aceptar", "solo acepta quien recibe",
-                       "el humano receptor abre el tunel", "ida y vuelta", "no se mandan mensajes vacios",
-                       "al cerrar se avisa al otro lado"]) saltar(q);
-      return pasos;
+    const opened = await rpc({ op: "open", sessionId: "st-a", to: "st-b", subject: "install check", body: "if you read this, the inbox works" });
+    steps.push({ ok: opened.ok && opened.delivered === true, que: "the invite reaches the other inbox", detalle: opened.ok ? `spoochie ${opened.id}` : opened.error });
+    if (!opened.ok) {
+      for (const q of ["the envelope says how to accept", "the gate: no answering before accepting", "only the receiver can accept",
+                       "the receiving human opens the tunnel", "round trip", "empty messages are not sent",
+                       "closing notifies the other side"]) skip(q);
+      return steps;
     }
-    const id = abierto.id;
+    const id = opened.id;
 
-    pasos.push({
-      ok: B.recibido.some(x => x.includes(`spoochie accept ${id}`)),
-      que: "el sobre dice como aceptar",
-      detalle: B.recibido.length ? "la invitacion trae el comando" : "no llego nada",
+    steps.push({
+      ok: B.received.some(x => x.includes(`spoochie accept ${id}`)),
+      que: "the envelope says how to accept",
+      detalle: B.received.length ? "the invite carries the command" : "nothing arrived",
     });
 
-    const pronto = await rpc({ op: "say", sessionId: "st-b", id, text: "contesto sin permiso" });
-    pasos.push({ ok: pronto.ok === false, que: "la puerta: no se contesta sin aceptar", detalle: pronto.ok ? "SE COLO" : "rechazado, como debe" });
+    const early = await rpc({ op: "say", sessionId: "st-b", id, text: "answering without permission" });
+    steps.push({ ok: early.ok === false, que: "the gate: no answering before accepting", detalle: early.ok ? "IT GOT THROUGH" : "rejected, as it should be" });
 
-    const mal = await rpc({ op: "accept", sessionId: "st-a", id });
-    pasos.push({ ok: mal.ok === false, que: "solo acepta quien recibe", detalle: mal.ok ? "acepto quien no debia" : "rechazado" });
+    const wrong = await rpc({ op: "accept", sessionId: "st-a", id });
+    steps.push({ ok: wrong.ok === false, que: "only the receiver can accept", detalle: wrong.ok ? "the wrong side accepted" : "rejected" });
 
-    const bien = await rpc({ op: "accept", sessionId: "st-b", id });
-    pasos.push({ ok: bien.ok === true, que: "el humano receptor abre el tunel", detalle: `estado ${bien.state}` });
+    const right = await rpc({ op: "accept", sessionId: "st-b", id });
+    steps.push({ ok: right.ok === true, que: "the receiving human opens the tunnel", detalle: `state ${right.state}` });
 
-    const ida = await rpc({ op: "say", sessionId: "st-b", id, text: "aqui esta mi respuesta" });
-    pasos.push({ ok: ida.delivered === true && A.recibido.some(x => x.includes("aqui esta mi respuesta")), que: "ida y vuelta", detalle: "el mensaje llega entero al otro lado" });
+    const reply = await rpc({ op: "say", sessionId: "st-b", id, text: "here is my answer" });
+    steps.push({ ok: reply.delivered === true && A.received.some(x => x.includes("here is my answer")), que: "round trip", detalle: "the message reaches the other side whole" });
 
-    const vacio = await rpc({ op: "say", sessionId: "st-a", id, text: "  " });
-    pasos.push({ ok: vacio.ok === false, que: "no se mandan mensajes vacios", detalle: vacio.ok ? "salio uno vacio" : "rechazado" });
+    const empty = await rpc({ op: "say", sessionId: "st-a", id, text: "  " });
+    steps.push({ ok: empty.ok === false, que: "empty messages are not sent", detalle: empty.ok ? "an empty one went out" : "rejected" });
 
-    await rpc({ op: "close", sessionId: "st-a", id, reason: "fin de la prueba" });
-    pasos.push({
-      ok: B.recibido.some(x => x.includes(id) && x.includes("cerrado")),
-      que: "al cerrar se avisa al otro lado",
-      detalle: "el aviso de cierre llega",
+    // Only what B receives after the close counts, so the check does not hang on the
+    // wording of the close notice.
+    const beforeClose = B.received.length;
+    await rpc({ op: "close", sessionId: "st-a", id, reason: "end of the selftest" });
+    steps.push({
+      ok: B.received.slice(beforeClose).some(x => x.includes(id)),
+      que: "closing notifies the other side",
+      detalle: "the close notice arrives",
     });
 
-    // "Al cerrar se borra" es una de las tres promesas del README, y era la unica parada
-    // del bucle que esta prueba no miraba: cerraba y se fiaba. En una maquina de verdad
-    // `doctor` saco FALLO con doce spoochies cerrados que aun guardaban el texto.
-    const ruta = join(home, "threads", `${id}.json`);
-    let queda = -1;
+    // "Closing erases" is one of the README's three promises, and it was the only stop
+    // in the loop this test did not look at: it closed and took it on faith. On a real
+    // machine `doctor` showed FAIL with twelve closed spoochies that still kept the text.
+    const path = join(home, "threads", `${id}.json`);
+    let left = -1;
     try {
-      const t = JSON.parse(readFileSync(ruta, "utf8"));
-      queda = (t.messages ?? []).filter((m: { text?: string }) => (m.text ?? "").length > 0).length;
-    } catch { queda = 0; }
-    pasos.push({
-      ok: queda === 0,
-      que: "al cerrar se borra lo que se dijo",
-      detalle: queda === 0 ? "no queda texto en disco" : `QUEDAN ${queda} mensaje(s) con texto en ${ruta}`,
+      const t = JSON.parse(readFileSync(path, "utf8"));
+      left = (t.messages ?? []).filter((m: { text?: string }) => (m.text ?? "").length > 0).length;
+    } catch { left = 0; }
+    steps.push({
+      ok: left === 0,
+      que: "closing erases what was said",
+      detalle: left === 0 ? "no text left on disk" : `${left} message(s) WITH TEXT LEFT in ${path}`,
     });
   } catch (e) {
-    pasos.push({ ok: false, que: "la prueba se rompio", detalle: String(e) });
+    steps.push({ ok: false, que: "the test broke", detalle: String(e) });
   } finally {
-    demonio?.kill();
+    daemon?.kill();
     A.server.close(); B.server.close();
   }
-  return pasos;
+  return steps;
 }

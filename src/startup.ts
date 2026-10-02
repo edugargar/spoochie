@@ -1,10 +1,11 @@
 /**
- * Como se arranca el demonio, y como se sabe que sigue vivo.
+ * How the daemon is started, and how we know it is still alive.
  *
- * Antes lo levantaba el primer hook SessionStart y moria con el reinicio de la
- * maquina; el sintoma de un demonio muerto era "no llega nada". Ahora en macOS se
- * registra en launchd con KeepAlive, y escribe un latido cada 20 s que `doctor` mide.
- * El hook sigue sirviendo de red: si no hay latido, arranca lo que haga falta.
+ * It used to be started by the first SessionStart hook and died when the machine
+ * rebooted; the symptom of a dead daemon was "nothing arrives". Now on macOS it is
+ * registered with launchd with KeepAlive, and it writes a heartbeat every 20 s that
+ * `doctor` measures. The hook is still the safety net: with no heartbeat, it starts
+ * whatever is needed.
  */
 import { execFileSync, spawn } from "node:child_process";
 import { accessSync, constants, existsSync, mkdirSync, readFileSync, statSync, utimesSync, writeFileSync, openSync, unlinkSync } from "node:fs";
@@ -16,16 +17,17 @@ import { VERSION } from "./version.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
-/** `bun build --compile` mete los ficheros en un sistema virtual. Si estamos ahi,
- *  el ejecutable es spoochie mismo y el demonio se arranca como subcomando. */
+/** `bun build --compile` puts the files in a virtual filesystem. If we are in there,
+ *  the executable is spoochie itself and the daemon starts as a subcommand. */
 export const COMPILED = import.meta.path.includes("$bunfs");
 
+// The file name on disk stays Spanish: older daemons and `doctor` read it.
 export const HEARTBEAT = join(ROOT, "latido");
 export const HEARTBEAT_MS = 20_000;
 export const LABEL = "dev.spoochie.spoochied";
 
 export function daemonCommand(): string[] {
-  // Para las pruebas: un demonio que no arranca, a proposito y sin depender del PATH.
+  // For the tests: a daemon that fails to start, on purpose and without depending on PATH.
   if (process.env.SPOOCHIE_DAEMON_CMD) return process.env.SPOOCHIE_DAEMON_CMD.split(" ");
   if (COMPILED) return [process.execPath, "daemon"];
   const bun = (() => { try { return execFileSync("which", ["bun"], { encoding: "utf8" }).trim(); } catch { return "bun"; } })();
@@ -33,9 +35,9 @@ export function daemonCommand(): string[] {
 }
 
 /**
- * El latido lleva la version del demonio que late. `doctor` corre con el codigo del
- * plugin recien actualizado, pero el demonio bajo launchd sigue siendo el que arranco
- * antes de actualizar: sin esto, doctor decia "0.9.0" con un demonio 0.7.1 corriendo.
+ * The heartbeat carries the version of the daemon that writes it. `doctor` runs with the
+ * freshly updated plugin code, but the daemon under launchd is still the one that started
+ * before the update: without this, doctor said "0.9.0" with a 0.7.1 daemon running.
  */
 export function beat(version: string = VERSION) {
   try {
@@ -45,54 +47,54 @@ export function beat(version: string = VERSION) {
   } catch {}
 }
 
-/** Version del demonio que late, o null si no late o es anterior a 0.9.1 (latido vacio). */
+/** Version of the daemon writing the heartbeat, or null if there is none or it predates 0.9.1 (empty heartbeat). */
 export function heartbeatVersion(): string | null {
   try { return readFileSync(HEARTBEAT, "utf8").trim() || null; } catch { return null; }
 }
 
-/** Segundos desde el ultimo latido, o null si nunca lo hubo. */
+/** Seconds since the last heartbeat, or null if there never was one. */
 export function heartbeatAge(): number | null {
   try { return (Date.now() - statSync(HEARTBEAT).mtimeMs) / 1000; } catch { return null; }
 }
 
 const plistPath = () => join(homedir(), "Library", "LaunchAgents", `${LABEL}.plist`);
 
-/** Un plist es XML. Una ruta con `&` (un directorio "copias & backups", sin ir mas
- *  lejos) lo dejaba mal formado: launchd lo rechazaba, `launchctl` fallaba en silencio
- *  y `instalarLaunchd` devolvia "instalado" igual. El sintoma era "no llega nada", que
- *  es exactamente lo que este fichero existe para que no pase. Medido con `plutil
- *  -lint`: "Encountered unknown ampersand-escape sequence". */
+/** A plist is XML. A path with `&` (a "copies & backups" directory, for one) made it
+ *  malformed: launchd rejected it, `launchctl` failed silently and `installLaunchd`
+ *  returned "instalado" anyway. The symptom was "nothing arrives", which is exactly what
+ *  this file exists to prevent. Measured with `plutil -lint`: "Encountered unknown
+ *  ampersand-escape sequence". */
 const xml = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
- * El PATH que se queda grabado en el LaunchAgent.
+ * The PATH recorded in the LaunchAgent.
  *
- * Se metia `process.env.PATH` entero, o sea el PATH del shell desde el que alguien
- * corrio `register` una vez. Eso puede traer un directorio temporal (un `bin` de un
- * worktree, un nix shell, el `bin` de un test) y el agente lo usa en cada arranque de la
- * maquina, para siempre. Un `bun` que aparezca ahi mas adelante lo ejecuta el demonio.
+ * It used to get the whole `process.env.PATH`, that is, the PATH of the shell someone
+ * once ran `register` from. That can carry a temporary directory (a worktree's `bin`, a
+ * nix shell, a test's `bin`) and the agent uses it on every boot of the machine, forever.
+ * A `bun` that shows up there later gets run by the daemon.
  *
- * Se queda lo estable: los directorios del sistema y el del `bun` que se va a usar.
+ * What stays is the stable part: the system directories and the one of the `bun` in use.
  */
-export function agentPath(cmd = daemonCommand(), base = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", dirClaude: string | null = null): string {
-  const dirBun = cmd[0]?.startsWith("/") ? dirname(cmd[0]) : null;
+export function agentPath(cmd = daemonCommand(), base = "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin", claudeDir: string | null = null): string {
+  const bunDir = cmd[0]?.startsWith("/") ? dirname(cmd[0]) : null;
   const dirs = base.split(":");
-  if (dirBun && !dirs.includes(dirBun)) dirs.unshift(dirBun);
-  // Y el de `claude`, que el demonio y la ventana del aparte lanzan por su nombre. Sin
-  // el, ningun spoochie aceptado se puede atender: ver `encontrarClaude`.
-  if (dirClaude && !dirs.includes(dirClaude)) dirs.unshift(dirClaude);
+  if (bunDir && !dirs.includes(bunDir)) dirs.unshift(bunDir);
+  // And the one of `claude`, which the daemon and the aside window launch by name.
+  // Without it, no accepted spoochie can be handled: see `findClaude`.
+  if (claudeDir && !dirs.includes(claudeDir)) dirs.unshift(claudeDir);
   return dirs.join(":");
 }
 
 /**
- * El directorio donde esta `claude`, para grabarlo en el PATH del agente.
+ * The directory where `claude` lives, to record it in the agent's PATH.
  *
- * 0.9.9 dejo el PATH del agente en "directorios del sistema y el de bun" y el
- * instalador nativo de Claude Code pone `claude` en ~/.local/bin: el aparte no arrancaba
- * ("claude: not found" en la ventana, `Executable not found in $PATH` en segundo plano) y
- * nadie podia atender un spoochie aceptado. Se mira primero el PATH de quien corre
- * `register`, que es una sesion de Claude Code y por tanto lo tiene, y despues los sitios
- * donde lo deja cada instalador. Solo cuenta un fichero ejecutable llamado `claude`.
+ * 0.9.9 left the agent's PATH as "system directories plus bun's", and Claude Code's native
+ * installer puts `claude` in ~/.local/bin: the aside did not start ("claude: not found" in
+ * the window, `Executable not found in $PATH` in the background) and nobody could handle
+ * an accepted spoochie. First comes the PATH of whoever runs `register`, which is a
+ * Claude Code session and so has it, then the places each installer uses. Only an
+ * executable file named `claude` counts.
  */
 export function findClaude(dirs: string[] = [
   ...(process.env.PATH ?? "").split(":"),
@@ -111,8 +113,8 @@ export function findClaude(dirs: string[] = [
   return null;
 }
 
-/** El PATH que tiene grabado el LaunchAgent instalado, o null si no hay (otro sistema,
- *  o el demonio arranca desde un hook). Es el PATH con el que corre el demonio de verdad. */
+/** The PATH recorded in the installed LaunchAgent, or null if there is none (another OS,
+ *  or the daemon starts from a hook). It is the PATH the real daemon runs with. */
 export function installedAgentPath(): string | null {
   try {
     const m = readFileSync(plistPath(), "utf8").match(/<key>PATH<\/key><string>([^<]*)<\/string>/);
@@ -125,7 +127,7 @@ export function wantedPlist(): string {
   const args = cmd.map(a => `      <string>${xml(a)}</string>`).join("\n");
   const path = xml(agentPath(cmd, undefined, findClaude()));
   return `<?xml version="1.0" encoding="UTF-8"?>
-<!-- Lo escribe spoochie (register / join). Se reescribe solo si cambia la ruta del plugin. -->
+<!-- Written by spoochie (register / join). Rewritten only when the plugin path changes. -->
 <plist version="1.0"><dict>
   <key>Label</key><string>${xml(LABEL)}</string>
   <key>ProgramArguments</key>
@@ -152,12 +154,9 @@ export function launchdInstalled(): boolean {
   return process.platform === "darwin" && existsSync(plistPath()) && !process.env.SPOOCHIE_HOME;
 }
 
-/** Deja el demonio bajo launchd. Idempotente: si el plist ya dice lo mismo, no toca
- *  nada. Si cambia (el plugin se actualizo y la ruta es otra), lo recarga. Con
- *  SPOOCHIE_HOME puesto no se instala nada: eso es un laboratorio, no tu maquina. */
-/** La version del plugin que hay en una ruta de la cache (.../spoochie/0.5.1/...). */
-export function versionFromPath(texto: string): string | null {
-  return /\/spoochie\/(\d+\.\d+\.\d+)\//.exec(texto)?.[1] ?? null;
+/** The plugin version found in a cache path (.../spoochie/0.5.1/...). */
+export function versionFromPath(text: string): string | null {
+  return /\/spoochie\/(\d+\.\d+\.\d+)\//.exec(text)?.[1] ?? null;
 }
 export function isNewer(a: string, b: string): boolean {
   const x = a.split(".").map(Number), y = b.split(".").map(Number);
@@ -165,82 +164,87 @@ export function isNewer(a: string, b: string): boolean {
   return false;
 }
 
-/** El LaunchAgent de cuando esto se llamaba spochie: si sigue ahi, corre un demonio
- *  viejo que lee el mismo Slack y entregaria todo dos veces. Se apaga y se borra. */
+/** The LaunchAgent from when this was called spochie: if it is still there, an old
+ *  daemon runs that reads the same Slack and would deliver everything twice. It gets
+ *  stopped and deleted. */
 export function retireOldLaunchd(): boolean {
-  const viejo = join(homedir(), "Library", "LaunchAgents", "dev.spochie.spochied.plist");
-  if (!existsSync(viejo)) return false;
+  const old = join(homedir(), "Library", "LaunchAgents", "dev.spochie.spochied.plist");
+  if (!existsSync(old)) return false;
   launchctl(["bootout", `gui/${uid()}/dev.spochie.spochied`]);
-  try { unlinkSync(viejo); } catch {}
+  try { unlinkSync(old); } catch {}
   return true;
 }
 
-/** El pid del candado, si ese proceso sigue vivo. */
+/** The pid in the lock file, if that process is still alive. */
 export function pidAlive(): number | null {
   try { const pid = Number(readFileSync(DAEMON_LOCK, "utf8").trim()); if (pid) { process.kill(pid, 0); return pid; } } catch {}
   return null;
 }
 
 /**
- * Apaga el demonio que tiene el candado y espera a que lo suelte (hasta 3 s; luego
- * SIGKILL). Hace falta porque un demonio que arranco un hook va suelto: launchd no lo
- * conoce, `bootout` no lo toca, y el que launchd arranca muere al instante con "ya esta
- * corriendo" y se reintenta cada 10 s para siempre. Visto en directo: tras actualizar
- * a 0.9.2, el 0.7.1 de la vispera siguio latiendo un dia entero con el plist ya nuevo.
+ * Stops the daemon holding the lock and waits for it to let go (up to 3 s; then
+ * SIGKILL). Needed because a daemon started by a hook runs loose: launchd does not know
+ * it, `bootout` does not touch it, and the one launchd starts dies at once with "already
+ * running" and retries every 10 s forever. Seen live: after updating to 0.9.2, the
+ * previous day's 0.7.1 kept beating for a whole day with the plist already new.
  */
 export function stopDaemon(): boolean {
   const pid = pidAlive();
   if (!pid) return false;
   try { process.kill(pid, "SIGTERM"); } catch { return false; }
-  const hasta = Date.now() + 3000;
-  while (Date.now() < hasta) { try { process.kill(pid, 0); execFileSync("sleep", ["0.1"]); } catch { return true; } }
+  const until = Date.now() + 3000;
+  while (Date.now() < until) { try { process.kill(pid, 0); execFileSync("sleep", ["0.1"]); } catch { return true; } }
   try { process.kill(pid, "SIGKILL"); } catch {}
   return true;
 }
 
-/** El demonio que late es mas viejo que este plugin (o tan viejo que no dice version). */
+/** The daemon writing the heartbeat is older than this plugin (or so old it reports no version). */
 export function daemonBehind(): boolean {
   if (!pidAlive()) return false;
-  const late = heartbeatVersion();
-  return late === null || isNewer(VERSION, late);
+  const running = heartbeatVersion();
+  return running === null || isNewer(VERSION, running);
 }
 
+/** Puts the daemon under launchd. Idempotent: if the plist already says the same, it
+ *  touches nothing. If it changed (the plugin updated and the path is different), it
+ *  reloads it. With SPOOCHIE_HOME set nothing is installed: that is a lab, not your
+ *  machine. The return values stay Spanish; callers compare against them. */
 export function installLaunchd(): "instalado" | "actualizado" | "igual" | "no" {
   if (process.platform !== "darwin" || process.env.SPOOCHIE_HOME) return "no";
   ensureDirs();
-  if (retireOldLaunchd()) console.error("spoochie: apagado y retirado el demonio antiguo (spochie)");
-  const deseado = wantedPlist();
+  if (retireOldLaunchd()) console.error("spoochie: stopped and retired the old daemon (spochie)");
+  const wanted = wantedPlist();
   const p = plistPath();
-  const habia = existsSync(p) ? readFileSync(p, "utf8") : null;
-  if (habia === deseado) {
-    // El plist ya es este, pero el proceso que late puede ser el de antes de actualizar.
+  const current = existsSync(p) ? readFileSync(p, "utf8") : null;
+  if (current === wanted) {
+    // The plist is already this one, but the beating process may be the pre-update one.
     if (!daemonBehind()) return "igual";
     stopDaemon();
     launchctl(["kickstart", `gui/${uid()}/${LABEL}`]);
     return "actualizado";
   }
-  // Una sesion con el plugin viejo no degrada el demonio: visto en directo, un hook
-  // de 0.5.1 devolvio launchd a 0.5.1 a los 80 s de haberlo subido, en mitad de una
-  // prueba. Solo se sustituye por una version igual o mas nueva.
-  const vieja = habia ? versionFromPath(habia) : null, mia = versionFromPath(deseado);
-  if (vieja && mia && isNewer(vieja, mia)) return "no";
+  // A session with the old plugin does not downgrade the daemon: seen live, a 0.5.1
+  // hook put launchd back on 0.5.1 80 s after it had been upgraded, in the middle of a
+  // test. It is only replaced by an equal or newer version.
+  const theirs = current ? versionFromPath(current) : null, mine = versionFromPath(wanted);
+  if (theirs && mine && isNewer(theirs, mine)) return "no";
   mkdirSync(dirname(p), { recursive: true });
-  writeFileSync(p, deseado, { mode: 0o644 });
-  // Se apaga el de antes, venga de launchd (bootout) o de un hook (suelto, con el
-  // candado puesto): si no, el nuevo muere al instante y launchd lo reintenta sin fin.
-  if (habia !== null) launchctl(["bootout", `gui/${uid()}/${LABEL}`]);
+  writeFileSync(p, wanted, { mode: 0o644 });
+  // The previous one gets stopped, whether it came from launchd (bootout) or from a hook
+  // (loose, holding the lock): otherwise the new one dies at once and launchd retries forever.
+  if (current !== null) launchctl(["bootout", `gui/${uid()}/${LABEL}`]);
   stopDaemon();
-  // Si launchd no lo coge, se dice. Antes se devolvia "instalado" pasara lo que pasara:
-  // el `||` se tragaba los dos fallos y quien lo corria leia que estaba puesto mientras
-  // el demonio no arrancaba en ningun reinicio.
+  // If launchd does not take it, say so. It used to return "instalado" no matter what:
+  // the `||` swallowed both failures and whoever ran it read that it was in place while
+  // the daemon did not start on any reboot.
   if (!launchctl(["bootstrap", `gui/${uid()}`, p]) && !launchctl(["load", "-w", p])) {
-    console.error(`spoochie: launchd no ha aceptado ${p}. El demonio arranca igual desde el hook, pero no sobrevive a un reinicio. Mira: launchctl bootstrap gui/${uid()} ${p}`);
+    console.error(`spoochie: launchd did not accept ${p}. The daemon still starts from the hook, but it does not survive a reboot. Try: launchctl bootstrap gui/${uid()} ${p}`);
     return "no";
   }
-  return habia === null ? "instalado" : "actualizado";
+  return current === null ? "instalado" : "actualizado";
 }
 
-/** Arranca el demonio como toque: por launchd si esta, a mano si no. */
+/** Starts the daemon the right way: through launchd if it is there, by hand if not. */
 export function startDaemon() {
   ensureDirs();
   if (launchdInstalled()) {
@@ -248,7 +252,7 @@ export function startDaemon() {
   }
   const out = openSync(DAEMON_LOG, "a");
   const [cmd, ...args] = daemonCommand();
-  // Sin el entorno de quien lo arranca: la CLI corre dentro de una sesion de Claude
-  // Code, y su buzon (CLAUDE_CODE_MESSAGING_*) no tiene por que llegar al demonio.
+  // Without the starter's environment: the CLI runs inside a Claude Code session, and
+  // its inbox (CLAUDE_CODE_MESSAGING_*) has no business reaching the daemon.
   spawn(cmd, args, { detached: true, stdio: ["ignore", out, out], env: cleanEnv() }).unref();
 }

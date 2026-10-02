@@ -5,254 +5,254 @@ import { asideSettings, asideFlags, permissionMode, windowScript, ASIDE_MODEL, a
 const CLI = "/usr/local/bin/spoochie";
 const CLI_DEV = "/opt/bun run /repo/src/cli.ts";
 
-const pasa = (cmd: string, cli = CLI) => judgeBash(cmd, cli).ok;
-const porque = (cmd: string, cli = CLI) => { const v = judgeBash(cmd, cli); return v.ok ? "" : v.por; };
+const passes = (cmd: string, cli = CLI) => judgeBash(cmd, cli).ok;
+const why = (cmd: string, cli = CLI) => { const v = judgeBash(cmd, cli); return v.ok ? "" : v.por; };
 
-test("el escaner respeta las comillas: un `;` dentro de un mensaje no es un metacaracter", () => {
-  expect(scan(`spoochie say v1 "arregla el modal; luego el boton"`).problema).toBeUndefined();
-  expect(scan(`spoochie say v1 "arregla el modal; luego el boton"`).palabras).toEqual([
-    "spoochie", "say", "v1", "arregla el modal; luego el boton",
+test("the scanner respects quotes: a `;` inside a message is not a metacharacter", () => {
+  expect(scan(`spoochie say v1 "fix the modal; then the button"`).problem).toBeUndefined();
+  expect(scan(`spoochie say v1 "fix the modal; then the button"`).words).toEqual([
+    "spoochie", "say", "v1", "fix the modal; then the button",
   ]);
-  expect(scan("git log; touch /tmp/x").problema).toContain('";"');
-  expect(scan(`git log 'a b'`).palabras).toEqual(["git", "log", "a b"]);
-  expect(scan(`git log "sin cerrar`).problema).toContain("sin cerrar");
+  expect(scan("git log; touch /tmp/x").problem).toContain('";"');
+  expect(scan(`git log 'a b'`).words).toEqual(["git", "log", "a b"]);
+  expect(scan(`git log "unclosed`).problem).toContain("unclosed");
 });
 
-test("lo que el shell expande igual entre comillas dobles no pasa", () => {
-  expect(scan(`spoochie say v1 "$(cat /etc/passwd)"`).problema).toContain("$(...)");
-  expect(scan('spoochie say v1 "`id`"').problema).toContain("comilla invertida");
-  // Entre comillas simples el shell no expande nada, y el texto es solo texto.
-  expect(scan(`spoochie say v1 '$(cat /etc/passwd)'`).problema).toBeUndefined();
+test("what the shell expands even inside double quotes does not pass", () => {
+  expect(scan(`spoochie say v1 "$(cat /etc/passwd)"`).problem).toContain("$(...)");
+  expect(scan('spoochie say v1 "`id`"').problem).toContain("backtick");
+  // Inside single quotes the shell expands nothing, and the text is just text.
+  expect(scan(`spoochie say v1 '$(cat /etc/passwd)'`).problem).toBeUndefined();
 });
 
-test("las formas de escribir que la lista blanca dejaba pasar", () => {
-  // Las cinco de la sonda: `Bash(git diff:*)` casa por prefijo y no mira los argumentos.
-  expect(pasa("git diff --output=/tmp/escrito.txt")).toBe(false);
-  expect(porque("git diff --output=/tmp/escrito.txt")).toContain("escribe la salida");
-  expect(pasa("git diff -o /tmp/escrito.txt")).toBe(false);
-  expect(pasa("git format-patch -o /tmp")).toBe(false);
-  expect(pasa("git log; touch /tmp/escrito.txt")).toBe(false);
-  expect(pasa("git status && rm -rf /tmp/x")).toBe(false);
-  expect(pasa("git log --ext-diff")).toBe(false);
-  expect(pasa("git log | tee /tmp/escrito.txt")).toBe(false);
-  expect(pasa("git log > /tmp/escrito.txt")).toBe(false);
+test("the ways of writing that the allowlist let through", () => {
+  // The five from the probe: `Bash(git diff:*)` matches by prefix and ignores the arguments.
+  expect(passes("git diff --output=/tmp/written.txt")).toBe(false);
+  expect(why("git diff --output=/tmp/written.txt")).toContain("writes the output");
+  expect(passes("git diff -o /tmp/written.txt")).toBe(false);
+  expect(passes("git format-patch -o /tmp")).toBe(false);
+  expect(passes("git log; touch /tmp/written.txt")).toBe(false);
+  expect(passes("git status && rm -rf /tmp/x")).toBe(false);
+  expect(passes("git log --ext-diff")).toBe(false);
+  expect(passes("git log | tee /tmp/written.txt")).toBe(false);
+  expect(passes("git log > /tmp/written.txt")).toBe(false);
 });
 
-test("las formas de leer fuera del repo tampoco", () => {
-  expect(pasa("git diff --no-index /etc/passwd /etc/hosts")).toBe(false);
-  expect(porque("git diff --no-index /etc/passwd /etc/hosts")).toContain("fuera del repo");
-  expect(pasa("git -C /otro/repo log")).toBe(false);
-  expect(porque("git -C /otro/repo log")).toContain("saca a git del directorio");
-  expect(pasa("git --git-dir=/otro/.git log")).toBe(false);
-  expect(pasa("git --work-tree=/otro log")).toBe(false);
+test("nor the ways of reading outside the repo", () => {
+  expect(passes("git diff --no-index /etc/passwd /etc/hosts")).toBe(false);
+  expect(why("git diff --no-index /etc/passwd /etc/hosts")).toContain("outside the repo");
+  expect(passes("git -C /otro/repo log")).toBe(false);
+  expect(why("git -C /otro/repo log")).toContain("takes git out of the aside's directory");
+  expect(passes("git --git-dir=/otro/.git log")).toBe(false);
+  expect(passes("git --work-tree=/otro log")).toBe(false);
 });
 
-test("la configuracion de git ejecuta programas, asi que -c no entra", () => {
-  expect(pasa("git -c core.pager=id log")).toBe(false);
-  expect(porque("git -c core.pager=id log")).toContain("configuracion");
-  expect(pasa("git -c alias.x=!id x")).toBe(false);
-  expect(pasa("git --exec-path=/tmp log")).toBe(false);
+test("git config runs programs, so -c does not get in", () => {
+  expect(passes("git -c core.pager=id log")).toBe(false);
+  expect(why("git -c core.pager=id log")).toContain("config");
+  expect(passes("git -c alias.x=!id x")).toBe(false);
+  expect(passes("git --exec-path=/tmp log")).toBe(false);
 });
 
-test("git branch solo lista", () => {
-  expect(pasa("git branch --list")).toBe(true);
-  expect(pasa("git branch --list -a")).toBe(true);
-  expect(pasa("git branch")).toBe(false);
-  expect(pasa("git branch -D main")).toBe(false);
-  expect(pasa("git branch --list -D")).toBe(false);
-  expect(porque("git branch -D main")).toContain("--list");
+test("git branch only lists", () => {
+  expect(passes("git branch --list")).toBe(true);
+  expect(passes("git branch --list -a")).toBe(true);
+  expect(passes("git branch")).toBe(false);
+  expect(passes("git branch -D main")).toBe(false);
+  expect(passes("git branch --list -D")).toBe(false);
+  expect(why("git branch -D main")).toContain("--list");
 });
 
-test("lo que el aparte si tiene que poder hacer sigue pasando", () => {
-  expect(pasa("git diff HEAD~1")).toBe(true);
-  expect(pasa("git log --oneline -20")).toBe(true);
-  expect(pasa("git show HEAD:src/daemon.ts")).toBe(true);
-  expect(pasa("git status")).toBe(true);
-  expect(pasa("git grep -n modal -- src")).toBe(true);
-  expect(pasa("git blame src/cli.ts")).toBe(true);
-  expect(pasa("git ls-files")).toBe(true);
-  expect(pasa("git --no-pager log -1")).toBe(true);
-  expect(pasa(`${CLI} say v1 "es el min-width del contenedor"`)).toBe(true);
-  expect(pasa(`${CLI} patch v1 --from-git`)).toBe(true);
-  expect(pasa(`${CLI} close v1 --reason "resuelto"`)).toBe(true);
-  expect(pasa(`${CLI_DEV} say v1 "hola"`, CLI_DEV)).toBe(true);
+test("what the aside does need to do still passes", () => {
+  expect(passes("git diff HEAD~1")).toBe(true);
+  expect(passes("git log --oneline -20")).toBe(true);
+  expect(passes("git show HEAD:src/daemon.ts")).toBe(true);
+  expect(passes("git status")).toBe(true);
+  expect(passes("git grep -n modal -- src")).toBe(true);
+  expect(passes("git blame src/cli.ts")).toBe(true);
+  expect(passes("git ls-files")).toBe(true);
+  expect(passes("git --no-pager log -1")).toBe(true);
+  expect(passes(`${CLI} say v1 "it is the container min-width"`)).toBe(true);
+  expect(passes(`${CLI} patch v1 --from-git`)).toBe(true);
+  expect(passes(`${CLI} close v1 --reason "resolved"`)).toBe(true);
+  expect(passes(`${CLI_DEV} say v1 "hi"`, CLI_DEV)).toBe(true);
 });
 
-test("con rtk delante se juzga lo de detras, no el proxy", () => {
-  expect(pasa("rtk git log --oneline")).toBe(true);
-  expect(pasa("rtk git diff --output=/tmp/x")).toBe(false);
-  expect(pasa(`rtk ${CLI} say v1 "hola"`)).toBe(true);
-  expect(pasa("rtk")).toBe(false);
+test("with rtk in front, what comes after is judged, not the proxy", () => {
+  expect(passes("rtk git log --oneline")).toBe(true);
+  expect(passes("rtk git diff --output=/tmp/x")).toBe(false);
+  expect(passes(`rtk ${CLI} say v1 "hi"`)).toBe(true);
+  expect(passes("rtk")).toBe(false);
 });
 
-test("cualquier otro programa no entra, aunque parezca inofensivo", () => {
-  expect(pasa("ls -la")).toBe(false);
-  expect(pasa("cat src/cli.ts")).toBe(false);
-  expect(pasa("bun test")).toBe(false);
-  expect(pasa("curl https://example.com")).toBe(false);
-  expect(porque("ls -la")).toContain("no esta entre lo que puede correr el aparte");
+test("any other program does not get in, even if it looks harmless", () => {
+  expect(passes("ls -la")).toBe(false);
+  expect(passes("cat src/cli.ts")).toBe(false);
+  expect(passes("bun test")).toBe(false);
+  expect(passes("curl https://example.com")).toBe(false);
+  expect(why("ls -la")).toContain("is not something the aside may run");
 });
 
-test("el aparte no puede correr subcomandos de spoochie que aceptan o sueltan", () => {
-  expect(pasa(`${CLI} accept v1`)).toBe(false);
-  expect(pasa(`${CLI} release v1`)).toBe(false);
-  expect(pasa(`${CLI} open otro --subject x`)).toBe(false);
-  expect(pasa(`${CLI} config --guardian off`)).toBe(false);
-  expect(pasa(`${CLI} invite --to U0`)).toBe(false);
+test("the aside cannot run spoochie subcommands that accept or release", () => {
+  expect(passes(`${CLI} accept v1`)).toBe(false);
+  expect(passes(`${CLI} release v1`)).toBe(false);
+  expect(passes(`${CLI} open other --subject x`)).toBe(false);
+  expect(passes(`${CLI} config --guardian off`)).toBe(false);
+  expect(passes(`${CLI} invite --to U0`)).toBe(false);
 });
 
-test("el hook deja pasar lo que no es Bash y niega lo que no entiende", () => {
+test("the hook lets through what is not Bash and denies what it does not understand", () => {
   const r = (e: unknown) => gatekeeper(e, CLI).hookSpecificOutput;
   expect(r({ tool_name: "Read", tool_input: { file_path: "/x" } }).permissionDecision).toBe("allow");
   expect(r({ tool_name: "Bash", tool_input: { command: "git log" } }).permissionDecision).toBe("allow");
   expect(r({ tool_name: "Bash", tool_input: { command: "rm -rf /" } }).permissionDecision).toBe("deny");
   expect(r({ tool_name: "Bash" }).permissionDecision).toBe("deny");
   expect(r(null).permissionDecision).toBe("deny");
-  // La razon le dice al Claude aparte que haga lo unico que puede hacer: hablar.
+  // The reason tells the aside Claude to do the only thing it can do: talk.
   expect(r({ tool_name: "Bash", tool_input: { command: "rm -rf /" } }).permissionDecisionReason).toContain("spoochie say");
 });
 
-test("el aparte arranca con el portero enganchado, en ventana y en fondo", () => {
+test("the aside starts with the gatekeeper hooked in, in window and in background", () => {
   const a = asideSettings("/usr/local/bin/spoochie") as any;
   expect(a.crossSessionInbound).toBe("accept");
-  // El matcher decia "Bash" a secas, y eso dejaba fuera del hook a Read, Grep y Glob:
-  // el test lo daba por bueno porque comprobaba la cadena, no lo que cubre.
+  // The matcher said plain "Bash", and that left Read, Grep and Glob out of the hook:
+  // the test passed it because it checked the string, not what it covers.
   expect(a.hooks.PreToolUse[0].matcher.split("|")).toContain("Bash");
-  expect(a.hooks.PreToolUse[0].hooks[0].command).toBe("/usr/local/bin/spoochie portero");
+  expect(a.hooks.PreToolUse[0].hooks[0].command).toBe("/usr/local/bin/spoochie gatekeeper");
 });
 
-test("la ventana y el fondo arrancan con las mismas banderas", () => {
-  // Estaban escritas dos veces y habian divergido: la ventana con modoPermisos() y el
-  // fondo con "default" a mano. El script de la ventana lleva las banderas entrecomilladas
-  // por sq(), asi que se comparan las palabras que salen de banderasAparte en los dos sitios.
+test("window and background start with the same flags", () => {
+  // They were written twice and had drifted: the window with permissionMode() and the
+  // background with "default" hardcoded. The window script carries the flags quoted by
+  // sq(), so the words coming out of asideFlags are compared in both places.
   const b = asideFlags("v1", "/usr/local/bin/spoochie");
   expect(b).toContain("--permission-mode");
   expect(b[b.indexOf("--permission-mode") + 1]).toBe(permissionMode());
   expect(b[b.indexOf("--settings") + 1]).toBe(JSON.stringify(asideSettings("/usr/local/bin/spoochie")));
 
   const t: any = { id: "v1", subject: "s", from: { sessionId: "A", name: "a", cwd: "/a" }, to: { sessionId: "B", name: "b", cwd: "/b" }, context: {}, state: "open", messages: [] };
-  const script = windowScript(t, "/tmp", "sesion-1");
-  for (const palabra of asideFlags("v1")) expect(script).toContain(palabra.split("\n")[0].slice(0, 40));
+  const script = windowScript(t, "/tmp", "session-1");
+  for (const word of asideFlags("v1")) expect(script).toContain(word.split("\n")[0].slice(0, 40));
   expect(script).not.toContain("--permission-mode default\n");
 });
 
-test("el aparte contesta con un modelo fijado, no con el que tenga puesto quien recibe", () => {
-  // El aparte corre en tu maquina para contestar la pregunta de otro: que se lleve tu
-  // modelo caro es una factura que no has decidido tu.
+test("the aside answers with a pinned model, not whatever the receiver has set", () => {
+  // The aside runs on your machine to answer someone else's question: burning your
+  // expensive model is a bill you did not decide on.
   const b = asideFlags("v1", "/usr/local/bin/spoochie");
   expect(b[b.indexOf("--model") + 1]).toBe(ASIDE_MODEL);
   expect(ASIDE_MODEL).toBe("claude-sonnet-5");
 });
 
-test("el aparte sin nadie mirandolo lleva tope de gasto; la ventana no lo necesita", () => {
-  // `--max-budget-usd` solo funciona con --print, o sea en modo fondo. En ventana el
-  // freno es la persona que la mira, mas los dos relojes del spoochie.
+test("the aside with nobody watching has a spending cap; the window does not need one", () => {
+  // `--max-budget-usd` only works with --print, that is in background mode. In the window
+  // the brake is the person watching it, plus the spoochie's two clocks.
   expect(asideBudget()).toBe(ASIDE_BUDGET);
   expect(asideFlags("v1")).not.toContain("--max-budget-usd");
   const t: any = { id: "v1", subject: "s", from: { sessionId: "A", name: "a", cwd: "/a" }, to: { sessionId: "B", name: "b", cwd: "/b" }, context: {}, state: "open", messages: [] };
   expect(windowScript(t, "/tmp", "s1")).not.toContain("max-budget-usd");
 });
 
-test("el aparte arranca con el centinela enganchado al Stop", () => {
+test("the aside starts with the sentinel hooked to Stop", () => {
   const a = asideSettings("/usr/local/bin/spoochie") as any;
-  expect(a.hooks.Stop[0].hooks[0].command).toBe("/usr/local/bin/spoochie centinela");
+  expect(a.hooks.Stop[0].hooks[0].command).toBe("/usr/local/bin/spoochie sentinel");
 });
 
-test("el aparte no lee fuera del repo que atiende", () => {
+test("the aside does not read outside the repo it handles", () => {
   const r = (tool: string, input: any, cwd = "/repo") => gatekeeper({ tool_name: tool, cwd, tool_input: input }, CLI).hookSpecificOutput;
   expect(r("Read", { file_path: "/repo/src/cli.ts" }).permissionDecision).toBe("allow");
   expect(r("Read", { file_path: "src/cli.ts" }).permissionDecision).toBe("allow");
-  // Su lista de herramientas lleva Read, Grep y Glob sin acotar: eso llegaba a ~/.ssh.
+  // Its tool list has Read, Grep and Glob unrestricted: that reached ~/.ssh.
   expect(r("Read", { file_path: "/Users/x/.ssh/id_rsa" }).permissionDecision).toBe("deny");
   expect(r("Read", { file_path: "../otro-repo/.env" }).permissionDecision).toBe("deny");
-  expect(r("Grep", { pattern: "clave", path: "/etc" }).permissionDecision).toBe("deny");
+  expect(r("Grep", { pattern: "key", path: "/etc" }).permissionDecision).toBe("deny");
   expect(r("Glob", { pattern: "**/*.pem", path: "/Users/x" }).permissionDecision).toBe("deny");
-  expect(r("Read", { file_path: "/Users/x/.ssh/id_rsa" }).permissionDecisionReason).toContain("pidelo por el tunel");
+  expect(r("Read", { file_path: "/Users/x/.ssh/id_rsa" }).permissionDecisionReason).toContain("ask for it through the tunnel");
 });
 
-test("tampoco saca por el tunel un fichero de fuera con --file", () => {
-  // La linea entera la aprobaba la lista blanca: el subcomando es `say`, que esta permitido.
+test("nor does it send a file from outside through the tunnel with --file", () => {
+  // The allowlist approved the whole line: the subcommand is `say`, which is allowed.
   const cwd = "/repo";
   const d = (cmd: string) => gatekeeper({ tool_name: "Bash", cwd, tool_input: { command: cmd } }, CLI).hookSpecificOutput.permissionDecision;
-  expect(d(`${CLI} say v1 --file /repo/notas.md`)).toBe("allow");
+  expect(d(`${CLI} say v1 --file /repo/notes.md`)).toBe("allow");
   expect(d(`${CLI} say v1 --file ~/.ssh/id_rsa`)).toBe("deny");
-  expect(d(`${CLI} say v1 --file ../otro/.env`)).toBe("deny");
+  expect(d(`${CLI} say v1 --file ../other/.env`)).toBe("deny");
   expect(d(`${CLI} say v1 --files /repo/a.png,/etc/hosts`)).toBe("deny");
   expect(d(`${CLI} patch v1 --diff-file /tmp/x.diff`)).toBe("deny");
-  // Sin cwd (fuera del aparte) no se opina de rutas: el portero solo manda en su ventana.
+  // With no cwd (outside the aside) paths get no opinion: the gatekeeper only rules in its window.
   expect(gatekeeper({ tool_name: "Bash", tool_input: { command: `${CLI} say v1 --file /x` } }, CLI).hookSpecificOutput.permissionDecision).toBe("allow");
 });
 
-test("crossSessionInbound solo puede ser accept: los ajustes del aparte son solo suyos", () => {
-  // No hay forma de acotarlo a un remitente (el ajuste admite accept, hold o refuse y
-  // nada mas), asi que la frontera real es el token del buzon, que vive en el registro
-  // a 0600. Lo que si se comprueba aqui es que spoochie no escribe estos ajustes en
-  // ningun sitio permanente: van en la linea de arranque del aparte y mueren con el.
+test("crossSessionInbound can only be accept: the aside's settings are its own", () => {
+  // There is no way to narrow it to one sender (the setting takes accept, hold or
+  // refuse and nothing else), so the real boundary is the inbox token, which lives in
+  // the registry at 0600. What does get checked here is that spoochie writes these
+  // settings nowhere permanent: they go on the aside's launch line and die with it.
   expect(asideSettings("/x").crossSessionInbound).toBe("accept");
   const t: any = { id: "v1", subject: "s", from: { sessionId: "A", name: "a", cwd: "/a" }, to: { sessionId: "B", name: "b", cwd: "/b" }, context: {}, state: "open", messages: [] };
   const script = windowScript(t, "/tmp", "s1");
   expect(script).toContain("crossSessionInbound");
-  // Ni settings.json del proyecto ni del usuario: solo el proceso que se lanza aqui.
+  // Neither the project's nor the user's settings.json: only the process launched here.
   expect(script).not.toContain(".claude/settings.json");
 });
 
-test("el primer turno del aparte lleva la regla de no afirmar lo que no ha leido", () => {
-  // Es la ventaja entera de spoochie frente a preguntarle a un modelo: la respuesta
-  // sale de ficheros leidos en la maquina del otro. En cuanto el aparte empiece a
-  // coordinar en vez de leer, esta regla es lo unico que la sostiene, asi que tiene su
-  // test antes que cualquier funcion de coordinacion, no despues.
-  const t: any = { id: "v1", subject: "el modal", from: { sessionId: "A", name: "a", cwd: "/a", human: "Ana" }, to: { sessionId: "B", name: "b", cwd: "/b", human: "Edu" }, context: {}, state: "open", messages: [] };
-  const turno = firstTurn(t, "B", "/usr/local/bin/spoochie", "/repo");
-  expect(turno).toContain("si no lo has leido, no lo afirmas");
-  expect(turno).toContain("no lo veo desde aqui");
-  expect(turno).toContain("Nunca contestes de memoria");
-  // Y dice desde donde lee, que es lo que hace comprobable la regla.
-  expect(turno).toContain("/repo");
+test("the aside's first turn carries the rule of not claiming what it has not read", () => {
+  // It is spoochie's whole advantage over asking a model: the answer comes from files
+  // read on the other person's machine. As soon as the aside starts coordinating instead
+  // of reading, this rule is all that holds it up, so it gets its test before any
+  // coordination feature, not after.
+  const t: any = { id: "v1", subject: "the modal", from: { sessionId: "A", name: "a", cwd: "/a", human: "Ana" }, to: { sessionId: "B", name: "b", cwd: "/b", human: "Edu" }, context: {}, state: "open", messages: [] };
+  const turn = firstTurn(t, "B", "/usr/local/bin/spoochie", "/repo");
+  expect(turn).toContain("if you have not read it, you do not claim it");
+  expect(turn).toContain("I can't see that from here");
+  expect(turn).toContain("Never answer about this repo from memory");
+  // And it says where it reads from, which is what makes the rule checkable.
+  expect(turn).toContain("/repo");
 });
 
 /**
- * El portero solo servia para los Bash.
+ * The gatekeeper only worked for Bash.
  *
- * `ajustesAparte` enganchaba el hook con `matcher: "Bash"`, y el matcher de un
- * PreToolUse es una expresion regular contra el nombre de la herramienta. O sea que toda
- * la parte de acotar Read, Grep y Glob al worktree estaba escrita, tenia sus tests, y no
- * se ejecutaba nunca: el hook no se disparaba con esas herramientas. Un aparte podia
- * leer ~/.ssh y contarlo por el tunel, que es exactamente lo que ese codigo impide.
+ * `asideSettings` hooked it with `matcher: "Bash"`, and a PreToolUse matcher is a
+ * regular expression against the tool name. So the whole part about keeping Read, Grep
+ * and Glob inside the worktree was written, had its tests, and never ran: the hook did
+ * not fire for those tools. An aside could read ~/.ssh and tell it through the tunnel,
+ * which is exactly what that code prevents.
  *
- * Este test compara las dos listas. Si una crece y la otra no, salta aqui.
+ * This test compares the two lists. If one grows and the other does not, it fails here.
  */
-test("el hook se dispara con TODAS las herramientas que el portero juzga", async () => {
+test("the hook fires for ALL the tools the gatekeeper judges", async () => {
   const { GATEKEEPER_TOOLS, asideSettings } = await import("../src/aside.ts");
   const { FILE_READERS } = await import("../src/gatekeeper.ts");
-  const juzgadas = [...FILE_READERS, "Bash", "Artifact"].sort();
-  expect([...GATEKEEPER_TOOLS].sort()).toEqual(juzgadas);
+  const judged = [...FILE_READERS, "Bash", "Artifact"].sort();
+  expect([...GATEKEEPER_TOOLS].sort()).toEqual(judged);
 
   const matcher = (asideSettings("sp").hooks as any).PreToolUse[0].matcher as string;
   const re = new RegExp(`^(${matcher})$`);
-  for (const h of juzgadas) expect(re.test(h)).toBe(true);
+  for (const h of judged) expect(re.test(h)).toBe(true);
 });
 
 /**
- * Artifact publica en claude.ai lo que le des: es la unica herramienta del aparte que
- * saca contenido de la maquina. Esta en su lista blanca para una cosa concreta, publicar
- * el transcript, y el portero no la miraba, asi que servia para publicar cualquier
- * fichero que el aparte pudiera leer, o sea el repo entero con su `.env`.
+ * Artifact publishes whatever you give it on claude.ai: it is the aside's only tool that
+ * takes content off the machine. It is on the allowlist for one concrete thing,
+ * publishing the transcript, and the gatekeeper did not look at it, so it could publish
+ * any file the aside could read, that is the whole repo with its `.env`.
  */
-test("Artifact solo publica el transcript de ESTE spoochie", async () => {
+test("Artifact only publishes THIS spoochie's transcript", async () => {
   const { transcriptPath } = await import("../src/transcript.ts");
-  const antes = process.env.SPOOCHIE_ASIDE;
+  const before = process.env.SPOOCHIE_ASIDE;
   try {
     process.env.SPOOCHIE_ASIDE = "k7f";
     const v = (file_path?: string) => gatekeeper({ tool_name: "Artifact", tool_input: file_path ? { file_path } : {} }, "sp");
     expect(v(transcriptPath("k7f")).hookSpecificOutput.permissionDecision).toBe("allow");
-    // Ni otro fichero, ni el transcript de otro spoochie, ni sin ruta ninguna.
-    expect(v("/tmp/robado/.env").hookSpecificOutput.permissionDecision).toBe("deny");
-    expect(v(transcriptPath("otro")).hookSpecificOutput.permissionDecision).toBe("deny");
+    // Not another file, not another spoochie's transcript, and not with no path at all.
+    expect(v("/tmp/stolen/.env").hookSpecificOutput.permissionDecision).toBe("deny");
+    expect(v(transcriptPath("other")).hookSpecificOutput.permissionDecision).toBe("deny");
     expect(v().hookSpecificOutput.permissionDecision).toBe("deny");
-    // Y en un Claude que no atiende ningun spoochie, Artifact no publica nada.
+    // And in a Claude that handles no spoochie, Artifact publishes nothing.
     delete process.env.SPOOCHIE_ASIDE;
     expect(v(transcriptPath("k7f")).hookSpecificOutput.permissionDecision).toBe("deny");
   } finally {
-    if (antes === undefined) delete process.env.SPOOCHIE_ASIDE; else process.env.SPOOCHIE_ASIDE = antes;
+    if (before === undefined) delete process.env.SPOOCHIE_ASIDE; else process.env.SPOOCHIE_ASIDE = before;
   }
 });

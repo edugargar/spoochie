@@ -1,9 +1,9 @@
 /**
- * Un repaso de todo lo que tiene que estar bien para que un spoochie llegue.
+ * A pass over everything that has to be right for a spoochie to arrive.
  *
- * Existe porque los fallos de esta herramienta son silenciosos por naturaleza: un token
- * caducado, un fichero con permisos flojos o un demonio muerto no dan error, solo hacen
- * que el mensaje no llegue y que nadie se entere.
+ * It exists because this tool's failures are silent by nature: an expired
+ * token, a file with loose permissions or a dead daemon don't raise an error, they just
+ * make the message not arrive and nobody notice.
  */
 import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,7 +16,7 @@ import { whoIs } from "./slack.ts";
 
 export type Check = { ok: boolean | "aviso"; que: string; detalle: string };
 
-const modo = (p: string) => { try { return (statSync(p).mode & 0o777).toString(8).padStart(3, "0"); } catch { return "?"; } };
+const mode = (p: string) => { try { return (statSync(p).mode & 0o777).toString(8).padStart(3, "0"); } catch { return "?"; } };
 
 export async function check(): Promise<Check[]> {
   const out: Check[] = [];
@@ -24,92 +24,92 @@ export async function check(): Promise<Check[]> {
 
   out.push({
     ok: existsSync(DAEMON_SOCK) && existsSync(DAEMON_LOCK),
-    que: "demonio",
-    detalle: existsSync(DAEMON_LOCK) ? `vivo, pid ${(await Bun.file(DAEMON_LOCK).text()).trim()}` : "no esta corriendo",
+    que: "daemon",
+    detalle: existsSync(DAEMON_LOCK) ? `alive, pid ${(await Bun.file(DAEMON_LOCK).text()).trim()}` : "not running",
   });
   {
     const { heartbeatAge, launchdInstalled } = await import("./startup.ts");
-    const edad = heartbeatAge();
+    const age = heartbeatAge();
     out.push({
-      ok: edad !== null && edad < 90,
-      que: "latido del demonio",
-      detalle: edad === null ? "nunca ha latido" : edad < 90 ? `hace ${Math.round(edad)} s${launchdInstalled() ? ", bajo launchd" : ", arrancado por un hook (muere con el reinicio)"}` : `hace ${Math.round(edad)} s: esta colgado o muerto`,
+      ok: age !== null && age < 90,
+      que: "daemon heartbeat",
+      detalle: age === null ? "has never beaten" : age < 90 ? `${Math.round(age)} s ago${launchdInstalled() ? ", under launchd" : ", started by a hook (dies on restart)"}` : `${Math.round(age)} s ago: it's hung or dead`,
     });
   }
 
-  const dirModo = modo(ROOT);
+  const dirMode = mode(ROOT);
   out.push({
-    ok: dirModo === "700",
-    que: "permisos del directorio",
-    detalle: `${ROOT} esta en ${dirModo}${dirModo === "700" ? "" : ", deberia ser 700"}`,
+    ok: dirMode === "700",
+    que: "directory permissions",
+    detalle: `${ROOT} is ${dirMode}${dirMode === "700" ? "" : ", should be 700"}`,
   });
 
-  const flojos = existsSync(SESSIONS_DIR)
+  const loose = existsSync(SESSIONS_DIR)
     ? readdirSync(SESSIONS_DIR).filter(f => f.endsWith(".json") && loosePermissions(join(SESSIONS_DIR, f)))
     : [];
   out.push({
-    ok: flojos.length === 0,
-    que: "tokens de buzon en reposo",
-    detalle: flojos.length
-      ? `${flojos.length} con permisos abiertos: ${flojos.join(", ")}. chmod 600.`
-      : "cada sesion registrada guarda su token con 0600, solo para ti",
+    ok: loose.length === 0,
+    que: "inbox tokens at rest",
+    detalle: loose.length
+      ? `${loose.length} with open permissions: ${loose.join(", ")}. chmod 600.`
+      : "each registered session keeps its token at 0600, for you only",
   });
 
-  const vivas = liveSessions();
-  out.push({ ok: vivas.length > 0, que: "sesiones registradas", detalle: vivas.length ? vivas.map(s => s.name).join(", ") : "ninguna: falta el hook SessionStart, o reiniciar la sesion" });
+  const live = liveSessions();
+  out.push({ ok: live.length > 0, que: "registered sessions", detalle: live.length ? live.map(s => s.name).join(", ") : "none: the SessionStart hook is missing, or the session needs a restart" });
 
-  const socketsRotos = vivas.filter(s => !existsSync(s.socket));
-  if (socketsRotos.length) out.push({ ok: false, que: "buzones", detalle: `${socketsRotos.length} sesiones sin socket` });
+  const brokenSockets = live.filter(s => !existsSync(s.socket));
+  if (brokenSockets.length) out.push({ ok: false, que: "inboxes", detalle: `${brokenSockets.length} sessions without a socket` });
 
   if (!c.slack) {
-    out.push({ ok: "aviso", que: "Slack", detalle: "sin configurar: spoochie solo funciona en esta maquina" });
+    out.push({ ok: "aviso", que: "Slack", detalle: "not set up: spoochie only works on this machine" });
   } else {
     const user = Cfg.slackToken(c), bot = Cfg.slackBotToken(c);
-    const yo = user ? await whoIs(user) : null;
-    const elBot = bot ? await whoIs(bot) : null;
-    // El de usuario es opcional desde que el bot puede buscar personas: solo se
-    // queja si esta puesto y no vale, no por faltar.
-    if (user) out.push({ ok: Boolean(yo), que: "token de usuario", detalle: yo ? `${yo.user} en ${yo.team}` : "esta puesto y no vale" });
-    out.push({ ok: Boolean(elBot), que: "token de bot", detalle: elBot ? `${elBot.user}` : "no vale o falta" });
-    if (elBot && !user) {
-      // Sin token de usuario, buscar personas depende de que la app tenga users:read
-      // de bot. Si no lo tiene, abrir un spoochie por nombre o email falla en el unico
-      // sitio donde duele: al escribirle a alguien por primera vez.
+    const me = user ? await whoIs(user) : null;
+    const theBot = bot ? await whoIs(bot) : null;
+    // The user token is optional since the bot can look people up: it only
+    // complains if it's set and doesn't work, not if it's missing.
+    if (user) out.push({ ok: Boolean(me), que: "user token", detalle: me ? `${me.user} in ${me.team}` : "is set and doesn't work" });
+    out.push({ ok: Boolean(theBot), que: "bot token", detalle: theBot ? `${theBot.user}` : "doesn't work or is missing" });
+    if (theBot && !user) {
+      // Without a user token, looking people up depends on the app having bot
+      // users:read. If it doesn't, opening a spoochie by name or email fails in the only
+      // place where it hurts: when writing to someone for the first time.
       const r = await fetch("https://slack.com/api/users.list?limit=1", { headers: { authorization: `Bearer ${bot}` } }).then(x => x.json()).catch(() => ({ ok: false }));
       out.push({
-        ok: r.ok === true, que: "buscar personas",
-        detalle: r.ok ? "el bot puede, no hace falta token de usuario"
-                      : "la app necesita users:read y users:read.email como scopes de BOT",
+        ok: r.ok === true, que: "people lookup",
+        detalle: r.ok ? "the bot can, no user token needed"
+                      : "the app needs users:read and users:read.email as BOT scopes",
       });
     }
     if (c.slack.tokenFile) {
       out.push({
         ok: !loosePermissions(c.slack.tokenFile),
-        que: "fichero de tokens",
-        detalle: `${c.slack.tokenFile} en ${modo(c.slack.tokenFile)}`,
+        que: "token file",
+        detalle: `${c.slack.tokenFile} is ${mode(c.slack.tokenFile)}`,
       });
     }
   }
 
-  const abiertos = T.all().filter(t => t.state !== "closed");
+  const open = T.all().filter(t => t.state !== "closed");
   out.push({
     ok: true,
     que: "spoochies",
-    detalle: `${abiertos.length} vivos, ${T.all().length} en total en esta maquina`,
+    detalle: `${open.length} live, ${T.all().length} in total on this machine`,
   });
 
   out.push({
     ok: c.guardian ? "aviso" : true,
-    que: "vigilante de tema",
+    que: "topic watcher",
     detalle: c.guardian
-      ? "encendido: cuesta una llamada a Haiku por mensaje recibido, la paga quien recibe"
-      : "apagado",
+      ? "on: costs one Haiku call per message received, paid by the receiver"
+      : "off",
   });
 
   out.push({
     ok: true,
     que: "transcript",
-    detalle: c.transcript ? "encendido: se pide republicar en cada turno a quien abrio" : "apagado",
+    detalle: c.transcript ? "on: whoever opened is asked to republish on every turn" : "off",
   });
 
   {
@@ -117,182 +117,183 @@ export async function check(): Promise<Check[]> {
     out.push({
       ok: c.nostr?.pk ? true : "aviso",
       que: "Nostr",
-      detalle: c.nostr?.pk ? `${N.npub(c.nostr.pk).slice(0, 16)}..., reles: ${N.myRelays(c).join(", ")}${c.transporte === "slack" ? " (los hilos van por Slack)" : ""}` : "sin clave todavia: nace con `spoochie nostr`, `invite` o `join`",
+      detalle: c.nostr?.pk ? `${N.npub(c.nostr.pk).slice(0, 16)}..., relays: ${N.myRelays(c).join(", ")}${c.transporte === "slack" ? " (threads go over Slack)" : ""}` : "no key yet: it's created by `spoochie nostr`, `invite` or `join`",
     });
-    const sinClave = Object.values(c.contacts ?? {}).filter(k => !k.npub).map(k => k.name);
-    if (sinClave.length) out.push({ ok: "aviso", que: "contactos sin clave Nostr", detalle: `${sinClave.join(", ")}: con ellos va por Slack hasta que su spoochie (>= 0.9) mande su clave` });
+    const noKey = Object.values(c.contacts ?? {}).filter(k => !k.npub).map(k => k.name);
+    if (noKey.length) out.push({ ok: "aviso", que: "contacts without a Nostr key", detalle: `${noKey.join(", ")}: with them it goes over Slack until their spoochie (>= 0.9) sends its key` });
   }
 
   out.push({
     ok: true,
-    que: "borrado al cerrar",
-    detalle: c.borrarAlCerrar === false ? "apagado: las conversaciones se quedan en disco y en Slack" : "encendido: al cerrar se borra en local y lo que posteo el bot en Slack",
+    que: "delete on close",
+    detalle: c.borrarAlCerrar === false ? "off: conversations stay on disk and in Slack" : "on: closing deletes it locally and what the bot posted in Slack",
   });
 
   out.push({
     ok: true,
-    que: "Claude aparte",
-    detalle: c.aparte === false ? "apagado: todo entra en tu sesion" : `encendido${c.aparteCopia === false ? ", en el checkout real" : ", sobre una copia limpia del repo"}`,
+    que: "aside Claude",
+    detalle: c.aparte === false ? "off: everything goes into your session" : `on${c.aparteCopia === false ? ", in the real checkout" : ", on a clean copy of the repo"}`,
   });
 
   {
     const { VERSION } = await import("./version.ts");
     const { newVersionNotice } = await import("./update.ts");
-    const nueva = await newVersionNotice();
-    out.push({ ok: nueva ? "aviso" : true, que: "version", detalle: nueva ? `${VERSION}; ${nueva}` : `${VERSION}, la ultima publicada` });
+    const update = await newVersionNotice();
+    out.push({ ok: update ? "aviso" : true, que: "version", detalle: update ? `${VERSION}; ${update}` : `${VERSION}, the latest published` });
     const { heartbeatVersion, heartbeatAge, installedAgentPath, findClaude } = await import("./startup.ts");
     const c = claudeCheck(installedAgentPath(), findClaude);
     if (c) out.push(c);
-    const late = heartbeatVersion();
-    const vivo = (heartbeatAge() ?? Infinity) < 90;
-    if (vivo && late !== VERSION) out.push({
+    const beat = heartbeatVersion();
+    const alive = (heartbeatAge() ?? Infinity) < 90;
+    if (alive && beat !== VERSION) out.push({
       ok: "aviso",
-      que: "version del demonio",
-      detalle: `${late ?? "anterior a 0.9.1"}, y este spoochie es ${VERSION}: el demonio arranco antes de actualizar. Reinicia Claude Code y el hook lo cambia`,
+      que: "daemon version",
+      detalle: `${beat ?? "older than 0.9.1"}, and this spoochie is ${VERSION}: the daemon started before the update. Restart Claude Code and the hook swaps it`,
     });
   }
 
   if (existsSync(OUTBOX_FILE)) {
     try {
       const n = (JSON.parse(readFileSync(OUTBOX_FILE, "utf8")) as { msgs: unknown[] }[]).reduce((a, d) => a + d.msgs.length, 0);
-      if (n) out.push({ ok: "aviso", que: "cola de salida", detalle: `${n} mensaje(s) esperando salir a Slack; el demonio lo reintenta cada minuto` });
+      if (n) out.push({ ok: "aviso", que: "outbox", detalle: `${n} message(s) waiting to go out to Slack; the daemon retries every minute` });
     } catch {}
   }
 
   if (existsSync(THREADS_DIR)) {
-    const viejos = T.all().filter(t => t.state === "closed" && Date.now() - (t.closedAt ?? 0) > 30 * 24 * 3600 * 1000);
-    if (viejos.length) out.push({ ok: "aviso", que: "limpieza", detalle: `${viejos.length} spoochies cerrados hace mas de un mes` });
+    const old = T.all().filter(t => t.state === "closed" && Date.now() - (t.closedAt ?? 0) > 30 * 24 * 3600 * 1000);
+    if (old.length) out.push({ ok: "aviso", que: "cleanup", detalle: `${old.length} spoochies closed more than a month ago` });
   }
 
   {
-    // Lo que imprime el hook entra en el contexto de ESA sesion y ahi se queda; si
-    // fallo y la persona reinicio, sin esto no hay forma de saberlo despues.
+    // What the hook prints goes into THAT session's context and stays there; if
+    // it failed and the person restarted, without this there's no way to find out later.
     const p = join(ROOT, "arranque.txt");
-    const chequeo = lastStart(existsSync(p) ? readFileSync(p, "utf8") : null);
-    if (chequeo) out.push(chequeo);
+    const result = lastStart(existsSync(p) ? readFileSync(p, "utf8") : null);
+    if (result) out.push(result);
   }
 
-  // La parte de auditoria: no "esto esta roto", sino "esto es una credencial o un resto
-  // que no deberia seguir aqui". Los fallos de seguridad tampoco dan error.
+  // The audit part: not "this is broken", but "this is a credential or a leftover
+  // that shouldn't still be here". Security failures don't raise errors either.
   out.push(...audit(c));
 
   return out;
 }
 
 /**
- * Lo que no deberia seguir en disco. Cada punto es un agujero que hubo o que puede
- * abrirse solo con el paso del tiempo, y ninguno da error por su cuenta.
+ * The daemon launches the aside Claude by name, with the daemon's PATH. If
+ * `claude` isn't there, a spoochie gets accepted and nobody handles it: on 01-10 it was exactly that,
+ * and `doctor` said everything was fine, because it checked that the daemon was alive and not
+ * that it could do the one thing it lives for.
  */
-/** Lo que dejo escrito el hook SessionStart la ultima vez que corrio. */
-/**
- * El Claude aparte lo lanza el demonio por su nombre, con el PATH del demonio. Si ahi no
- * esta `claude`, un spoochie se acepta y nadie lo atiende: el 01-10 fue exactamente eso
- * y `doctor` decia que estaba todo bien, porque comprobaba que el demonio viviera y no
- * que pudiera hacer lo unico para lo que vive.
- */
-export function claudeCheck(pathDelDemonio: string | null, encontrar: (dirs: string[]) => string | null): Check | null {
-  if (!pathDelDemonio) return null;
-  const dir = encontrar(pathDelDemonio.split(":"));
+export function claudeCheck(daemonPath: string | null, find: (dirs: string[]) => string | null): Check | null {
+  if (!daemonPath) return null;
+  const dir = find(daemonPath.split(":"));
   return dir
-    ? { ok: true, que: "claude en el PATH del demonio", detalle: `${dir}/claude` }
-    : { ok: false, que: "claude en el PATH del demonio", detalle: `no esta en ${pathDelDemonio}: un spoochie aceptado no se puede atender. Abre una sesion de Claude Code (el hook lo arregla) o corre \`spoochie register\`` };
+    ? { ok: true, que: "claude on the daemon's PATH", detalle: `${dir}/claude` }
+    : { ok: false, que: "claude on the daemon's PATH", detalle: `not in ${daemonPath}: an accepted spoochie can't be handled. Open a Claude Code session (the hook fixes it) or run \`spoochie register\`` };
 }
 
-export function lastStart(texto: string | null): Check | null {
-  if (!texto?.trim()) return null;
-  const [cuando, estado, detalle] = texto.trim().split("\n")[0].split("\t");
-  if (estado !== "fallo") return { ok: true, que: "ultimo arranque del hook", detalle: `${detalle ?? "sin detalle"} (${cuando})` };
-  return { ok: false, que: "ultimo arranque del hook", detalle: `${detalle ?? "fallo sin detalle"} (${cuando})` };
+/** What the SessionStart hook left written the last time it ran. */
+export function lastStart(text: string | null): Check | null {
+  if (!text?.trim()) return null;
+  // "fallo" is what startup.ts writes to disk: it's a stored value, not text to translate.
+  const [when, status, detail] = text.trim().split("\n")[0].split("\t");
+  if (status !== "fallo") return { ok: true, que: "last hook start", detalle: `${detail ?? "no detail"} (${when})` };
+  return { ok: false, que: "last hook start", detalle: `${detail ?? "failed with no detail"} (${when})` };
 }
 
-export function audit(c: Cfg.Config, ahora = Date.now()): Check[] {
+/**
+ * What shouldn't still be on disk. Each point is a hole that existed or that can
+ * open on its own just with the passing of time, and none of them raises an error by itself.
+ */
+export function audit(c: Cfg.Config, now = Date.now()): Check[] {
   const out: Check[] = [];
 
-  // Invitaciones sin canjear: cada una es un nonce que todavia deja entrar una clave.
-  const pendientes = Object.values(c.invitaciones ?? {});
-  if (pendientes.length) {
-    const nombres = pendientes.map(i => i.name ?? i.id ?? "sin nombre").join(", ");
+  // Unredeemed invites: each one is a nonce that still lets a key in.
+  const pending = Object.values(c.invitaciones ?? {});
+  if (pending.length) {
+    const names = pending.map(i => i.name ?? i.id ?? "no name").join(", ");
     out.push({
       ok: "aviso",
-      que: "invitaciones sin canjear",
-      detalle: `${pendientes.length} viva(s) (${nombres}): cada una deja entrar una clave en tu agenda hasta que caduque a los 30 dias`,
+      que: "unredeemed invites",
+      detalle: `${pending.length} live (${names}): each one lets a key into your contacts until it expires after 30 days`,
     });
   }
 
-  // Quien ha intentado hablarme sin estar en la agenda. Todo lo que no es la clave lo
-  // dice el sobre, y asi se ensena. Si dice ser un contacto que aun no tiene clave
-  // Nostr, es casi seguro un alta que no llego, y la salida es vincularla a mano.
-  for (const d of Des.recent(ahora)) {
-    const suyo = d.slack ? Cfg.contactById(c, d.slack) as { id: string; name: string; npub?: string } | null : null;
-    const cuando = new Date(d.ultima).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
-    const que = d.kind === "hola" ? "se dio de alta y su clave no entro" : d.kind === "invite" ? "intento abrirte un spoochie" : `te mando un sobre (${d.kind})`;
-    const salida = suyo && !suyo.npub
-      ? `si es ${suyo.name}: spoochie contacts --vincular ${suyo.id} --npub ${d.pk}`
-      : "si le conoces, invitale: spoochie invite --to <su id>";
+  // Whoever tried to talk to me without being in the contacts. Everything but the key
+  // is what the envelope says, and it's shown that way. If it claims to be a contact that doesn't have a Nostr
+  // key yet, it's almost certainly a join that didn't arrive, and the way out is to link it by hand.
+  for (const d of Des.recent(now)) {
+    const theirs = d.slack ? Cfg.contactById(c, d.slack) as { id: string; name: string; npub?: string } | null : null;
+    const when = new Date(d.ultima).toLocaleString("en-GB", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    const what = d.kind === "hola" ? "joined and their key didn't get in" : d.kind === "invite" ? "tried to open a spoochie with you" : `sent you an envelope (${d.kind})`;
+    const fix = theirs && !theirs.npub
+      ? `if it's ${theirs.name}: spoochie contacts --bind ${theirs.id} --npub ${d.pk}`
+      : "if you know them, invite them: spoochie invite --to <their id>";
     out.push({
       ok: "aviso",
-      que: "fuera de tu agenda",
-      detalle: `${d.nombre ? `dice ser ${d.nombre}` : "sin nombre"}${d.slack ? ` (${d.slack})` : ""}, clave ${d.pk.slice(0, 12)}...: ${que}, ${d.veces} vez/veces, la ultima ${cuando}. ${salida}`,
+      que: "outside your contacts",
+      detalle: `${d.nombre ? `claims to be ${d.nombre}` : "no name"}${d.slack ? ` (${d.slack})` : ""}, key ${d.pk.slice(0, 12)}...: ${what}, ${d.veces} time(s), last on ${when}. ${fix}`,
     });
   }
 
-  // Contactos sin clave ed25519: sus sobres no se pueden comprobar, asi que entran
-  // marcados y cualquiera con el token del bot podria ser el primero en firmar por ellos.
-  const sinClave = Object.values(c.contacts ?? {}).filter(x => !x.pk);
-  if (sinClave.length) {
+  // Contacts without an ed25519 key: their envelopes can't be checked, so they come in
+  // flagged and anyone with the bot token could be the first to sign for them.
+  const noKey = Object.values(c.contacts ?? {}).filter(x => !x.pk);
+  if (noKey.length) {
     out.push({
       ok: "aviso",
-      que: "contactos sin clave fijada",
-      detalle: `${sinClave.map(x => x.name).join(", ")}: hasta que llegue un sobre suyo firmado, su primera firma es la que se fija`,
+      que: "contacts without a pinned key",
+      detalle: `${noKey.map(x => x.name).join(", ")}: until a signed envelope from them arrives, their first signature is the one that gets pinned`,
     });
   }
 
-  // Un spoochie cerrado con texto todavia en disco: el borrado al cerrar no cumplio.
-  const conTexto = T.all().filter(t => t.state === "closed" && t.messages.some(m => (m.text ?? "").trim()));
+  // A closed spoochie with text still on disk: delete on close didn't do its job.
+  const withText = T.all().filter(t => t.state === "closed" && t.messages.some(m => (m.text ?? "").trim()));
   out.push({
-    ok: conTexto.length === 0,
-    que: "borrado al cerrar",
-    detalle: conTexto.length
-      ? `${conTexto.length} spoochie(s) cerrados que todavia guardan el texto: ${conTexto.map(t => t.id).join(", ")}`
-      : "ningun spoochie cerrado guarda texto",
+    ok: withText.length === 0,
+    que: "delete on close",
+    detalle: withText.length
+      ? `${withText.length} closed spoochie(s) that still keep the text: ${withText.map(t => t.id).join(", ")}`
+      : "no closed spoochie keeps text",
   });
 
-  // Donde viven los secretos. No es un fallo tenerlos en el fichero, pero conviene
-  // saberlo: cualquier proceso que corra como tu lee un fichero sin pedir permiso.
+  // Where the secrets live. Having them in the file isn't a failure, but it's worth
+  // knowing: any process running as you reads a file without asking permission.
   {
-    const enFichero = [
-      c.keys?.priv && c.keys.priv !== "@llavero" ? "clave de firma" : null,
-      c.nostr?.sk && c.nostr.sk !== "@llavero" ? "clave Nostr" : null,
-      c.slack?.botToken && c.slack.botToken !== "@llavero" ? "token del bot" : null,
+    const inFile = [
+      c.keys?.priv && c.keys.priv !== "@llavero" ? "signing key" : null,
+      c.nostr?.sk && c.nostr.sk !== "@llavero" ? "Nostr key" : null,
+      c.slack?.botToken && c.slack.botToken !== "@llavero" ? "bot token" : null,
     ].filter(Boolean);
-    if (enFichero.length) out.push({
+    if (inFile.length) out.push({
       ok: "aviso",
-      que: "secretos en config.json",
-      detalle: `${enFichero.join(", ")} en claro a 0600. En macOS, \`spoochie llavero on\` los mueve al llavero: pasa de "leer un fichero" a "pedirle permiso al sistema"`,
+      que: "secrets in config.json",
+      detalle: `${inFile.join(", ")} in plain text at 0600. On macOS, \`spoochie keychain on\` moves them to the keychain: it goes from "read a file" to "ask the system for permission"`,
     });
   }
 
-  // Un equipo entero por Nostr no necesita el token compartido para nada: ni para
-  // abrir, ni para avisar (el aviso es el dialogo local), ni para el hilo. Merece
-  // decirse, porque es la unica forma de salir del "quien tiene el token esta dentro".
+  // A whole team on Nostr doesn't need the shared token for anything: not to
+  // open, not to notify (the notice is the local dialog), not for the thread. It's worth
+  // saying, because it's the only way out of "whoever has the token is in".
   {
-    const conClave = Object.values(c.contacts ?? {}).filter(x => x.npub).length;
+    const withKey = Object.values(c.contacts ?? {}).filter(x => x.npub).length;
     const total = Object.values(c.contacts ?? {}).length;
-    if (total && conClave === total && c.slack?.botToken) out.push({
+    if (total && withKey === total && c.slack?.botToken) out.push({
       ok: "aviso",
-      que: "ya no necesitas el token del bot",
-      detalle: `tus ${total} contacto(s) tienen clave Nostr: los spoochies van cifrados sin pasar por Slack y el aviso es el dialogo del sistema. \`spoochie slack off\` quita el token de esta maquina; solo perderias los avisos por DM`,
+      que: "you no longer need the bot token",
+      detalle: `your ${total} contact(s) have a Nostr key: spoochies go encrypted without passing through Slack and the notice is the system dialog. \`spoochie slack off\` removes the token from this machine; you'd only lose the DM notifications`,
     });
   }
 
-  // El token del bot en la config es el borde real del modelo de seguridad. No es un
-  // fallo, pero quien lo tiene tiene el DM del bot con todo el equipo, y hay que
-  // rotarlo cuando alguien se va.
+  // The bot token in the config is the real edge of the security model. It isn't a
+  // failure, but whoever has it has the bot's DM with the whole team, and it has to
+  // be rotated when someone leaves.
   if (c.slack?.botToken) {
     out.push({
       ok: "aviso",
-      que: "token de bot en reposo",
-      detalle: `esta maquina guarda el token del bot del equipo en config.json: quien lo lea puede leer el DM del bot con cualquiera y postear como el. Rotalo cuando alguien se vaya`,
+      que: "bot token at rest",
+      detalle: `this machine keeps the team's bot token in config.json: whoever reads it can read the bot's DM with anyone and post as the bot. Rotate it when someone leaves`,
     });
   }
 

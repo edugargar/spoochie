@@ -1,92 +1,92 @@
 /**
- * El aviso, como ventana nativa.
+ * The notice, as a native window.
  *
- * Antes esto era `display dialog`, y el techo de `display dialog` es bajo: un solo
- * tamano de letra, un solo color, sin jerarquia. Quien llama, el asunto y lo que ha
- * dicho salian los tres iguales, asi que la primera lectura no distinguia el nombre de
- * la persona del texto de su pregunta. Se puede reordenar el texto todo lo que quieras;
- * mientras el pintor sea el mismo, se lee igual.
+ * This used to be `display dialog`, and `display dialog` has a low ceiling: one font
+ * size, one color, no hierarchy. Who is calling, the subject and what they said all
+ * came out the same, so on first read you could not tell the person's name from the
+ * text of their question. You can reorder the text as much as you like; while the
+ * painter stays the same, it reads the same.
  *
- * Asi que el pintor cambia. Esto abre una NSWindow de verdad desde JXA (JavaScript for
- * Automation, que viene en todos los macOS: no hay que instalar nada ni compilar nada) y
- * coloca a mano cada pieza:
+ * So the painter changes. This opens a real NSWindow from JXA (JavaScript for
+ * Automation, which ships with every macOS: nothing to install, nothing to compile) and
+ * places each piece by hand:
  *
- *   nombre       19 pt semibold, color de etiqueta
- *   asunto       13 pt, color secundario
- *   -----        linea de separacion del sistema
- *   la cita      13 pt con una regla de 2 pt del color de acento a la izquierda
- *   contexto     11 pt monoespaciada, color terciario (la rama es codigo, se lee como codigo)
+ *   name         19 pt semibold, label color
+ *   subject      13 pt, secondary color
+ *   -----        system separator line
+ *   the quote    13 pt with a 2 pt rule in the accent color on its left
+ *   context      11 pt monospaced, tertiary color (the branch is code, it reads as code)
  *   -----
- *   que pasa     11 pt, color terciario
- *   botones      "Ahora no", "Ver en Slack", "Que pase" (esta con el acento y el Return)
+ *   what happens 11 pt, tertiary color
+ *   buttons      "Not now", "Open in Slack", "Let it in" (this one has the accent and Return)
  *
- * El fondo es un NSVisualEffectView con material de popover, o sea el mismo cristal
- * translucido de los menus del sistema. La barra de titulo esta y no se ve: sin titulo,
- * sin los tres botones de semaforo, y la ventana se arrastra por cualquier sitio.
+ * The background is an NSVisualEffectView with the popover material, the same
+ * translucent glass as the system menus. The title bar is there but hidden: no title,
+ * no traffic-light buttons, and the window drags from anywhere.
  *
- * La gracia no esta en el texto sino donde debe estar: el icono es Poochie y el boton
- * sigue siendo "Que pase". Un aviso que interrumpe tiene un segundo; la broma la pone
- * la cara, no un parrafo.
+ * The joke is not in the text but where it belongs: the icon is Poochie and the button
+ * still says "Let it in". A notice that interrupts gets one second; the face carries the
+ * joke, not a paragraph.
  *
- * NSAlert, PROBADO Y RECHAZADO. Es la caja del sistema y separa titular de cuerpo, que
- * era justo lo que faltaba. Medido: `alert.runModal` desde osascript devuelve 1000
- * (NSAlertFirstButtonReturn) al instante, sin esperar a nadie, porque el proceso de
- * osascript no tiene el bucle de eventos montado. O sea que la ventana parpadea y el
- * programa contesta "ha pulsado Que pase" sin que nadie haya pulsado nada. Un aviso que
- * se auto-acepta es peor que no tener aviso. `runModalForWindow` sobre una ventana
- * propia si bloquea, que es por lo que la ventana se monta a mano.
+ * NSAlert, TRIED AND REJECTED. It is the system box and it separates headline from
+ * body, which was exactly what was missing. Measured: `alert.runModal` from osascript
+ * returns 1000 (NSAlertFirstButtonReturn) at once, without waiting for anyone, because
+ * the osascript process has no event loop running. So the window flickers and the
+ * program answers "they pressed Let it in" without anyone pressing anything. A notice
+ * that accepts itself is worse than no notice. `runModalForWindow` on a window of our
+ * own does block, which is why the window is built by hand.
  */
 import * as T from "./threads.ts";
 import { envVar } from "./paths.ts";
 
-/** El ancho fijo. Una columna estrecha se lee de un vistazo; una ancha obliga a barrer
- *  la linea entera, y esto se mira durante un segundo. */
+/** Fixed width. A narrow column reads at a glance; a wide one makes you sweep the
+ *  whole line, and this gets looked at for one second. */
 export const WIDTH = 440;
-const MARGEN = 26;
+const MARGIN = 26;
 
-/** Lo que se ve en el aviso, ya en piezas. Lo comparten la ventana, el DM de Slack y el
- *  primer turno del aparte, para que los tres digan lo mismo. */
+/** What the notice shows, already in pieces. The window, the Slack DM and the aside's
+ *  first turn share it, so the three say the same thing. */
 export type Parts = { quien: string; asunto: string; contexto: string; cita: string; pie: string };
 
-/** La cita se recorta por frases, no por caracteres: cortar a mitad de palabra y pegar
- *  "[...]" es lo que hace que un aviso parezca un log y no un mensaje. */
-const MAX_CITA = 280;
+/** The quote is trimmed by sentences, not by characters: cutting mid-word and pasting
+ *  "[...]" is what makes a notice look like a log instead of a message. */
+const MAX_QUOTE = 280;
 
-export function clip(texto: string): string {
-  const limpio = texto.trim().replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n");
-  if (limpio.length <= MAX_CITA) return limpio;
-  const corte = limpio.slice(0, MAX_CITA);
-  const fin = Math.max(corte.lastIndexOf(". "), corte.lastIndexOf("? "), corte.lastIndexOf("! "));
-  return (fin > MAX_CITA / 2 ? corte.slice(0, fin + 1) : corte.replace(/\s+\S*$/, "")) + " …";
+export function clip(text: string): string {
+  const clean = text.trim().replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n");
+  if (clean.length <= MAX_QUOTE) return clean;
+  const cut = clean.slice(0, MAX_QUOTE);
+  const end = Math.max(cut.lastIndexOf(". "), cut.lastIndexOf("? "), cut.lastIndexOf("! "));
+  return (end > MAX_QUOTE / 2 ? cut.slice(0, end + 1) : cut.replace(/\s+\S*$/, "")) + " …";
 }
 
 export function parts(t: T.Thread): Parts {
-  const asunto = t.subject.trim();
+  const subject = t.subject.trim();
   return {
-    quien: `${t.from.human ?? t.from.name} llama.`,
-    asunto: asunto.charAt(0).toUpperCase() + asunto.slice(1),
-    // Solo lo que exista de verdad: una etiqueta vacia ("Rama: -") es peor que no ponerla.
+    quien: `${t.from.human ?? t.from.name} is calling.`,
+    asunto: subject.charAt(0).toUpperCase() + subject.slice(1),
+    // Only what really exists: an empty label ("Branch: -") is worse than none.
     contexto: [
       t.context.branch,
-      t.context.files?.length ? `${t.context.files.length} ${t.context.files.length === 1 ? "fichero" : "ficheros"}` : null,
+      t.context.files?.length ? `${t.context.files.length} ${t.context.files.length === 1 ? "file" : "files"}` : null,
     ].filter(Boolean).join(" · "),
     cita: clip(t.messages[0]?.text ?? ""),
-    pie: "Le contesta un Claude de solo lectura, en una ventana aparte.\nTus sesiones no se enteran.",
+    pie: "A read-only Claude answers, in a separate window.\nYour own sessions never see it.",
   };
 }
 
-export const BUTTONS = { rechazar: "Ahora no", slack: "Ver en Slack", aceptar: "Que pase" };
+export const BUTTONS = { rechazar: "Not now", slack: "Open in Slack", aceptar: "Let it in" };
 
 /**
- * Donde se planta la ventana, en puntos y contando desde arriba a la izquierda.
+ * Where the window goes, in points, counting from the top left.
  *
- * Existe por el script de capturas. Capturar una ventana por su id exige el permiso de
- * Accesibilidad de macOS, y sin el la unica salida era `screencapture` de la pantalla
- * entera: medido, el primer intento se llevo el escritorio de quien lo corria. Si la
- * ventana se puede plantar en un sitio conocido, `screencapture -R` recorta ese
- * rectangulo exacto y dentro del PNG no hay nada mas.
+ * It exists for the screenshots script. Capturing a window by its id needs the macOS
+ * Accessibility permission, and without it the only way out was `screencapture` of the
+ * whole screen: measured, the first attempt grabbed the desktop of whoever ran it. If
+ * the window can be placed somewhere known, `screencapture -R` crops that exact
+ * rectangle and the PNG holds nothing else.
  *
- * Sin la variable, centrada, que es donde tiene que estar cuando la mira una persona.
+ * Without the variable, centered, which is where it belongs when a person looks at it.
  */
 export function requestedPosition(): { x: number; y: number } | null {
   const v = envVar("SPOOCHIE_WINDOW_POS", "SPOOCHIE_VENTANA_POS");
@@ -96,16 +96,17 @@ export function requestedPosition(): { x: number; y: number } | null {
 }
 
 /**
- * Pulsar un boton solo, sin que se vea. Existe para la prueba de punta a punta.
+ * Press a button by itself, out of sight. It exists for the end-to-end test.
  *
- * La ventana se probaba con capturas y mirando el guion, nunca pulsando, y por eso el
- * clic llego vacio a produccion (ver `button returned` abajo). Probarla pulsando con la
- * ventana visible parpadea sobre el trabajo de quien corre los tests, asi que con esta
- * variable la ventana sale transparente, sin icono en el Dock y sin tomar el foco, y un
- * temporizador pulsa el boton con ese numero (1 rechazar, 2 Slack, 3 aceptar). Todo lo
- * demas es la ventana de verdad: el mismo NSWindow, la misma accion, el mismo modal y la
- * misma salida. Solo la lee el proceso que genera el guion, o sea el demonio de quien lo
- * corre; nada que llegue por el tunel puede ponerla.
+ * The window was tested with screenshots and by reading the script, never by clicking,
+ * and that is how the click reached production empty (see `button returned` below).
+ * Testing it by clicking with the window visible flickers over the work of whoever runs
+ * the tests, so with this variable the window comes out transparent, with no Dock icon
+ * and without taking focus, and a timer presses the button with that number (1 decline,
+ * 2 Slack, 3 accept). Everything else is the real window: the same NSWindow, the same
+ * action, the same modal and the same output. Only the process that generates the
+ * script reads it, that is the daemon of whoever runs it; nothing arriving through the
+ * tunnel can set it.
  */
 export function requestedClick(): 1 | 2 | 3 | 0 {
   const v = envVar("SPOOCHIE_WINDOW_CLICK", "SPOOCHIE_VENTANA_CLIC");
@@ -113,165 +114,165 @@ export function requestedClick(): 1 | 2 | 3 | 0 {
 }
 
 /**
- * El programa JXA.
+ * The JXA program.
  *
- * Los datos van en un literal JSON al principio en vez de interpolados por el cuerpo:
- * asi el texto de otra persona nunca es codigo, solo el contenido de una variable. Es la
- * misma razon por la que existe el portero.
+ * The data goes in a JSON literal at the top instead of being interpolated through the
+ * body: that way another person's text is never code, only the content of a variable.
+ * It is the same reason the gatekeeper exists.
  */
-export function windowScript(t: T.Thread, icono: string | null): string {
+export function windowScript(t: T.Thread, icon: string | null): string {
   const d = {
     ...parts(t),
-    icono: icono ?? "",
+    icon: icon ?? "",
     pos: requestedPosition(),
-    clic: requestedClick(),
-    botones: [
-      { titulo: BUTTONS.rechazar, tag: 1, tecla: "" },
-      { titulo: BUTTONS.slack, tag: 2, tecla: "" },
-      { titulo: BUTTONS.aceptar, tag: 3, tecla: "\r" },
+    click: requestedClick(),
+    buttons: [
+      { title: BUTTONS.rechazar, tag: 1, key: "" },
+      { title: BUTTONS.slack, tag: 2, key: "" },
+      { title: BUTTONS.aceptar, tag: 3, key: "\r" },
     ],
-    ancho: WIDTH,
-    margen: MARGEN,
+    width: WIDTH,
+    margin: MARGIN,
   };
-  // U+2028 y U+2029 son legales dentro de una cadena JSON y rompen un literal de
-  // JavaScript. Salen escapados y el JSON sigue siendo el mismo JSON.
-  const datos = JSON.stringify(d).split("\u2028").join("\\u2028").split("\u2029").join("\\u2029");
+  // U+2028 and U+2029 are legal inside a JSON string and break a JavaScript literal.
+  // They go out escaped and the JSON is still the same JSON.
+  const data = JSON.stringify(d).split("\u2028").join("\\u2028").split("\u2029").join("\\u2029");
   return `ObjC.import('Cocoa');
-var D = ${datos};
+var D = ${data};
 var app = $.NSApplication.sharedApplication;
-// 1 = accesorio: sin icono en el Dock y sin tomar el foco. Solo en la prueba (D.clic).
-app.setActivationPolicy(D.clic ? 1 : 0);
+// 1 = accessory: no Dock icon and no focus. Only in the test (D.click).
+app.setActivationPolicy(D.click ? 1 : 0);
 
-// El destino de los botones. Cada uno lleva su tag y para el modal con ese numero.
+// The buttons' target. Each carries its tag and stops the modal with that number.
 ObjC.registerSubclass({
-  name: 'SpDestino', superclass: 'NSObject',
-  methods: { 'pulsa:': { types: ['void', ['id']], implementation: function (b) {
+  name: 'SpTarget', superclass: 'NSObject',
+  methods: { 'press:': { types: ['void', ['id']], implementation: function (b) {
     $.NSApplication.sharedApplication.stopModalWithCode(b.tag);
   } } }
 });
-var destino = $.SpDestino.alloc.init;
+var target = $.SpTarget.alloc.init;
 
-var W = D.ancho, PAD = D.margen, COL = W - PAD * 2;
-function texto(s, font, color, ancho) {
-  var t = $.NSTextField.alloc.initWithFrame($.NSMakeRect(0, 0, ancho, 20));
+var W = D.width, PAD = D.margin, COL = W - PAD * 2;
+function label(s, font, color, width) {
+  var t = $.NSTextField.alloc.initWithFrame($.NSMakeRect(0, 0, width, 20));
   t.stringValue = s; t.editable = false; t.selectable = true; t.bezeled = false;
   t.drawsBackground = false; t.font = font; t.textColor = color;
   t.lineBreakMode = $.NSLineBreakByWordWrapping; t.usesSingleLineMode = false; t.cell.wraps = true;
-  t.setFrameSize($.NSMakeSize(ancho, t.cell.cellSizeForBounds($.NSMakeRect(0, 0, ancho, 10000)).height));
+  t.setFrameSize($.NSMakeSize(width, t.cell.cellSizeForBounds($.NSMakeRect(0, 0, width, 10000)).height));
   return t;
 }
 var F = {
-  quien: $.NSFont.systemFontOfSizeWeight(19, $.NSFontWeightSemibold),
-  asunto: $.NSFont.systemFontOfSize(13),
-  cita: $.NSFont.systemFontOfSize(13),
+  who: $.NSFont.systemFontOfSizeWeight(19, $.NSFontWeightSemibold),
+  subject: $.NSFont.systemFontOfSize(13),
+  quote: $.NSFont.systemFontOfSize(13),
   meta: $.NSFont.monospacedSystemFontOfSizeWeight(11, $.NSFontWeightRegular),
-  pie: $.NSFont.systemFontOfSize(11),
+  footer: $.NSFont.systemFontOfSize(11),
 };
-// El icono le come sitio a las dos primeras lineas y a ninguna mas.
-var HUECO = D.icono ? 56 : 0;
-var filas = [];
-filas.push({ tipo: 'texto', vista: texto(D.quien, F.quien, $.NSColor.labelColor, COL - HUECO), hueco: 5 });
-filas.push({ tipo: 'texto', vista: texto(D.asunto, F.asunto, $.NSColor.secondaryLabelColor, COL - HUECO), hueco: 18 });
-filas.push({ tipo: 'linea', hueco: 16 });
-filas.push({ tipo: 'cita', vista: texto(D.cita ? '“' + D.cita + '”' : '', F.cita, $.NSColor.labelColor, COL - 16), hueco: D.contexto ? 10 : 16 });
-if (D.contexto) filas.push({ tipo: 'texto', vista: texto(D.contexto, F.meta, $.NSColor.tertiaryLabelColor, COL), hueco: 16 });
-filas.push({ tipo: 'linea', hueco: 13 });
-filas.push({ tipo: 'texto', vista: texto(D.pie, F.pie, $.NSColor.tertiaryLabelColor, COL), hueco: 20 });
+// The icon takes room from the first two lines and no others.
+var GAP = D.icon ? 56 : 0;
+var rows = [];
+rows.push({ kind: 'text', view: label(D.quien, F.who, $.NSColor.labelColor, COL - GAP), space: 5 });
+rows.push({ kind: 'text', view: label(D.asunto, F.subject, $.NSColor.secondaryLabelColor, COL - GAP), space: 18 });
+rows.push({ kind: 'line', space: 16 });
+rows.push({ kind: 'quote', view: label(D.cita ? '“' + D.cita + '”' : '', F.quote, $.NSColor.labelColor, COL - 16), space: D.contexto ? 10 : 16 });
+if (D.contexto) rows.push({ kind: 'text', view: label(D.contexto, F.meta, $.NSColor.tertiaryLabelColor, COL), space: 16 });
+rows.push({ kind: 'line', space: 13 });
+rows.push({ kind: 'text', view: label(D.pie, F.footer, $.NSColor.tertiaryLabelColor, COL), space: 20 });
 
-var alto = PAD * 2 + 28;
-for (var i = 0; i < filas.length; i++) alto += (filas[i].vista ? filas[i].vista.frame.size.height : 1) + filas[i].hueco;
+var height = PAD * 2 + 28;
+for (var i = 0; i < rows.length; i++) height += (rows[i].view ? rows[i].view.frame.size.height : 1) + rows[i].space;
 
-// Titled + FullSizeContentView: hace falta el titulo para que la ventana tenga esquinas
-// redondeadas y sombra, y FullSizeContentView para que el cristal llegue hasta arriba.
-// Sin el segundo queda una banda opaca donde iria la barra de titulo, medida en la
-// primera captura: 28 pt de gris plano encima del contenido.
+// Titled + FullSizeContentView: the title is needed for the window to get rounded
+// corners and a shadow, and FullSizeContentView for the glass to reach the top.
+// Without the second there is an opaque band where the title bar would be, measured in
+// the first screenshot: 28 pt of flat gray above the content.
 var win = $.NSWindow.alloc.initWithContentRectStyleMaskBackingDefer(
-  $.NSMakeRect(0, 0, W, alto), (1 << 0) | (1 << 15), 2, false);
+  $.NSMakeRect(0, 0, W, height), (1 << 0) | (1 << 15), 2, false);
 win.titlebarAppearsTransparent = true;
 win.titleVisibility = 1;             // NSWindowTitleHidden
 win.movableByWindowBackground = true;
-win.level = $.NSFloatingWindowLevel; // por encima del editor, que es de donde viene la persona
-for (var b = 0; b < 3; b++) { var sem = win.standardWindowButton(b); if (!sem.isNil()) sem.hidden = true; }
+win.level = $.NSFloatingWindowLevel; // above the editor, which is where the person comes from
+for (var b = 0; b < 3; b++) { var light = win.standardWindowButton(b); if (!light.isNil()) light.hidden = true; }
 
-var fondo = $.NSVisualEffectView.alloc.initWithFrame($.NSMakeRect(0, 0, W, alto));
-fondo.material = $.NSVisualEffectMaterialPopover;
-fondo.blendingMode = $.NSVisualEffectBlendingModeBehindWindow;
-fondo.state = $.NSVisualEffectStateActive;
-win.contentView = fondo;
+var bg = $.NSVisualEffectView.alloc.initWithFrame($.NSMakeRect(0, 0, W, height));
+bg.material = $.NSVisualEffectMaterialPopover;
+bg.blendingMode = $.NSVisualEffectBlendingModeBehindWindow;
+bg.state = $.NSVisualEffectStateActive;
+win.contentView = bg;
 
-var y = alto - PAD;
-for (var i = 0; i < filas.length; i++) {
-  var f = filas[i];
-  if (f.tipo === 'linea') {
+var y = height - PAD;
+for (var i = 0; i < rows.length; i++) {
+  var f = rows[i];
+  if (f.kind === 'line') {
     var l = $.NSBox.alloc.initWithFrame($.NSMakeRect(PAD, y - 1, COL, 1));
     l.boxType = $.NSBoxCustom; l.borderWidth = 1; l.borderColor = $.NSColor.separatorColor;
-    fondo.addSubview(l);
-    y -= 1 + f.hueco;
+    bg.addSubview(l);
+    y -= 1 + f.space;
     continue;
   }
-  var h = f.vista.frame.size.height;
+  var h = f.view.frame.size.height;
   var x = PAD;
-  if (f.tipo === 'cita') {
-    var regla = $.NSBox.alloc.initWithFrame($.NSMakeRect(PAD, y - h, 2, h));
-    regla.boxType = $.NSBoxCustom; regla.borderWidth = 0;
-    regla.fillColor = $.NSColor.controlAccentColor;
-    fondo.addSubview(regla);
+  if (f.kind === 'quote') {
+    var rule = $.NSBox.alloc.initWithFrame($.NSMakeRect(PAD, y - h, 2, h));
+    rule.boxType = $.NSBoxCustom; rule.borderWidth = 0;
+    rule.fillColor = $.NSColor.controlAccentColor;
+    bg.addSubview(rule);
     x = PAD + 16;
   }
-  f.vista.setFrameOrigin($.NSMakePoint(x, y - h));
-  fondo.addSubview(f.vista);
-  y -= h + f.hueco;
+  f.view.setFrameOrigin($.NSMakePoint(x, y - h));
+  bg.addSubview(f.view);
+  y -= h + f.space;
 }
 
-if (D.icono) {
-  var img = $.NSImage.alloc.initWithContentsOfFile(D.icono);
+if (D.icon) {
+  var img = $.NSImage.alloc.initWithContentsOfFile(D.icon);
   if (!img.isNil()) {
-    var iv = $.NSImageView.alloc.initWithFrame($.NSMakeRect(W - PAD - 44, alto - PAD - 46, 44, 44));
+    var iv = $.NSImageView.alloc.initWithFrame($.NSMakeRect(W - PAD - 44, height - PAD - 46, 44, 44));
     iv.image = img; iv.imageScaling = $.NSImageScaleProportionallyUpOrDown;
-    fondo.addSubview(iv);
+    bg.addSubview(iv);
   }
 }
 
 var x2 = W - PAD;
 var BTS = {};
-for (var i = D.botones.length - 1; i >= 0; i--) {
-  var d = D.botones[i];
+for (var i = D.buttons.length - 1; i >= 0; i--) {
+  var d = D.buttons[i];
   var bt = $.NSButton.alloc.initWithFrame($.NSMakeRect(0, 0, 90, 28));
-  bt.title = d.titulo; bt.bezelStyle = $.NSBezelStyleRounded; bt.tag = d.tag;
-  bt.target = destino; bt.action = $.NSSelectorFromString('pulsa:'); BTS[d.tag] = bt;
-  if (d.tecla) bt.keyEquivalent = d.tecla;
+  bt.title = d.title; bt.bezelStyle = $.NSBezelStyleRounded; bt.tag = d.tag;
+  bt.target = target; bt.action = $.NSSelectorFromString('press:'); BTS[d.tag] = bt;
+  if (d.key) bt.keyEquivalent = d.key;
   bt.sizeToFit;
   var w2 = Math.max(bt.frame.size.width + 22, 82);
   bt.setFrameSize($.NSMakeSize(w2, 28));
   bt.setFrameOrigin($.NSMakePoint(x2 - w2, PAD - 8));
   x2 -= w2 + 8;
-  fondo.addSubview(bt);
+  bg.addSubview(bt);
 }
 
 if (D.pos) {
-  // La variable llega contando desde arriba; Cocoa cuenta desde abajo.
+  // The variable counts from the top; Cocoa counts from the bottom.
   var p = $.NSScreen.mainScreen.frame;
-  win.setFrameOrigin($.NSMakePoint(D.pos.x, p.size.height - D.pos.y - alto));
+  win.setFrameOrigin($.NSMakePoint(D.pos.x, p.size.height - D.pos.y - height));
 } else {
   win.center;
 }
-if (D.clic) {
+if (D.click) {
   win.alphaValue = 0; win.ignoresMouseEvents = true;
-  ObjC.registerSubclass({ name: 'SpClic', superclass: 'NSObject', methods: { 'tick:': { types: ['void', ['id']], implementation: function (x) { BTS[D.clic].performClick(null); } } } });
-  var tm = $.NSTimer.timerWithTimeIntervalTargetSelectorUserInfoRepeats(0.6, $.SpClic.alloc.init, 'tick:', null, false);
+  ObjC.registerSubclass({ name: 'SpClick', superclass: 'NSObject', methods: { 'tick:': { types: ['void', ['id']], implementation: function (x) { BTS[D.click].performClick(null); } } } });
+  var tm = $.NSTimer.timerWithTimeIntervalTargetSelectorUserInfoRepeats(0.6, $.SpClick.alloc.init, 'tick:', null, false);
   $.NSRunLoop.currentRunLoop.addTimerForMode(tm, $.NSRunLoopCommonModes);
 } else {
   app.activateIgnoringOtherApps(true);
 }
 win.makeKeyAndOrderFront(null);
-// El alto sale calculado del texto, asi que solo se sabe aqui. Se dice en voz alta para
-// que el script de capturas recorte el rectangulo exacto de la ventana y nada mas.
-console.log("alto:" + alto);
+// The height comes from the text, so it is only known here. It is printed so the
+// screenshots script crops the window's exact rectangle and nothing else.
+console.log("height:" + height);
 var r = app.runModalForWindow(win);
-var nombre = "";
-// runModalForWindow devuelve el codigo como CADENA ("3"), no como numero: con === ningun
-// boton casaba y salia "button returned:" vacio. Medido pulsando los tres.
-for (var i = 0; i < D.botones.length; i++) if (D.botones[i].tag === Number(r)) nombre = D.botones[i].titulo;
-console.log("button returned:" + nombre);
+var pressed = "";
+// runModalForWindow returns the code as a STRING ("3"), not a number: with === no
+// button matched and "button returned:" came out empty. Measured by pressing all three.
+for (var i = 0; i < D.buttons.length; i++) if (D.buttons[i].tag === Number(r)) pressed = D.buttons[i].title;
+console.log("button returned:" + pressed);
 `;
 }

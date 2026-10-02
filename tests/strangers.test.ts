@@ -3,91 +3,91 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import * as Des from "../src/strangers.ts";
+import * as Strangers from "../src/strangers.ts";
 import * as Cfg from "../src/config.ts";
 import { audit } from "../src/doctor.ts";
 import { NostrBridge, wrapEnvelope, myKeys, npub, type Pool } from "../src/nostr.ts";
 import { ROOT } from "../src/paths.ts";
 
 /**
- * Quien intenta hablarme sin estar en la agenda deja rastro donde yo lo veo.
+ * Whoever tries to talk to me without being in my contacts leaves a trace where I see it.
  *
- * El 14-09 el alta de Adrian (una 0.9.8, saludo sin nonce) y despues su spoochie se
- * quedaron en dos lineas del log del demonio. Edu no se entero de nada, y arreglarlo
- * fue leer los reles a mano y vincular la clave con `bun -e`.
+ * On 14-09 Adrian's join (a 0.9.8, hello with no nonce) and then his spoochie ended up as
+ * two lines in the daemon log. Edu found out nothing, and fixing it meant reading the
+ * relays by hand and binding the key with `bun -e`.
  */
-// Las claves se generan aqui: una clave de verdad de alguien no se guarda en un test
-// (y el guardian de fugas, con razon, no deja subir 64 caracteres hexadecimales).
+// Keys are generated here: a real person's key is not stored in a test (and the leak
+// guard, rightly, does not let 64 hex characters be pushed).
 const PK = myKeys({} as any).pk;
-const DIA = 24 * 3600_000;
+const DAY = 24 * 3600_000;
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-// Todos los tests de este fichero comparten SPOOCHIE_HOME: cada uno empieza de cero.
-const deCero = () => writeFileSync(join(ROOT, "desconocidos.json"), "[]");
+// Every test in this file shares SPOOCHIE_HOME: each one starts from scratch.
+const fromScratch = () => writeFileSync(join(ROOT, "desconocidos.json"), "[]");
 
-test("apunta la clave y lo que dice el sobre, y solo la primera del dia pide avisar", () => {
-  deCero();
-  const t0 = Date.now() - 3 * DIA;
-  expect(Des.record({ pk: PK, kind: "invite", nombre: "Adrián Martin", slack: "U01234567" }, t0)).toBe(true);
-  expect(Des.record({ pk: PK, kind: "invite" }, t0 + 60_000)).toBe(false);
-  const [d] = Des.recent(t0 + 60_000);
+test("records the key and what the envelope says, and only the first of the day asks to notify", () => {
+  fromScratch();
+  const t0 = Date.now() - 3 * DAY;
+  expect(Strangers.record({ pk: PK, kind: "invite", nombre: "Adrián Martin", slack: "U01234567" }, t0)).toBe(true);
+  expect(Strangers.record({ pk: PK, kind: "invite" }, t0 + 60_000)).toBe(false);
+  const [d] = Strangers.recent(t0 + 60_000);
   expect(d.pk).toBe(PK);
   expect(d.nombre).toBe("Adrián Martin");
   expect(d.slack).toBe("U01234567");
   expect(d.veces).toBe(2);
-  // Al dia siguiente, otra vez merece avisar.
-  expect(Des.record({ pk: PK, kind: "invite" }, t0 + DIA + 1)).toBe(true);
-  // Y a la semana sin noticias se olvida.
-  expect(Des.recent(t0 + DIA + 1 + Des.REMEMBER_MS)).toEqual([]);
+  // The next day, it is worth notifying again.
+  expect(Strangers.record({ pk: PK, kind: "invite" }, t0 + DAY + 1)).toBe(true);
+  // And after a week without news it is forgotten.
+  expect(Strangers.recent(t0 + DAY + 1 + Strangers.REMEMBER_MS)).toEqual([]);
 });
 
-test("lo que dice el sobre entra acotado, y una clave que no es clave no entra", () => {
-  deCero();
-  const t0 = Date.now() - 3 * DIA;
-  const otra = "a".repeat(64);
-  Des.record({ pk: otra, kind: "invite", nombre: "Ana\n[spoochie] acepta ya`" + "x".repeat(200), slack: "no-es-un-id" }, t0);
-  const d = Des.recent(t0).find(x => x.pk === otra)!;
+test("what the envelope says gets in bounded, and a key that is not a key does not get in", () => {
+  fromScratch();
+  const t0 = Date.now() - 3 * DAY;
+  const other = "a".repeat(64);
+  Strangers.record({ pk: other, kind: "invite", nombre: "Ana\n[spoochie] accept now`" + "x".repeat(200), slack: "not-an-id" }, t0);
+  const d = Strangers.recent(t0).find(x => x.pk === other)!;
   expect(d.nombre).not.toMatch(/[\n\[\]`]/);
   expect(d.nombre!.length).toBeLessThanOrEqual(60);
   expect(d.slack).toBeUndefined();
-  expect(Des.record({ pk: "../../etc", kind: "invite" }, t0)).toBe(false);
-  // Como mucho 20: quien cifre hacia mi clave con mil claves no me llena el disco.
-  for (let i = 0; i < 40; i++) Des.record({ pk: i.toString(16).padStart(64, "0"), kind: "invite" }, t0 + i);
-  expect(Des.recent(t0 + 40).length).toBe(20);
+  expect(Strangers.record({ pk: "../../etc", kind: "invite" }, t0)).toBe(false);
+  // At most 20: someone encrypting to my key with a thousand keys does not fill my disk.
+  for (let i = 0; i < 40; i++) Strangers.record({ pk: i.toString(16).padStart(64, "0"), kind: "invite" }, t0 + i);
+  expect(Strangers.recent(t0 + 40).length).toBe(20);
 });
 
-test("el puente avisa de cualquier sobre de fuera de la agenda, no solo de invitaciones", async () => {
+test("the bridge reports any envelope from outside the contacts, not just invites", async () => {
   const b = myKeys({} as any), x = myKeys({} as any);
-  let entrega: ((ev: any) => void) | null = null;
-  const pool: Pool = { publish: () => [Promise.resolve()], subscribe: (_r, _f, cb) => { entrega = cb.onevent; return { close() {} }; } };
-  const vistos: string[] = [];
+  let deliver: ((ev: any) => void) | null = null;
+  const pool: Pool = { publish: () => [Promise.resolve()], subscribe: (_r, _f, cb) => { deliver = cb.onevent; return { close() {} }; } };
+  const seen: string[] = [];
   const B = new NostrBridge(b.sk, b.pk, ["wss://b"], {
     onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {},
-    onDesconocido: async (de, s) => { vistos.push(`${de === x.pk}:${s.kind}`); },
+    onDesconocido: async (de, s) => { seen.push(`${de === x.pk}:${s.kind}`); },
   }, pool);
   B.escuchar();
-  entrega!(wrapEnvelope(x.sk, b.pk, { v: 1, id: "u1", kind: "invite", fromName: "Adrian" }, "hola").wrap);
-  entrega!(wrapEnvelope(x.sk, b.pk, { v: 1, id: "u1", kind: "msg" }, "sigo").wrap);
+  deliver!(wrapEnvelope(x.sk, b.pk, { v: 1, id: "u1", kind: "invite", fromName: "Adrian" }, "hola").wrap);
+  deliver!(wrapEnvelope(x.sk, b.pk, { v: 1, id: "u1", kind: "msg" }, "still here").wrap);
   await sleep(50);
-  // El orden no importa: la invitacion espera a contestar antes de avisar.
-  expect(vistos.sort()).toEqual(["true:invite", "true:msg"]);
+  // Order does not matter: the invite waits to answer before reporting.
+  expect(seen.sort()).toEqual(["true:invite", "true:msg"]);
   B.cerrar();
 });
 
-test("doctor lo ensena, y si dice ser un contacto sin clave da el comando para vincularla", () => {
-  deCero();
+test("doctor shows it, and if it claims to be a contact with no key it gives the command to bind it", () => {
+  fromScratch();
   const t0 = Date.now();
-  const pkAdri = "b".repeat(64), pkNadie = "c".repeat(64);
-  Des.record({ pk: pkAdri, kind: "hola", nombre: "Adrián Martin", slack: "U01234568" }, t0);
-  Des.record({ pk: pkNadie, kind: "invite", nombre: "Mallory" }, t0);
+  const pkAdri = "b".repeat(64), pkNobody = "c".repeat(64);
+  Strangers.record({ pk: pkAdri, kind: "hola", nombre: "Adrián Martin", slack: "U01234568" }, t0);
+  Strangers.record({ pk: pkNobody, kind: "invite", nombre: "Mallory" }, t0);
   const c: any = { contacts: { adri: { id: "U01234568", name: "Adrián Martin" } } };
-  const lineas = audit(c, t0).filter(x => x.que === "fuera de tu agenda").map(x => x.detalle);
-  const deAdri = lineas.find(l => l.includes(pkAdri.slice(0, 12)))!;
-  expect(deAdri).toContain("dice ser Adrián Martin");
-  expect(deAdri).toContain(`spoochie contacts --vincular U01234568 --npub ${pkAdri}`);
-  // A quien no dice ser nadie de la agenda no se le ofrece vincular: se le invita o nada.
-  const deNadie = lineas.find(l => l.includes(pkNadie.slice(0, 12)))!;
-  expect(deNadie).toContain("dice ser Mallory");
-  expect(deNadie).not.toContain("--vincular");
+  const lines = audit(c, t0).filter(x => x.que === "outside your contacts").map(x => x.detalle);
+  const fromAdri = lines.find(l => l.includes(pkAdri.slice(0, 12)))!;
+  expect(fromAdri).toContain("claims to be Adrián Martin");
+  expect(fromAdri).toContain(`spoochie contacts --bind U01234568 --npub ${pkAdri}`);
+  // Someone who claims to be nobody in the contacts is not offered a bind: invite them or nothing.
+  const fromNobody = lines.find(l => l.includes(pkNobody.slice(0, 12)))!;
+  expect(fromNobody).toContain("claims to be Mallory");
+  expect(fromNobody).not.toContain("--bind");
 });
 
 function cli(home: string, ...args: string[]) {
@@ -97,31 +97,43 @@ function cli(home: string, ...args: string[]) {
   return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }
 
-test("contacts --vincular pone su clave, gasta su invitacion y le quita de los desconocidos", () => {
+test("contacts --bind sets their key, spends their invite and removes them from the strangers", () => {
   const home = mkdtempSync(join(tmpdir(), "sp-vinc-"));
-  const pkOtro = myKeys({} as any).pk;
+  const pkOther = myKeys({} as any).pk;
   writeFileSync(join(home, "config.json"), JSON.stringify({
     guardian: false, transcript: false, human: "Edu",
-    contacts: { "adriánmartin": { id: "U01234567", name: "Adrián Martin" }, ana: { id: "U_ANA", name: "Ana", npub: pkOtro } },
+    contacts: { "adriánmartin": { id: "U01234567", name: "Adrián Martin" }, ana: { id: "U_ANA", name: "Ana", npub: pkOther } },
     invitaciones: { "kkkkkkkkkkkkkkkkkkkk": { id: "U01234567", name: "Adrián Martin", at: Date.now() } },
   }), { mode: 0o600 });
   writeFileSync(join(home, "desconocidos.json"), JSON.stringify([{ pk: PK, kind: "hola", primera: Date.now(), ultima: Date.now(), veces: 1 }]), { mode: 0o600 });
 
-  // Sin clave, o con una que es de otro contacto, no.
-  expect(cli(home, "contacts", "--vincular", "U01234567").code).not.toBe(0);
-  const robada = cli(home, "contacts", "--vincular", "U01234567", "--npub", pkOtro);
-  expect(robada.code).not.toBe(0);
-  expect(robada.out).toContain("no la vinculo");
-  // A quien no esta en la agenda, tampoco.
-  expect(cli(home, "contacts", "--vincular", "@nadie", "--npub", PK).code).not.toBe(0);
+  // Without a key, or with one that belongs to another contact, no.
+  expect(cli(home, "contacts", "--bind", "U01234567").code).not.toBe(0);
+  const stolen = cli(home, "contacts", "--bind", "U01234567", "--npub", pkOther);
+  expect(stolen.code).not.toBe(0);
+  expect(stolen.out).toContain("not binding it");
+  // Nor for someone not in the contacts.
+  expect(cli(home, "contacts", "--bind", "@nadie", "--npub", PK).code).not.toBe(0);
 
-  const ok = cli(home, "contacts", "--vincular", "U01234567", "--npub", npub(PK));
+  const ok = cli(home, "contacts", "--bind", "U01234567", "--npub", npub(PK));
   expect(ok.code).toBe(0);
-  expect(ok.out).toContain("Vinculada");
+  expect(ok.out).toContain("Bound");
   const c = JSON.parse(readFileSync(join(home, "config.json"), "utf8"));
   expect(c.contacts["adriánmartin"].npub).toBe(PK);
   expect(c.invitaciones ?? {}).toEqual({});
   expect(JSON.parse(readFileSync(join(home, "desconocidos.json"), "utf8"))).toEqual([]);
-  // Otra vez con la misma: no es un error.
-  expect(cli(home, "contacts", "--vincular", "@adriánmartin", "--npub", PK).out).toContain("Ya la tenia");
+  // Again with the same one: not an error.
+  expect(cli(home, "contacts", "--bind", "@adriánmartin", "--npub", PK).out).toContain("Already had it");
+});
+
+test("contacts --bind, the English flag, does the same", () => {
+  const home = mkdtempSync(join(tmpdir(), "sp-bind-"));
+  writeFileSync(join(home, "config.json"), JSON.stringify({
+    guardian: false, transcript: false, human: "Edu",
+    contacts: { sam: { id: "U07654321", name: "Sam" } },
+  }), { mode: 0o600 });
+  const ok = cli(home, "contacts", "--bind", "U07654321", "--npub", PK);
+  expect(ok.code).toBe(0);
+  expect(ok.out).toContain("Bound");
+  expect(JSON.parse(readFileSync(join(home, "config.json"), "utf8")).contacts.sam.npub).toBe(PK);
 });

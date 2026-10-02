@@ -1,4 +1,4 @@
 #!/bin/sh
-# Cerrar la pantalla cierra tus spoochies vivos.
+# Closing the session closes your live spoochies.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 "$ROOT/bin/spoochie" unregister 2>/dev/null || true

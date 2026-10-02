@@ -7,18 +7,18 @@ import { join } from "node:path";
 import { hasta, plazo } from "./wait.ts";
 
 /**
- * Un demonio que se reinicia con un spoochie vivo.
+ * A daemon that restarts with a live spoochie.
  *
- * El caso de verdad: se cierra el portatil, se actualiza el plugin, o launchd reinicia
- * el demonio. El spoochie sigue abierto en disco y el otro lado sigue hablando. Si al
- * volver no recoge el hilo, lo dicho en ese rato se pierde en silencio: quien lo mando
- * ve "entregado" y aqui no entra nada.
+ * The real case: the laptop gets closed, the plugin updates, or launchd restarts
+ * the daemon. The spoochie stays open on disk and the other side keeps talking. If on
+ * coming back it doesn't pick up the thread, what was said meanwhile is silently lost: the sender
+ * sees "delivered" and nothing comes in here.
  *
- * Con su propio BASE y su propio directorio de reles: compartirlos con otro test hacia
- * que el resultado dependiera del orden.
+ * With its own BASE and its own relay directory: sharing them with another test made
+ * the result depend on the order.
  */
 const BASE = mkdtempSync(join(tmpdir(), "sp-re-"));
-const HOME_C = join(BASE, "c"), HOME_D = join(BASE, "d"), NOSTR = join(BASE, "reles");
+const HOME_C = join(BASE, "c"), HOME_D = join(BASE, "d"), NOSTR = join(BASE, "relays");
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 function fakeInbox(name: string) {
@@ -40,84 +40,84 @@ function rpc(home: string, req: any): Promise<any> {
     c.on("data", d => { buf += d.toString(); const i = buf.indexOf("\n"); if (i >= 0) { c.destroy(); resolve(JSON.parse(buf.slice(0, i))); } });
   });
 }
-/** Como `rpc`, pero si falla dice en que paso fue: un ENOENT suelto no dice nada. */
-async function paso<T>(nombre: string, f: () => Promise<T>): Promise<T> {
-  try { return await f(); } catch (e) { throw new Error(`[${nombre}] ${String(e)}`); }
+/** Like `rpc`, but if it fails it says which step it was: a bare ENOENT says nothing. */
+async function step<T>(name: string, f: () => Promise<T>): Promise<T> {
+  try { return await f(); } catch (e) { throw new Error(`[${name}] ${String(e)}`); }
 }
-const hilo = (home: string, id: string) => { const p = join(home, "threads", `${id}.json`); return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null; };
+const thread = (home: string, id: string) => { const p = join(home, "threads", `${id}.json`); return existsSync(p) ? JSON.parse(readFileSync(p, "utf8")) : null; };
 
 const C = fakeInbox("rec"), D = fakeInbox("red");
-const demonios: ChildProcess[] = [];
-afterAll(() => { for (const d of demonios) d.kill("SIGKILL"); C.server.close(); D.server.close(); });
+const daemons: ChildProcess[] = [];
+afterAll(() => { for (const d of daemons) d.kill("SIGKILL"); C.server.close(); D.server.close(); });
 
-test("un demonio que se reinicia con un spoochie vivo lo recoge y la conversacion sigue", async () => {
-  // El caso de verdad: se cierra el portatil, se actualiza el plugin, o launchd
-  // reinicia el demonio. El spoochie sigue abierto en disco y el otro lado sigue
-  // hablando. Si al volver no recoge el hilo, los mensajes de ese rato se pierden en
-  // silencio: el que los mando ve "entregado" y aqui no entra nada.
+test("a daemon that restarts with a live spoochie picks it up and the conversation goes on", async () => {
+  // The real case: the laptop gets closed, the plugin updates, or launchd
+  // restarts the daemon. The spoochie stays open on disk and the other side keeps
+  // talking. If on coming back it doesn't pick up the thread, the messages from that while are lost
+  // silently: whoever sent them sees "delivered" and nothing comes in here.
   const { myKeys } = await import("../src/nostr.ts");
   const kc = myKeys({} as any), kd = myKeys({} as any);
 
-  const salida: string[] = [];
-  const arrancar = (home: string) => {
+  const output: string[] = [];
+  const start = (home: string) => {
     const d = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
       env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOSTR_DIR: NOSTR, SPOOCHIE_NOTICE: "terminal", SPOOCHIE_WINDOW: "background" }, stdio: ["ignore", "pipe", "pipe"],
     });
-    d.stdout?.on("data", x => salida.push(`[${home.slice(-1)}] ${x}`));
-    d.stderr?.on("data", x => salida.push(`[${home.slice(-1)}] ${x}`));
-    demonios.push(d);
+    d.stdout?.on("data", x => output.push(`[${home.slice(-1)}] ${x}`));
+    d.stderr?.on("data", x => output.push(`[${home.slice(-1)}] ${x}`));
+    daemons.push(d);
     return d;
   };
 
-  for (const [home, box, k, otro, yo, otroNombre, id] of [[HOME_C, C, kc, kd, "Cris", "Dani", "U_C"], [HOME_D, D, kd, kc, "Dani", "Cris", "U_D"]] as const) {
+  for (const [home, box, k, other, me, otherName, id] of [[HOME_C, C, kc, kd, "Cris", "Dani", "U_C"], [HOME_D, D, kd, kc, "Dani", "Cris", "U_D"]] as const) {
     mkdirSync(join(home, "sessions"), { recursive: true, mode: 0o700 });
     mkdirSync(join(home, "threads"), { recursive: true, mode: 0o700 });
     writeFileSync(join(home, "config.json"), JSON.stringify({
-      guardian: false, transcript: false, aparte: false, human: yo,
+      guardian: false, transcript: false, aparte: false, human: me,
       nostr: { sk: k.sk, pk: k.pk, relays: ["wss://x"] },
-      contacts: { [otroNombre.toLowerCase()]: { id: otroNombre === "Cris" ? "U_C" : "U_D", name: otroNombre, npub: otro.pk, relays: ["wss://x"] } },
+      contacts: { [otherName.toLowerCase()]: { id: otherName === "Cris" ? "U_C" : "U_D", name: otherName, npub: other.pk, relays: ["wss://x"] } },
     }), { mode: 0o600 });
-    writeFileSync(join(home, "sessions", `${id}.json`), JSON.stringify({ sessionId: id, name: `repo-${yo.toLowerCase()}`, cwd: home, socket: box.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
-    arrancar(home);
+    writeFileSync(join(home, "sessions", `${id}.json`), JSON.stringify({ sessionId: id, name: `repo-${me.toLowerCase()}`, cwd: home, socket: box.sock, token: "t", pid: process.pid, startedAt: Date.now() }), { mode: 0o600 });
+    start(home);
   }
-  const arriba = await hasta(() => existsSync(join(HOME_C, "daemon.sock")) && existsSync(join(HOME_D, "daemon.sock")), 15000);
-  if (!arriba) throw new Error(`los demonios no arrancaron:\n${salida.join("")}`);
+  const up = await hasta(() => existsSync(join(HOME_C, "daemon.sock")) && existsSync(join(HOME_D, "daemon.sock")), 15000);
+  if (!up) throw new Error(`the daemons didn't start:\n${output.join("")}`);
 
-  const open = await paso("open", () => rpc(HOME_C, { op: "open", sessionId: "U_C", to: "@dani", subject: "el select", body: "no se abre en firefox" }));
+  const open = await step("open", () => rpc(HOME_C, { op: "open", sessionId: "U_C", to: "@dani", subject: "the select", body: "it doesn't open in firefox" }));
   expect(open.ok).toBe(true);
   expect(await hasta(() => D.got.some(x => x.includes(`spoochie accept ${open.id}`)))).toBe(true);
-  expect((await paso("accept", () => rpc(HOME_D, { op: "accept", sessionId: "U_D", id: open.id, by: "Dani", aqui: true }))).ok).toBe(true);
+  expect((await step("accept", () => rpc(HOME_D, { op: "accept", sessionId: "U_D", id: open.id, by: "Dani", aqui: true }))).ok).toBe(true);
   expect(await hasta(() => C.got.some(x => x.includes("ha aceptado el tunel")))).toBe(true);
 
-  // Se muere el demonio de Cris con el spoochie abierto.
-  const cris = demonios[demonios.length - 2];
+  // Cris's daemon dies with the spoochie open.
+  const cris = daemons[daemons.length - 2];
   cris.kill("SIGKILL");
   await hasta(() => !existsSync(join(HOME_C, "daemon.sock")) || cris.killed, 5000);
-  expect(hilo(HOME_C, open.id).state).toBe("open");
+  expect(thread(HOME_C, open.id).state).toBe("open");
 
-  // Dani sigue hablando mientras el otro lado no esta. El sobre queda en los "reles".
-  await paso("say de Dani", () => rpc(HOME_D, { op: "say", sessionId: "U_D", id: open.id, text: "es el z-index del overlay" }));
+  // Dani keeps talking while the other side is away. The envelope stays in the "relays".
+  await step("say from Dani", () => rpc(HOME_D, { op: "say", sessionId: "U_D", id: open.id, text: "it's the overlay's z-index" }));
   await sleep(500);
 
-  // Cris vuelve.
-  const antes = C.got.length;
-  arrancar(HOME_C);
-  // Se espera a que CONTESTE, no a que exista el fichero: el socket que dejo el que
-  // murio de golpe sigue ahi, y el nuevo lo borra antes de escuchar. Esperar al fichero
-  // es esperar al del muerto.
+  // Cris comes back.
+  const before = C.got.length;
+  start(HOME_C);
+  // Wait for it to ANSWER, not for the file to exist: the socket left by the one that
+  // died abruptly is still there, and the new one deletes it before listening. Waiting for the file
+  // is waiting for the dead one's.
   let pong: any = null;
   await hasta(async () => { try { pong = await rpc(HOME_C, { op: "ping" }); return true; } catch { return false; } }, 20000);
   if (!pong) {
     const log = join(HOME_C, "daemon.log");
-    throw new Error(`el demonio no volvio:\n${salida.join("")}\n${existsSync(log) ? readFileSync(log, "utf8").slice(-1500) : ""}`);
+    throw new Error(`the daemon didn't come back:\n${output.join("")}\n${existsSync(log) ? readFileSync(log, "utf8").slice(-1500) : ""}`);
   }
   expect(pong.nostr).toBe(true);
 
-  // Lo dicho mientras no estaba entra ahora, y la conversacion sigue en los dos sentidos.
-  expect(await hasta(() => C.got.slice(antes).some(x => x.includes("z-index del overlay")), 20000)).toBe(true);
-  const say = await paso("say de Cris", () => rpc(HOME_C, { op: "say", sessionId: "U_C", id: open.id, text: "confirmado, era eso" }));
+  // What was said while it was away comes in now, and the conversation goes on both ways.
+  expect(await hasta(() => C.got.slice(before).some(x => x.includes("overlay's z-index")), 20000)).toBe(true);
+  const say = await step("say from Cris", () => rpc(HOME_C, { op: "say", sessionId: "U_C", id: open.id, text: "confirmed, that was it" }));
   expect(["publicado", "encolado", true]).toContain(say.delivered);
-  expect(await hasta(() => D.got.some(x => x.includes("confirmado, era eso")), 15000)).toBe(true);
+  expect(await hasta(() => D.got.some(x => x.includes("confirmed, that was it")), 15000)).toBe(true);
 
-  await paso("close", () => rpc(HOME_C, { op: "close", sessionId: "U_C", id: open.id, reason: "resuelto" }));
+  await step("close", () => rpc(HOME_C, { op: "close", sessionId: "U_C", id: open.id, reason: "resolved" }));
 }, plazo(90_000));

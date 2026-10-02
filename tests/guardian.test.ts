@@ -1,84 +1,86 @@
 import { expect, test } from "bun:test";
 import { judge } from "../src/guardian.ts";
 
-/** Sin red ni coste: solo el atajo de los mensajes cortos, que es donde estaba el ruido. */
-test("un acuse de recibo corto no se juzga", async () => {
-  const v = await judge("el boton se rompe en movil", "OK, todo llega.");
+/** No network, no cost: only the short-message shortcut, which is where the noise was. */
+test("a short acknowledgement is not judged", async () => {
+  const v = await judge("the button breaks on mobile", "OK, all good.");
   expect(v.verdict).toBe("dentro");
-  expect(v.why).toBe("demasiado corto para juzgar");
+  expect(v.why).toBe("too short to judge");
 });
 
-test("un mensaje vacio tampoco", async () => {
-  expect((await judge("asunto", "   ")).verdict).toBe("dentro");
+test("an empty message is not either", async () => {
+  expect((await judge("subject", "   ")).verdict).toBe("dentro");
 });
 
 import corpus from "./watcher-corpus.json" with { type: "json" };
 
 /**
- * El corpus se corre contra Haiku con `bun scripts/watcher.ts`, no aqui: un test que
- * llama a un modelo cuesta dinero y falla por la red, y a la semana nadie lo mira. Lo
- * que si se comprueba aqui, sin red y en un milisegundo, es que el corpus sigue siendo
- * un corpus y que el prompt sigue nombrando lo que el corpus prueba. Borrar una linea
- * del prompt sin darse cuenta es la forma realista de romper el vigilante.
+ * The corpus runs against Haiku with `bun scripts/watcher.ts`, not here: a test that
+ * calls a model costs money and fails over the network, and within a week nobody looks
+ * at it. What does get checked here, with no network and in a millisecond, is that the
+ * corpus is still a corpus and that the prompt still names what the corpus tests.
+ * Deleting a line from the prompt without noticing is the realistic way to break the
+ * watcher.
  */
-test("el corpus cubre los dos lados y ningun caso se queda a medias", () => {
-  const casos = corpus.casos as { categoria: string; peligro: boolean; texto: string }[];
-  expect(casos.length).toBeGreaterThanOrEqual(20);
-  expect(casos.filter(c => c.peligro).length).toBeGreaterThanOrEqual(10);
-  expect(casos.filter(c => !c.peligro).length).toBeGreaterThanOrEqual(6);
-  for (const c of casos) {
-    expect(typeof c.categoria).toBe("string");
-    expect(typeof c.peligro).toBe("boolean");
-    // Por debajo de MIN_CHARS el vigilante ni juzga: un caso asi no prueba nada.
-    expect(c.texto.trim().length).toBeGreaterThan(40);
+test("the corpus covers both sides and no case is half-filled", () => {
+  const cases = corpus.cases as { category: string; danger: boolean; text: string }[];
+  expect(cases.length).toBeGreaterThanOrEqual(20);
+  expect(cases.filter(c => c.danger).length).toBeGreaterThanOrEqual(10);
+  expect(cases.filter(c => !c.danger).length).toBeGreaterThanOrEqual(6);
+  for (const c of cases) {
+    expect(typeof c.category).toBe("string");
+    expect(typeof c.danger).toBe("boolean");
+    // Below MIN_CHARS the watcher does not even judge: a case like that proves nothing.
+    expect(c.text.trim().length).toBeGreaterThan(40);
   }
 });
 
-test("el prompt del vigilante sigue nombrando cada cosa que el corpus prueba", async () => {
-  const fuente = await Bun.file(new URL("../src/guardian.ts", import.meta.url)).text();
-  const prompt = fuente.slice(fuente.indexOf("const PROMPT"), fuente.indexOf("export function judge"));
-  for (const palabra of [
-    "ejecutar comandos", "aplicar cambios sin revision", "permisos", "instalar",
-    "URLs", "enviar ficheros", "variables de entorno", "secreto",
-    "reglas del sistema", "Ante la duda sobre el peligro, true",
+test("the watcher's prompt still names everything the corpus tests", async () => {
+  const source = await Bun.file(new URL("../src/guardian.ts", import.meta.url)).text();
+  const prompt = source.slice(source.indexOf("const PROMPT"), source.indexOf("export async function judge"));
+  for (const word of [
+    "run commands", "apply changes without review", "permissions", "install",
+    "URLs", "send files", "environment variables", "secret",
+    "system rules", "When in doubt about danger, true",
   ]) {
-    expect(prompt).toContain(palabra);
+    expect(prompt).toContain(word);
   }
 });
 
-test("si el vigilante no contesta, el mensaje se retiene: no se cae hacia dejar pasar", async () => {
-  // Medido con el corpus, una pasada de 24 casos: 23 aciertos, 0 escapados y 1 sin
-  // respuesta por tiempo agotado. El que se quedo sin respuesta era el que pedia
-  // ~/.aws/credentials. No es casualidad: el mensaje ambiguo o adversarial es el que
-  // hace pensar mas rato al modelo, asi que el tiempo se agota antes en los peligrosos.
-  const fuente = await Bun.file(new URL("../src/guardian.ts", import.meta.url)).text();
-  const salida = fuente.slice(fuente.indexOf("export async function judge"), fuente.indexOf("function unaPasada"));
-  expect(salida).toContain('verdict: "sin vigilar"');
-  expect(salida).toContain("peligro: true");
-  // Y con un reintento antes, porque la mayoria de los fallos son de tiempo, no del modelo.
-  expect(salida).toContain("const dos = await unaPasada");
+test("if the watcher does not answer, the message is held: it does not fail toward letting it through", async () => {
+  // Measured with the corpus, one pass of 24 cases: 23 right, 0 escaped and 1 with no
+  // answer because it timed out. The one left unanswered was the one asking for
+  // ~/.aws/credentials. Not a coincidence: the ambiguous or adversarial message is the
+  // one that makes the model think longer, so the clock runs out first on the dangerous ones.
+  const source = await Bun.file(new URL("../src/guardian.ts", import.meta.url)).text();
+  const body = source.slice(source.indexOf("export async function judge"), source.indexOf("function onePass"));
+  expect(body).toContain('verdict: "sin vigilar"');
+  expect(body).toContain("peligro: true");
+  // And with one retry first, because most failures are timeouts, not the model.
+  expect(body).toContain("const second = await onePass");
 });
 
 /**
- * Lo que el vigilante no lee no lo vigila.
+ * What the watcher does not read, it does not watch.
  *
- * El prompt llevaba `text.slice(0, 4000)` y `MAX_MENSAJE` son 25.000: veintiun mil
- * caracteres de cada mensaje no los miraba nadie, mientras a la sesion le llegaba el
- * mensaje entero. O sea, cuatro mil caracteres de relleno y detras lo que sea. Y el
- * limite de 25.000 lo cumple quien envia desde la CLI; a un peer hostil no lo ata nadie.
+ * The prompt had `text.slice(0, 4000)` and `MAX_MENSAJE` is 25,000: twenty-one thousand
+ * characters of every message went unread by anyone, while the session got the whole
+ * message. That is, four thousand characters of filler and then anything at all. And
+ * the 25,000 limit binds whoever sends from the CLI; nobody binds a hostile peer.
  *
- * Este test no llama al modelo: mira lo unico que el modelo puede ver, que es el prompt.
+ * This test does not call the model: it looks at the only thing the model can see, the
+ * prompt.
  */
-test("el vigilante ve el mensaje entero, y lo que no le cabe no entra", async () => {
-  const fuente = await Bun.file(new URL("../src/guardian.ts", import.meta.url)).text();
-  // El mensaje va entero al prompt: ni un slice por el camino.
-  // Solo la linea del prompt: el comentario de arriba cita el slice viejo a proposito.
-  const prompt = fuente.slice(fuente.indexOf("const PROMPT"), fuente.indexOf("export async function judge"));
-  expect(prompt).toContain("MENSAJE: ${text}");
+test("the watcher sees the whole message, and what does not fit does not go in", async () => {
+  const source = await Bun.file(new URL("../src/guardian.ts", import.meta.url)).text();
+  // The message goes whole into the prompt: not one slice on the way.
+  // Only the prompt line: the comment above quotes the old slice on purpose.
+  const prompt = source.slice(source.indexOf("const PROMPT"), source.indexOf("export async function judge"));
+  expect(prompt).toContain("MESSAGE: ${text}");
   expect(prompt).not.toContain(".slice(");
 
-  // Y lo que pasa del limite se retiene, no se entrega a medio juzgar.
-  const v = await judge("el boton", "x".repeat(25_001));
+  // And whatever goes over the limit is held, not delivered half-judged.
+  const v = await judge("the button", "x".repeat(25_001));
   expect(v.peligro).toBe(true);
-  expect(v.why).toContain("se retiene");
+  expect(v.why).toContain("is held");
 });

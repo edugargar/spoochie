@@ -4,185 +4,191 @@ import { MAX_PATCH } from "../src/threads.ts";
 import type { Thread, Msg } from "../src/threads.ts";
 
 const t: Thread = {
-  id: "a3f1", subject: "el modal se cierra al pulsar Guardar",
+  id: "a3f1", subject: "the modal closes when you press Save",
   from: { sessionId: "A", name: "a", cwd: "/a", human: "Edu", slackUser: "U_EDU" },
   to: { sessionId: "B", name: "b", cwd: "/b", human: "Sam", slackUser: "U_SAM" },
   state: "open", createdAt: 0, lastActivityAt: 0,
   context: { branch: "feat/perfil", sha: "cafe12345678", files: ["src/Modal.tsx"] },
-  messages: [{ at: 0, from: "A", author: "claude", kind: "text", text: "se cierra antes del POST" }],
+  messages: [{ at: 0, from: "A", author: "claude", kind: "text", text: "it closes before the POST" }],
 };
 const msg = (o: Partial<Msg>): Msg => ({ at: 0, from: "A", author: "claude", kind: "text", text: "x", ...o });
 const flat = (b: unknown[]) => JSON.stringify(b);
 
-test("el sobre de maquina se reconoce por event_type y payload", () => {
+test("the machine envelope is recognized by event_type and payload", () => {
   const env: Envelope = { v: 1, id: "a3f1", kind: "msg", from: "U_EDU" };
   expect(envelopeOf({ metadata: { event_type: EVENT, event_payload: env } })).toEqual(env);
 });
 
-test("un mensaje escrito a mano en Slack no tiene sobre", () => {
-  expect(envelopeOf({ text: "hola" })).toBeNull();
-  expect(envelopeOf({ metadata: { event_type: "otra_cosa", event_payload: { id: "x", from: "y" } } })).toBeNull();
+test("a message typed by hand in Slack has no envelope", () => {
+  expect(envelopeOf({ text: "hello" })).toBeNull();
+  expect(envelopeOf({ metadata: { event_type: "something_else", event_payload: { id: "x", from: "y" } } })).toBeNull();
 });
 
-test("la invitacion menciona a quien recibe y dice como aceptar", () => {
+test("the invite mentions the receiver and says how to accept", () => {
   const b = flat(inviteBlocks(t));
   expect(b).toContain("<@U_SAM>");
   expect(b).toContain("spoochie accept a3f1");
-  // La misma voz que el dialogo de macOS: quien llama, no de quien es el spoochie.
-  expect(b).toContain("Edu llama");
+  // The same voice as the macOS dialog: who is calling, not whose spoochie it is.
+  expect(b).toContain("Edu is calling");
   expect(b).toContain("feat/perfil");
   expect(b).toContain("src/Modal.tsx");
 });
 
-test("la capa de Slack no lleva las instrucciones internas del receptor", () => {
-  const b = flat(messageBlocks(t, msg({ text: "el catch no limpia el estado" })));
-  expect(b).toContain("el catch no limpia el estado");
-  expect(b).not.toContain("No apliques cambios");
+test("the Slack layer does not carry the receiver's internal instructions", () => {
+  const b = flat(messageBlocks(t, msg({ text: "the catch does not reset the state" })));
+  expect(b).toContain("the catch does not reset the state");
+  expect(b).not.toContain("Do not apply changes");
   expect(b).not.toContain("spoochie say");
 });
 
-test("se distingue lo que dice la persona de lo que dice su Claude", () => {
-  expect(flat(messageBlocks(t, msg({ author: "human" })))).toContain("en persona");
-  expect(flat(messageBlocks(t, msg({ author: "claude" })))).toContain("su Claude");
+test("what the person says is told apart from what their Claude says", () => {
+  expect(flat(messageBlocks(t, msg({ author: "human" })))).toContain("in person");
+  expect(flat(messageBlocks(t, msg({ author: "claude" })))).toContain("their Claude");
 });
 
-test("el aviso del vigilante tambien se ve en Slack, sin borrar el mensaje", () => {
-  const b = flat(messageBlocks(t, msg({ text: "donde comemos", offTopic: { verdict: "fuera", why: "comida" } })));
-  expect(b).toContain("donde comemos");
-  expect(b).toContain("fuera");
-  expect(flat(messageBlocks(t, msg({ offTopic: { verdict: "dentro", why: "" } })))).not.toContain("vigilante");
+test("the watcher notice also shows in Slack, without hiding the message", () => {
+  const b = flat(messageBlocks(t, msg({ text: "where do we eat", offTopic: { verdict: "fuera", why: "food" } })));
+  expect(b).toContain("where do we eat");
+  expect(b).toContain("off topic");
+  expect(flat(messageBlocks(t, msg({ offTopic: { verdict: "dentro", why: "" } })))).not.toContain("watcher");
 });
 
-test("un parche va en bloque de codigo y avisa de que no lo aplica nadie por ti", () => {
+test("a patch goes in a code block and warns that nobody applies it for you", () => {
   const b = flat(messageBlocks(t, msg({ kind: "patch", text: "--- a\n+++ b\n-x\n+y" })));
   expect(b).toContain("```");
-  expect(b).toContain("nadie escribe en tu");
+  expect(b).toContain("nobody writes to your machine");
   expect(b).toContain("+y");
 });
 
-test("los avisos del sistema no arrastran el texto interno a Slack", () => {
-  const acc = noticeBlocks({ ...t, acceptedBy: "Sam" }, '[spoochie a3f1] b ha aceptado el tunel.\nYa podeis hablar: spoochie say a3f1 "<texto>"');
+
+
+test("system notices do not drag internal text into Slack", () => {
+  const acc = noticeBlocks({ ...t, acceptedBy: "Sam" }, '[spoochie a3f1] b ha aceptado el tunel.\nYou can talk now: spoochie say a3f1 "<text>"');
   expect(acc.text).toContain("Sam");
   expect(acc.text).not.toContain("spoochie say");
-  expect(acc.text).not.toContain("<texto>");
-  const cl = noticeBlocks({ ...t, closeReason: "resuelto" }, "[spoochie a3f1 | s] cerrado (resuelto).");
-  expect(cl.text).toContain("resuelto");
+  expect(acc.text).not.toContain("<text>");
+  const cl = noticeBlocks({ ...t, closeReason: "resolved" }, "[spoochie a3f1 | s] cerrado (resolved).");
+  expect(cl.text).toContain("resolved");
   expect(cl.text).not.toContain("[spoochie");
 });
 
-test("el texto de respaldo es lo que sale en la notificacion del movil", () => {
-  expect(fallbackText(t, msg({ text: "el catch no limpia" }))).toBe("Edu: el catch no limpia");
-  expect(fallbackText(t, msg({ kind: "patch", text: "diff" }))).toContain("parche");
+test("the fallback text is what shows in the phone notification", () => {
+  expect(fallbackText(t, msg({ text: "the catch does not reset" }))).toBe("Edu: the catch does not reset");
+  expect(fallbackText(t, msg({ kind: "patch", text: "diff" }))).toContain("patch");
 });
 
-test("los bloques respetan el limite de 3000 caracteres de Slack, troceando", () => {
-  const largo = "x".repeat(9000);
-  const bloques = messageBlocks(t, msg({ text: largo })) as any[];
-  for (const b of bloques) {
+test("blocks respect Slack's 3000-character limit by splitting", () => {
+  const long = "x".repeat(9000);
+  const blocks = messageBlocks(t, msg({ text: long })) as any[];
+  for (const b of blocks) {
     const txt = b.text?.text ?? b.elements?.[0]?.text ?? "";
     expect(txt.length).toBeLessThanOrEqual(3000);
   }
-  // Y no se pierde nada por el camino.
-  const total = bloques.map(b => b.text?.text ?? "").join("").length;
+  // And nothing is lost on the way.
+  const total = blocks.map(b => b.text?.text ?? "").join("").length;
   expect(total).toBeGreaterThanOrEqual(9000);
 });
 
-test("un mensaje largo no se corta a mitad de palabra", () => {
-  const largo = Array.from({ length: 200 }, (_, i) => `linea ${i} con texto suficiente para llenar`).join("\n");
-  const trozos = chunk(largo);
-  for (const c of trozos) expect(c.length).toBeLessThanOrEqual(2800);
-  // Nada se parte por dentro de una linea mientras quepa.
-  expect(trozos.join("\n").startsWith("linea 0 con texto")).toBe(true);
+test("a long message is not cut mid-word", () => {
+  const long = Array.from({ length: 200 }, (_, i) => `line ${i} with enough text to fill it up`).join("\n");
+  const pieces = chunk(long);
+  for (const c of pieces) expect(c.length).toBeLessThanOrEqual(2800);
+  // Nothing is split inside a line while it fits.
+  expect(pieces.join("\n").startsWith("line 0 with enough text")).toBe(true);
 });
 
-test("una linea mas larga que un bloque se trocea, no se tira", () => {
-  const trozos = chunk("x".repeat(7000));
-  expect(trozos.join("").length).toBe(7000);
+test("a line longer than a block is split, not dropped", () => {
+  const pieces = chunk("x".repeat(7000));
+  expect(pieces.join("").length).toBe(7000);
 });
 
-test("el texto viaja en los bloques y vuelve entero, sin depender del sobre", () => {
-  const largo = Array.from({ length: 300 }, (_, i) => `linea ${i}`).join("\n");
-  // fallbackText es corto a proposito: es la notificacion del movil, no el contenido.
-  expect(fallbackText(t, msg({ text: largo })).length).toBeLessThan(300);
-  // Lo que lee el demonio del otro lado son los bloques marcados.
-  const bloques = messageBlocks(t, msg({ text: largo }));
-  expect(bodyFromBlocks(bloques as any)).toBe(largo);
+test("the text travels in the blocks and comes back whole, without the envelope", () => {
+  const long = Array.from({ length: 300 }, (_, i) => `line ${i}`).join("\n");
+  // fallbackText is short on purpose: it is the phone notification, not the content.
+  expect(fallbackText(t, msg({ text: long })).length).toBeLessThan(300);
+  // What the daemon on the other side reads is the marked blocks.
+  const blocks = messageBlocks(t, msg({ text: long }));
+  expect(bodyFromBlocks(blocks as any)).toBe(long);
 });
 
-test("solo los bloques de contenido cuentan: la firma y los avisos no", () => {
-  const bloques = messageBlocks(t, msg({ text: "el catch no limpia", offTopic: { verdict: "fuera", why: "x" } }));
-  const cuerpo = bodyFromBlocks(bloques as any);
-  expect(cuerpo).toBe("el catch no limpia");
-  expect(cuerpo).not.toContain("su Claude");
-  expect(cuerpo).not.toContain("vigilante");
+test("only content blocks count: the signature and notices do not", () => {
+  const blocks = messageBlocks(t, msg({ text: "the catch does not reset", offTopic: { verdict: "fuera", why: "x" } }));
+  const body = bodyFromBlocks(blocks as any);
+  expect(body).toBe("the catch does not reset");
+  expect(body).not.toContain("their Claude");
+  expect(body).not.toContain("watcher");
 });
 
-test("la invitacion tambien se reconstruye desde sus bloques", () => {
-  expect(bodyFromBlocks(inviteBlocks(t) as any)).toBe("se cierra antes del POST");
+test("the invite is also rebuilt from its blocks", () => {
+  expect(bodyFromBlocks(inviteBlocks(t) as any)).toBe("it closes before the POST");
 });
 
-test("un acuse a secas es aceptar, no un turno de conversacion", () => {
+test("a bare ack is accepting, not a conversation turn", () => {
+  // The Spanish words stay: 0.9.10 users and Spanish speakers still type them.
   for (const s of ["acepto", "Acepto.", "vale", "ok", "dale", "👍", " sí "]) expect(isAck(s)).toBe(true);
+  for (const s of ["okay", "Sure!", "yes", "got it", "Thanks.", "accept"]) expect(isAck(s)).toBe(true);
   for (const s of ["acepto, pero mira antes el toaster", "ok el hook devuelve promesa", "vale la pena revisarlo"])
+    expect(isAck(s)).toBe(false);
+  for (const s of ["ok but check the toaster first", "yes the hook returns a promise", "thanks, one more thing"])
     expect(isAck(s)).toBe(false);
 });
 
-test("el mrkdwn de Slack se deshace: codigo que parecia una URL vuelve a ser codigo", () => {
-  const bloques = [
+test("Slack mrkdwn is undone: code that looked like a URL is code again", () => {
+  const blocks = [
     { type: "section", block_id: "sp-body-0-1", text: { type: "mrkdwn", text: "await <http://api.post|api.post>('/profile')" } },
     { type: "section", block_id: "sp-body-1-1", text: { type: "mrkdwn", text: "if (a &lt; b &amp;&amp; c &gt; d) {}" } },
   ];
-  const cuerpo = bodyFromBlocks(bloques as any);
-  expect(cuerpo).toContain("await api.post('/profile')");
-  expect(cuerpo).toContain("if (a < b && c > d) {}");
-  expect(cuerpo).not.toContain("http://");
+  const body = bodyFromBlocks(blocks as any);
+  expect(body).toContain("await api.post('/profile')");
+  expect(body).toContain("if (a < b && c > d) {}");
+  expect(body).not.toContain("http://");
 });
 
-test("el gasto de un equipo de 15 cabe en el limite de Slack", () => {
-  // Se leen las constantes de verdad, no el texto del fichero: si alguien sube el
-  // tope o acelera el descubrimiento, la cuenta tiene que salir mal aqui.
+test("a team of 15 fits within Slack's limit", () => {
+  // Read the real constants, not the file text: if someone raises the cap or speeds up
+  // discovery, the math has to come out wrong here.
   const B = SlackBridge as any;
-  const tope: number = B.TOPE_HILOS;
+  const cap: number = B.MAX_THREADS;
 
-  // El limite Tier 3 es ~50/min por metodo y POR APP, o sea compartido por el equipo.
-  const LIMITE = 50;
-  const equipo = 15, activos = 2;
-  const porMinuto = (cadaMs: number) => 60_000 / cadaMs;
+  // The Tier 3 limit is ~50/min per method and PER APP, so the whole team shares it.
+  const LIMIT = 50;
+  const team = 15, active = 2;
+  const perMinute = (everyMs: number) => 60_000 / everyMs;
 
-  // conversations.history: una por ronda de descubrimiento y por persona, a la cadencia
-  // que le toca a un equipo de 15. Los 15 demonios descubren a la vez, con o sin conversacion.
-  const history = equipo * porMinuto(discoveryCadence(equipo));
-  // conversations.replies: un tick cada 4 s mirando como mucho TOPE_HILOS hilos,
-  // pero una conversacion de dos solo tiene un hilo vivo por lado.
-  const replies = activos * Math.min(1, tope) * porMinuto(4_000);
+  // conversations.history: one per discovery round per person, at the cadence a team
+  // of 15 gets. All 15 daemons discover at once, with or without a conversation.
+  const history = team * perMinute(discoveryCadence(team));
+  // conversations.replies: one tick every 4 s looking at most at MAX_THREADS threads,
+  // but a two-person conversation has only one live thread per side.
+  const replies = active * Math.min(1, cap) * perMinute(4_000);
 
-  expect(history).toBeLessThan(LIMITE);
-  expect(replies).toBeLessThan(LIMITE);
-  expect(tope).toBeLessThanOrEqual(4);
+  expect(history).toBeLessThan(LIMIT);
+  expect(replies).toBeLessThan(LIMIT);
+  expect(cap).toBeLessThanOrEqual(4);
 });
 
-test("un parche que cabe no se corta por el camino", () => {
-  const linea = "+ const x = 1;";
-  const diff = Array(Math.floor(MAX_PATCH / (linea.length + 1))).fill(linea).join("\n");
+test("a patch that fits is not cut on the way", () => {
+  const line = "+ const x = 1;";
+  const diff = Array(Math.floor(MAX_PATCH / (line.length + 1))).fill(line).join("\n");
   const t = { id: "p1", subject: "x", from: { sessionId: "A", name: "a", cwd: "/a" }, to: { sessionId: "B", name: "b", cwd: "/b" }, state: "open", createdAt: 0, lastActivityAt: 0, context: {}, messages: [] } as any as Thread;
-  const bloques = messageBlocks(t, { at: 0, from: "A", author: "claude", kind: "patch", text: diff });
-  const texto = JSON.stringify(bloques);
-  // El aviso de corte solo aparece si algo se quedo fuera, y lo que cabe no se queda fuera.
-  expect(texto).not.toContain("sigue en el transcript");
+  const blocks = messageBlocks(t, { at: 0, from: "A", author: "claude", kind: "patch", text: diff });
+  const text = JSON.stringify(blocks);
+  // The cut-off note only shows if something was left out, and what fits is not left out.
+  expect(text).not.toContain("continued in the transcript");
 });
 
-test("el buzon se mira tan a menudo como el cupo de la app permita al equipo real", async () => {
+test("the inbox is checked as often as the app quota allows for the real team", async () => {
   const { discoveryCadence } = await import("../src/slack.ts");
   expect(discoveryCadence(1)).toBe(5_000);
   expect(discoveryCadence(2)).toBe(5_000);
   expect(discoveryCadence(4)).toBe(9_600);
   expect(discoveryCadence(15)).toBe(36_000);
   expect(discoveryCadence(25)).toBe(60_000);
-  // 25 demonios a esa cadencia gastan 25 llamadas por minuto, la mitad del cupo.
+  // 25 daemons at that cadence spend 25 calls per minute, half the quota.
   expect(Math.round(25 * 60_000 / discoveryCadence(25))).toBe(25);
 });
 
-test("un sobre con un id que no es un id no es un sobre", () => {
+test("an envelope whose id is not an id is not an envelope", () => {
   const msg = (id: string) => ({ metadata: { event_type: EVENT, event_payload: { id, from: "U1", kind: "invite" } } });
   expect(envelopeOf(msg("../settings"))).toBeNull();
   expect(envelopeOf(msg("a/b"))).toBeNull();
@@ -190,141 +196,141 @@ test("un sobre con un id que no es un id no es un sobre", () => {
   expect(envelopeOf(msg("e856"))).not.toBeNull();
 });
 
-function puenteAbrir(fallaGrupo = false) {
-  const llamadas: { method: string; body: any }[] = [];
-  const b: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_EDU", async () => {}, async () => {}, async () => {});
+function openingBridge(groupFails = false) {
+  const calls: { method: string; body: any }[] = [];
+  const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
   b.call = async (method: string, body: any) => {
-    llamadas.push({ method, body });
+    calls.push({ method, body });
     if (method === "conversations.open") {
       const users = String(body.users);
-      if (users.includes(",")) { if (fallaGrupo) throw new Error("slack conversations.open: missing_scope"); return { channel: { id: "G_GRUPO" } }; }
+      if (users.includes(",")) { if (groupFails) throw new Error("slack conversations.open: missing_scope"); return { channel: { id: "G_GROUP" } }; }
       return { channel: { id: "D_SAM" } };
     }
-    if (method === "chat.postMessage") return { ts: body.channel === "G_GRUPO" ? "200.000" : "201.000" };
-    if (method === "chat.getPermalink") return { permalink: "https://x.slack.com/archives/G_GRUPO/p200000" };
+    if (method === "chat.postMessage") return { ts: body.channel === "G_GROUP" ? "200.000" : "201.000" };
+    if (method === "chat.getPermalink") return { permalink: "https://x.slack.com/archives/G_GROUP/p200000" };
     return {};
   };
-  return { b, llamadas };
+  return { b, calls };
 }
 
-test("el hilo de un spoochie que abro va a un grupo que vemos los dos, y el DM del receptor recibe el aviso con el puntero", async () => {
+test("the thread of a spoochie I open goes to a group we both see, and the receiver's DM gets the notice with the pointer", async () => {
   const Cfg = await import("../src/config.ts");
   Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_EDU", pollMs: 4000, hilos: "grupo" } } as any);
-  const { b, llamadas } = puenteAbrir();
+  const { b, calls } = openingBridge();
   const r = await b.openThread(t);
-  // Y se guarda donde quedo el aviso del DM, para poder borrarlo al cerrar.
-  expect(r).toEqual({ channel: "G_GRUPO", ts: "200.000", aviso: { channel: "D_SAM", ts: "201.000" } });
-  const abiertos = llamadas.filter(l => l.method === "conversations.open").map(l => l.body.users);
-  expect(abiertos).toContain("U_SAM");
-  expect(abiertos).toContain("U_EDU,U_SAM");
-  const posts = llamadas.filter(l => l.method === "chat.postMessage");
-  expect(posts.map(p => p.body.channel)).toEqual(["G_GRUPO", "D_SAM"]);
-  // El aviso del DM lleva el sobre completo y donde esta el hilo; el del grupo, no.
+  // And where the DM notice landed is saved, so it can be deleted on close.
+  expect(r).toEqual({ channel: "G_GROUP", ts: "200.000", aviso: { channel: "D_SAM", ts: "201.000" } });
+  const opened = calls.filter(l => l.method === "conversations.open").map(l => l.body.users);
+  expect(opened).toContain("U_SAM");
+  expect(opened).toContain("U_EDU,U_SAM");
+  const posts = calls.filter(l => l.method === "chat.postMessage");
+  expect(posts.map(p => p.body.channel)).toEqual(["G_GROUP", "D_SAM"]);
+  // The DM notice carries the full envelope and where the thread is; the group one does not.
   expect(posts[0].body.metadata.event_payload.thread).toBeUndefined();
-  expect(posts[1].body.metadata.event_payload.thread).toEqual({ channel: "G_GRUPO", ts: "200.000" });
-  expect(flat(posts[1].body.blocks)).toContain("La conversacion sigue en");
-  // Y el receptor materializa el hilo en el grupo, no en su DM.
+  expect(posts[1].body.metadata.event_payload.thread).toEqual({ channel: "G_GROUP", ts: "200.000" });
+  expect(flat(posts[1].body.blocks)).toContain("The conversation continues in");
+  // And the receiver materializes the thread in the group, not in its DM.
   const env = envelopeOf({ metadata: { event_type: EVENT, event_payload: posts[1].body.metadata.event_payload } })!;
-  expect(env.thread!.channel).toBe("G_GRUPO");
+  expect(env.thread!.channel).toBe("G_GROUP");
 });
 
-test("sin permisos para grupos, el hilo se queda en el DM del receptor, como antes", async () => {
+test("without group permissions, the thread stays in the receiver's DM, as before", async () => {
   const Cfg = await import("../src/config.ts");
   Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_EDU", pollMs: 4000, hilos: "grupo" } } as any);
-  const { b, llamadas } = puenteAbrir(true);
+  const { b, calls } = openingBridge(true);
   const r = await b.openThread(t);
   expect(r).toEqual({ channel: "D_SAM", ts: "201.000" });
-  expect(llamadas.filter(l => l.method === "chat.postMessage").length).toBe(1);
+  expect(calls.filter(l => l.method === "chat.postMessage").length).toBe(1);
 });
 
-test("con --hilos canal, el hilo va al canal y el aviso al DM", async () => {
+test("with --hilos canal, the thread goes to the channel and the notice to the DM", async () => {
   const Cfg = await import("../src/config.ts");
   Cfg.save({ guardian: false, transcript: false, slack: { userId: "U_EDU", pollMs: 4000, hilos: "canal", canal: "C_SPOOCHIE" } } as any);
-  const { b, llamadas } = puenteAbrir();
+  const { b, calls } = openingBridge();
   const r = await b.openThread(t);
   expect(r.channel).toBe("C_SPOOCHIE");
-  expect(llamadas.filter(l => l.method === "chat.postMessage").map(l => l.body.channel)).toEqual(["C_SPOOCHIE", "D_SAM"]);
+  expect(calls.filter(l => l.method === "chat.postMessage").map(l => l.body.channel)).toEqual(["C_SPOOCHIE", "D_SAM"]);
   Cfg.save({ guardian: false, transcript: false } as any);
 });
 
 /**
- * Un `close` firmado como lo firma el emisor de verdad. Desde 0.9.9 un cierre sin firma
- * no cierra nada: es lo unico que se puede postear con el token del bot y que borra el
- * hilo de otra persona. Se deja al contacto con su clave fijada, que es el caso normal.
+ * A `close` signed the way the real sender signs it. Since 0.9.9 an unsigned close closes
+ * nothing: it is the one thing you can post with the bot token that erases someone
+ * else's thread. The contact is left with their key pinned, which is the normal case.
  */
-function cierreFirmado(id: string, from: string, texto: string) {
-  const { newKeys: nuevasClaves, makeSignature: firmar } = require("../src/signing.ts");
+function signedClose(id: string, from: string, text: string) {
+  const { newKeys, makeSignature } = require("../src/signing.ts");
   const Cfg = require("../src/config.ts");
-  const k = nuevasClaves();
+  const k = newKeys();
   const c = Cfg.load();
   Cfg.addContact(c, { id: from, name: "Edu", pk: k.pub });
   Cfg.save(c);
   const env: any = { v: 1, id, kind: "close", from, ts: Math.floor(Date.now() / 1000), sv: 2, pk: k.pub };
-  env.sig = firmar(k.priv, env, texto);
+  env.sig = makeSignature(k.priv, env, text);
   return env;
 }
 
-test("el cierre viaja con su propio tipo y el otro lado cierra al leerlo", async () => {
-  const b: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_EDU", async () => {}, async () => {}, async () => {});
+test("the close travels with its own kind and the other side closes on reading it", async () => {
+  const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
   const posts: any[] = [];
   b.call = async (method: string, body: any) => { if (method === "chat.postMessage") posts.push(body); return { ts: "1.0" }; };
   b.pensandoOff = async () => {};
-  await b.post({ ...t, slack: { channel: "G1", ts: "0.1" }, closeReason: "resuelto" }, "[spoochie a3f1 | s] cerrado (resuelto). El tunel ya no entrega mensajes.");
+  await b.post({ ...t, slack: { channel: "G1", ts: "0.1" }, closeReason: "resolved" }, "[spoochie a3f1 | s] cerrado (resolved). The tunnel no longer delivers messages.");
   expect(posts[0].metadata.event_payload.kind).toBe("close");
 
-  // Del otro lado: el sobre "close" llama a onCierre con el motivo, y no se entrega como turno.
-  const entregados: any[] = [];
-  const cerrados: string[] = [];
-  const r: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_SAM", async (_t: any, m: any) => { entregados.push(m); }, async () => {}, async () => {});
-  r.onCierre = async (_t: any, motivo: string) => { cerrados.push(motivo); };
+  // On the other side: the "close" envelope calls onCierre with the reason, and is not delivered as a turn.
+  const delivered: any[] = [];
+  const closed: string[] = [];
+  const r: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_SAM", async (_t: any, m: any) => { delivered.push(m); }, async () => {}, async () => {});
+  r.onCierre = async (_t: any, reason: string) => { closed.push(reason); };
   r.get = async () => ({ messages: [
-    { ts: "0.1", user: "UBOT", text: "raiz" },
-    { ts: "0.2", user: "UBOT", bot_id: "B1", text: "[spoochie a3f1 | s] cerrado (resuelto). x", metadata: { event_type: EVENT, event_payload: cierreFirmado("a3f1", "U_EDU", "[spoochie a3f1 | s] cerrado (resuelto). x") } },
+    { ts: "0.1", user: "UBOT", text: "root" },
+    { ts: "0.2", user: "UBOT", bot_id: "B1", text: "[spoochie a3f1 | s] cerrado (resolved). x", metadata: { event_type: EVENT, event_payload: signedClose("a3f1", "U_EDU", "[spoochie a3f1 | s] cerrado (resolved). x") } },
   ] });
-  const hilo = { ...t, slack: { channel: "G1", ts: "0.1" } };
-  const Tm = await import("../src/threads.ts"); Tm.save(hilo as any);
+  const thread = { ...t, slack: { channel: "G1", ts: "0.1" } };
+  const Tm = await import("../src/threads.ts"); Tm.save(thread as any);
   await r.pollThread(Tm.load("a3f1"));
-  expect(cerrados).toEqual(["resuelto"]);
-  expect(entregados).toEqual([]);
+  expect(closed).toEqual(["resolved"]);
+  expect(delivered).toEqual([]);
 });
 
-test("borrarHilo borra lo del bot (mensajes, ficheros, raiz y aviso) y deja lo que escribio una persona", async () => {
-  const b: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_EDU", async () => {}, async () => {}, async () => {});
+test("borrarHilo deletes what the bot posted (messages, files, root and notice) and leaves what a person wrote", async () => {
+  const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
   b.botUserId = "UBOT";
-  const borrados: string[] = [];
+  const deleted: string[] = [];
   b.get = async () => ({ messages: [
-    { ts: "0.1", user: "UBOT", bot_id: "B1", text: "raiz" },
-    { ts: "0.2", user: "UBOT", bot_id: "B1", text: "del bot", files: [{ id: "F1" }] },
-    { ts: "0.3", user: "U_SAM", text: "escrito a mano" },
-    { ts: "0.4", bot_id: "B1", text: "del bot otra vez" },
+    { ts: "0.1", user: "UBOT", bot_id: "B1", text: "root" },
+    { ts: "0.2", user: "UBOT", bot_id: "B1", text: "from the bot", files: [{ id: "F1" }] },
+    { ts: "0.3", user: "U_SAM", text: "typed by hand" },
+    { ts: "0.4", bot_id: "B1", text: "from the bot again" },
   ] });
-  b.call = async (method: string, body: any) => { borrados.push(`${method}:${body.ts ?? body.file}`); return {}; };
+  b.call = async (method: string, body: any) => { deleted.push(`${method}:${body.ts ?? body.file}`); return {}; };
   const n = await b.borrarHilo({ ...t, slack: { channel: "G1", ts: "0.1", aviso: { channel: "D_SAM", ts: "9.9" } } });
-  expect(borrados).toEqual(["files.delete:F1", "chat.delete:0.2", "chat.delete:0.4", "chat.delete:0.1", "chat.delete:9.9"]);
+  expect(deleted).toEqual(["files.delete:F1", "chat.delete:0.2", "chat.delete:0.4", "chat.delete:0.1", "chat.delete:9.9"]);
   expect(n).toBe(4);
 });
 
-test("un hola por Slack trae la clave Nostr del otro y se guarda en la agenda; el mio lleva la mia", async () => {
-  const b: any = new (SlackBridge as any)("xoxp-falso", "xoxb-falso", "U_EDU", async () => {}, async () => {}, async () => {});
+test("a hola over Slack brings the other side's Nostr key and lands in contacts; mine carries mine", async () => {
+  const b: any = new (SlackBridge as any)("xoxp-fake", "xoxb-fake", "U_EDU", async () => {}, async () => {}, async () => {});
   const posts: any[] = [];
   b.call = async (method: string, body: any) => { if (method === "conversations.open") return { channel: { id: "D_X" } }; if (method === "chat.postMessage") posts.push(body); return {}; };
   await b.hola("U_SAM", "a".repeat(64), ["wss://x"], "Edu");
   expect(posts[0].channel).toBe("D_X");
   expect(posts[0].metadata.event_payload).toMatchObject({ kind: "hola", np: "a".repeat(64), r: ["wss://x"], fromName: "Edu" });
-  // Va firmado con mi clave ed25519: sin eso, cualquiera con el token del bot pone una clave a mi nombre.
-  // Desde 0.9.9 la firma ata ademas a quien va, cuando se firmo y con que version.
+  // It is signed with my ed25519 key: without that, anyone with the bot token puts a key in my name.
+  // Since 0.9.9 the signature also binds who it is for, when it was signed and which version.
   const { checkSignature } = await import("../src/signing.ts");
   const p = posts[0].metadata.event_payload;
   expect(p.sv).toBe(2);
   expect(p.to).toBe("U_SAM");
   expect(p.ts).toBeGreaterThan(0);
   expect(checkSignature(p.pk, p, p.np, p.sig)).toBe(true);
-  // Y cambiar a quien iba dirigido la rompe.
-  expect(checkSignature(p.pk, { ...p, to: "U_OTRO" }, p.np, p.sig)).toBe(false);
+  // And changing who it was for breaks it.
+  expect(checkSignature(p.pk, { ...p, to: "U_OTHER" }, p.np, p.sig)).toBe(false);
   expect(checkSignature(p.pk, "hola", "hola", "U_EDU", "b".repeat(64), p.sig)).toBe(false);
 
-  const recibidos: any[] = [];
-  b.onHola = async (de: string, nombre: string, np: string, r: string[], veredicto: string) => { recibidos.push({ de, nombre, np, r, veredicto }); };
+  const received: any[] = [];
+  b.onHola = async (from: string, name: string, np: string, r: string[], verdict: string) => { received.push({ from, name, np, r, verdict }); };
   b.inbox = async () => "D_ME";
   b.get = async () => ({ messages: [
     { ts: "5.0", metadata: { event_type: EVENT, event_payload: { v: 1, id: "hola", kind: "hola", from: "U_SAM", fromName: "Sam", np: "b".repeat(64), r: ["wss://sam"] } } },
@@ -332,27 +338,27 @@ test("un hola por Slack trae la clave Nostr del otro y se guarda en la agenda; e
   ] });
   b.inboxCursor = "0";
   await b.discover();
-  expect(recibidos).toEqual([{ de: "U_SAM", nombre: "Sam", np: "b".repeat(64), r: ["wss://sam"], veredicto: "sin-firma" }]);
+  expect(received).toEqual([{ from: "U_SAM", name: "Sam", np: "b".repeat(64), r: ["wss://sam"], verdict: "sin-firma" }]);
 });
 
 /**
- * El hilo de Slack es el sitio donde una PERSONA mira que ha pasado: es la superficie que
- * este proyecto ofrece como la verdad. No puede escribir en ella quien esta al otro lado.
+ * The Slack thread is where a PERSON looks at what happened: it is what this project
+ * offers as the truth. Whoever is on the other side must not be able to write in it.
  *
- * Un parche se pinta dentro de una cerca de codigo, y un parche que trae ``` la cierra:
- * lo que va detras se pinta como mrkdwn normal. Sonda: un mensaje con una cerca y despues
- * ":lock: Spoochie cerrado" y ":white_check_mark: Sam ha aceptado" sale en el hilo
- * exactamente igual que las lineas que pinta spoochie de verdad. Se podia ensenar
- * "cerrado" con el tunel abierto, o "ha aceptado" sin que nadie aceptara.
+ * A patch renders inside a code fence, and a patch that carries ``` closes it: what
+ * follows renders as normal mrkdwn. Probe: a message with a fence and then
+ * ":lock: Spoochie closed" and ":white_check_mark: Sam accepted" shows up in the thread
+ * exactly like the lines spoochie really draws. You could show "closed" with the tunnel
+ * open, or "accepted" without anyone accepting.
  */
-test("un parche no puede cerrar la cerca y falsificar los avisos de spoochie", () => {
-  const veneno = "hola\n```\n:lock: Spoochie cerrado: resuelto.\n:white_check_mark: Sam ha aceptado.\n```\nsigo";
-  const b = flat(messageBlocks(t, msg({ kind: "patch", text: veneno })));
-  // Las unicas cercas que quedan son las dos que pone spoochie.
+test("a patch cannot close the fence and fake spoochie's notices", () => {
+  const poison = "hello\n```\n:lock: Spoochie closed: resolved.\n:white_check_mark: Sam accepted.\n```\nmore";
+  const b = flat(messageBlocks(t, msg({ kind: "patch", text: poison })));
+  // The only fences left are the two spoochie puts there.
   expect((b.match(/```/g) ?? []).length).toBe(2);
   expect(noFences("a ``` b")).toBe("a ´´´ b");
-  expect(noFences("`uno` y ``dos``")).toBe("`uno` y ``dos``");
-  // Y una rama tampoco cierra sus comillas.
-  const r = flat(messageBlocks(t, msg({ kind: "branch", text: "main` :lock: Cerrado `x" })));
+  expect(noFences("`one` and ``two``")).toBe("`one` and ``two``");
+  // And a branch does not close its backticks either.
+  const r = flat(messageBlocks(t, msg({ kind: "branch", text: "main` :lock: Closed `x" })));
   expect(r).not.toContain("main` :lock:");
 });

@@ -1,7 +1,7 @@
 node_modules/
 .DS_Store
 *.log
-# Notas de trabajo locales.
+# Local working notes.
 .claude/
 PARA-*.md
 .playwright-mcp/

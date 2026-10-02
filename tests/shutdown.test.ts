@@ -3,146 +3,148 @@ import * as Cfg from "../src/config.ts";
 import { levelOf, autoAccepts } from "../src/trust.ts";
 
 /**
- * Todo lo nuevo entra apagado.
+ * Everything new ships off.
  *
- * No hay flags de servidor que ir soltando por porcentajes: spoochie se distribuye
- * como un binario por version de plugin, asi que actualizar cambia el comportamiento de
- * todos a la vez. Lo unico que evita que una funcion nueva sorprenda a alguien es que
- * nazca apagada y se encienda a mano. Este test lo comprueba sobre una config recien
- * creada, que es lo que tiene quien acaba de instalar.
+ * There are no server flags to roll out by percentage: spoochie ships
+ * as one binary per plugin version, so updating changes the behavior for
+ * everyone at once. The only thing that keeps a new feature from surprising someone is that
+ * it's born off and gets turned on by hand. This test checks it on a freshly
+ * created config, which is what someone who just installed has.
  */
-test("una config nueva no trae encendida ninguna de las funciones nuevas", () => {
+test("a new config has none of the new features turned on", () => {
   const c: Cfg.Config = { guardian: true, transcript: false };
 
-  // Consentimiento permanente: nadie entra sin dialogo hasta que lo digas.
+  // Permanent consent: nobody gets in without a dialog until you say so.
   expect(autoAccepts(c, { slackUser: "U_SAM" }, "/x/repo")).toBe(false);
-  // Confianza: todo el mundo empieza en normal.
+  // Trust: everyone starts at normal.
   expect(levelOf(c, { slackUser: "U_SAM" })).toBe("normal");
-  // Llavero: los secretos siguen donde estaban hasta que se corra `spoochie llavero on`.
+  // Keychain: the secrets stay where they were until `spoochie llavero on` is run.
   expect(c.keys?.priv).toBeUndefined();
-  // Grupos y continuaciones: solo existen si se pide la bandera.
+  // Groups and continuations: they only exist if the flag is asked for.
   expect((c as any).grupo).toBeUndefined();
 });
 
-test("las tres cosas que SI nacen encendidas son controles, no funciones", async () => {
-  // La diferencia importa: una funcion nueva apagada respeta lo que ya hacia la
-  // herramienta; un control apagado por defecto no protege a nadie.
-  const aparte = await Bun.file(new URL("../src/aside.ts", import.meta.url)).text();
-  // El portero y el centinela van en los ajustes de arranque, sin condicion.
-  expect(aparte).toContain("PreToolUse: [");
-  expect(aparte).toContain("Stop: [");
-  expect(aparte).not.toContain("if (Cfg.load().portero");
-  // El vigilante ya venia encendido por defecto y sigue.
+test("the three things that DO ship on are controls, not features", async () => {
+  // The difference matters: a new feature turned off respects what the tool already
+  // did; a control off by default protects nobody.
+  const aside = await Bun.file(new URL("../src/aside.ts", import.meta.url)).text();
+  // The gatekeeper and the sentinel go in the startup settings, unconditionally.
+  expect(aside).toContain("PreToolUse: [");
+  expect(aside).toContain("Stop: [");
+  expect(aside).not.toContain("if (Cfg.load().portero");
+  expect(aside).not.toContain("if (Cfg.load().gatekeeper");
+  // The watcher already came on by default and still does.
   const cfg = await Bun.file(new URL("../src/config.ts", import.meta.url)).text();
   expect(cfg).toContain("const DEFAULTS: Config = { guardian: true");
 });
 
-test("el script de capturas recorta la ventana, y lo que si es pantalla entera va detras de una bandera", async () => {
-  // Medido dos veces: capturar la pantalla entera se llevo primero el dialogo del
-  // permiso de Accesibilidad y luego el escritorio de quien lo corria, con las ventanas
-  // que tuviera abiertas. En una herramienta cuyo argumento entero es que las cosas no
-  // se escapan, eso no puede pasar por defecto.
+test("the screenshot script crops the window, and what is full screen sits behind a flag", async () => {
+  // Measured twice: capturing the whole screen first grabbed the Accessibility
+  // permission dialog and then the desktop of whoever ran it, with whatever windows
+  // they had open. In a tool whose whole argument is that things don't
+  // leak, that can't happen by default.
   const s = await Bun.file(new URL("../scripts/screenshots.ts", import.meta.url)).text();
-  // El aviso ya no necesita la pantalla: se planta donde le decimos y se recorta su
-  // rectangulo exacto, con marco cero para que no entre ni una tira de lo de detras.
+  // The notice no longer needs the screen: it's placed where we say and its exact
+  // rectangle is cropped, with a zero frame so not even a strip of what's behind gets in.
   expect(s).toContain("SPOOCHIE_WINDOW_POS");
-  expect(s).toContain("MARCO = 0");
+  expect(s).toContain("FRAME = 0");
   expect(s).toContain('spawnSync("screencapture", ["-x", "-R"');
-  // La ventana del aparte es una Terminal y no se puede plantar: esa si es pantalla
-  // entera, va detras de la bandera, y al terminar recuerda mirar el PNG.
-  expect(s).toContain('if (!process.argv.includes("--pantalla-entera"))');
-  expect(s).toContain("MIRA 2-aparte.png antes de ensenarselo a nadie");
-  // Y el unico `screencapture` sin region esta dentro de esa rama.
-  const [antes, detras] = s.split('if (!process.argv.includes("--pantalla-entera"))');
-  expect(antes).not.toContain('screencapture", ["-x", entera]');
-  expect(detras).toContain('screencapture", ["-x", entera]');
+  // The aside window is a Terminal and can't be placed: that one is full
+  // screen, sits behind the flag, and at the end it reminds you to look at the PNG.
+  expect(s).toContain('process.argv.includes("--full-screen")');
+  expect(s).toContain("if (!fullScreen)");
+  expect(s).toContain("LOOK AT 2-aside.png before showing it to anyone");
+  // And the only `screencapture` without a region is inside that branch.
+  const [before, after] = s.split("if (!fullScreen)");
+  expect(before).not.toContain('screencapture", ["-x", whole]');
+  expect(after).toContain('screencapture", ["-x", whole]');
 });
 
-test("no se lanza ningun aparte antes de que la persona acepte", async () => {
-  // Se penso adelantar el trabajo mientras el dialogo espera. Descartado: gasta tu
-  // dinero en una pregunta que no has aceptado, y "hasta que aceptas no pasa nada" deja
-  // de ser verdad si un Claude ya esta leyendo tu repo por la pregunta de otro.
+test("no aside is launched before the person accepts", async () => {
+  // We considered getting ahead on the work while the dialog waits. Rejected: it spends your
+  // money on a question you haven't accepted, and "nothing happens until you accept" stops
+  // being true if a Claude is already reading your repo because of someone else's question.
   const d = await Bun.file(new URL("../src/daemon.ts", import.meta.url)).text();
-  const dialogo = d.slice(d.indexOf("function avisarConDialogo"), d.indexOf("function cerrarDialogo"));
-  expect(dialogo).not.toContain("Ap.lanzar");
-  expect(dialogo).not.toContain("lanzarAparte");
-  // Y el motivo esta escrito donde se tomaria la decision, no en un commit que nadie lee.
-  const razon = d.slice(d.indexOf("Se penso lanzar el aparte YA"), d.indexOf("function avisarConDialogo"));
-  expect(razon).toContain("DESCARTADO");
-  expect(razon).toContain("Gasta tu dinero en una pregunta que no has aceptado");
+  const dialog = d.slice(d.indexOf("function askWithDialog"), d.indexOf("function closeDialog"));
+  expect(dialog).not.toContain("Ap.launch");
+  expect(dialog).not.toContain("attend(");
+  // And the reason is written where the decision would be made, not in a commit nobody reads.
+  const reason = d.slice(d.indexOf("We considered launching the aside RIGHT AWAY"), d.indexOf("function askWithDialog"));
+  expect(reason).toContain("REJECTED");
+  expect(reason).toContain("It spends your money on a question you haven't accepted");
 });
 
-test("las herramientas del aparte van en su sesion principal, no en un subagente", async () => {
-  // `--agents` define subagentes a los que despachar; el aparte es la sesion principal
-  // de su propio proceso. Declararlo ahi dejaria sin restringir justo al que lee el repo.
+test("the aside's tools go in its main session, not in a subagent", async () => {
+  // `--agents` defines subagents to dispatch to; the aside is the main session
+  // of its own process. Declaring it there would leave unrestricted exactly the one reading the repo.
   const b = await import("../src/aside.ts");
-  const banderas = b.asideFlags("v1", "/x/spoochie");
-  expect(banderas).not.toContain("--agents");
-  expect(banderas).toContain("--allowedTools");
-  expect(banderas).toContain("--disallowedTools");
-  // Y el motivo escrito donde se tomaria la decision (el comentario si nombra --agents).
+  const flags = b.asideFlags("v1", "/x/spoochie");
+  expect(flags).not.toContain("--agents");
+  expect(flags).toContain("--allowedTools");
+  expect(flags).toContain("--disallowedTools");
+  // And the reason written where the decision would be made (the comment does name --agents).
   const a = await Bun.file(new URL("../src/aside.ts", import.meta.url)).text();
-  expect(a).toContain("define SUBagentes a los que la sesion puede despachar");
+  expect(a).toContain("it defines SUBagents the session can dispatch to");
 });
 
-test("cada promesa del README nombra el test que la prueba, y ese test existe", async () => {
-  // Una promesa sin comprobacion es publicidad. Esto no comprueba que la promesa sea
-  // cierta (eso lo hacen los tests nombrados), comprueba que el README no pueda
-  // prometer algo apuntando a un fichero que ya no esta.
+test("each README promise names the test that proves it, and that test exists", async () => {
+  // A promise without a check is advertising. This doesn't check that the promise is
+  // true (the named tests do that), it checks that the README can't
+  // promise something pointing at a file that's no longer there.
   const readme = await Bun.file(new URL("../README.md", import.meta.url)).text();
-  const tabla = readme.slice(readme.indexOf("## The promises"), readme.indexOf("## Security model"));
-  expect(tabla).toContain("No server of ours");
-  expect(tabla).toContain("The model is yours");
-  expect(tabla).toContain("Closing deletes it");
+  const table = readme.slice(readme.indexOf("## The promises"), readme.indexOf("## Security model"));
+  expect(table).toContain("No server of ours");
+  expect(table).toContain("The model is yours");
+  expect(table).toContain("Closing deletes it");
   for (const f of ["tests/two-machines-nostr.test.ts", "tests/relay.test.ts", "tests/slack.test.ts", "src/guardian.ts"]) {
-    expect(tabla).toContain(f);
+    expect(table).toContain(f);
     expect(await Bun.file(new URL(`../${f}`, import.meta.url)).exists()).toBe(true);
   }
 });
 
 /**
- * Un spoochie cerrado no guarda el texto, se cerrara cuando se cerrara.
+ * A closed spoochie doesn't keep the text, whenever it was closed.
  *
- * "Al cerrar se borra" es una de las tres promesas del README y la cumple quien cierra,
- * pero una version anterior podia cerrar sin barrer. Medido en una maquina de verdad:
- * `spoochie doctor` sacaba FALLO con doce spoochies cerrados que aun guardaban lo que se
- * dijo, del 30 de agosto al 4 de septiembre, y no habia forma de arreglarlo. La regla no
- * es "se borra si la version de aquel dia lo hacia": es que un cerrado no lo guarda.
+ * "Closing deletes it" is one of the README's three promises and whoever closes keeps it,
+ * but an earlier version could close without sweeping. Measured on a real machine:
+ * `spoochie doctor` reported a failure with twelve closed spoochies that still kept what was
+ * said, from August 30 to September 4, and there was no way to fix it. The rule isn't
+ * "deleted if that day's version did it": it's that a closed one doesn't keep it.
  */
-test("el demonio barre al arrancar los cerrados que todavia guardan texto", async () => {
+test("on startup the daemon sweeps closed threads that still keep text", async () => {
   const { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { spawn } = await import("node:child_process");
   const { hasta } = await import("./wait.ts");
 
-  const casa = mkdtempSync(join(tmpdir(), "sp-barrido-"));
-  mkdirSync(join(casa, "threads"), { recursive: true, mode: 0o700 });
-  writeFileSync(join(casa, "config.json"), JSON.stringify({ guardian: false, transcript: false, aparte: false, human: "Edu" }), { mode: 0o600 });
-  const ruta = join(casa, "threads", "viejo.json");
-  writeFileSync(ruta, JSON.stringify({
-    id: "viejo", subject: "de antes", state: "closed", createdAt: 1, lastActivityAt: 1, closedAt: 1,
-    from: { sessionId: "slack:U_A", name: "Ana", cwd: "(otra)" },
-    to: { sessionId: "slack:U_B", name: "yo", cwd: "(esta)" },
-    context: {}, messages: [{ at: 1, from: "slack:U_A", author: "claude", kind: "text", text: "esto no deberia seguir aqui" }],
+  const home = mkdtempSync(join(tmpdir(), "sp-sweep-"));
+  mkdirSync(join(home, "threads"), { recursive: true, mode: 0o700 });
+  writeFileSync(join(home, "config.json"), JSON.stringify({ guardian: false, transcript: false, aparte: false, human: "Edu" }), { mode: 0o600 });
+  const file = join(home, "threads", "old.json");
+  writeFileSync(file, JSON.stringify({
+    id: "old", subject: "from before", state: "closed", createdAt: 1, lastActivityAt: 1, closedAt: 1,
+    from: { sessionId: "slack:U_A", name: "Ana", cwd: "(other)" },
+    to: { sessionId: "slack:U_B", name: "me", cwd: "(this)" },
+    context: {}, messages: [{ at: 1, from: "slack:U_A", author: "claude", kind: "text", text: "this shouldn't still be here" }],
   }));
-  // Y uno abierto, que no se toca: lo que se barre es lo cerrado.
-  const vivo = join(casa, "threads", "vivo.json");
-  writeFileSync(vivo, JSON.stringify({
-    id: "vivo", subject: "en curso", state: "open", createdAt: 1, lastActivityAt: Date.now(),
-    from: { sessionId: "slack:U_A", name: "Ana", cwd: "(otra)" },
-    to: { sessionId: "slack:U_B", name: "yo", cwd: "(esta)" },
-    context: {}, messages: [{ at: 1, from: "slack:U_A", author: "claude", kind: "text", text: "esto si sigue aqui" }],
+  // And an open one, which isn't touched: what gets swept is the closed ones.
+  const live = join(home, "threads", "live.json");
+  writeFileSync(live, JSON.stringify({
+    id: "live", subject: "in progress", state: "open", createdAt: 1, lastActivityAt: Date.now(),
+    from: { sessionId: "slack:U_A", name: "Ana", cwd: "(other)" },
+    to: { sessionId: "slack:U_B", name: "me", cwd: "(this)" },
+    context: {}, messages: [{ at: 1, from: "slack:U_A", author: "claude", kind: "text", text: "this does stay here" }],
   }));
 
   const d = spawn("bun", ["run", join(import.meta.dir, "..", "src", "daemon.ts")], {
-    env: { ...process.env, SPOOCHIE_HOME: casa, SPOOCHIE_NOTICE: "terminal", SPOOCHIE_WINDOW: "background" }, stdio: "ignore",
+    env: { ...process.env, SPOOCHIE_HOME: home, SPOOCHIE_NOTICE: "terminal", SPOOCHIE_WINDOW: "background" }, stdio: "ignore",
   });
   try {
-    const conTexto = (f: string) => JSON.parse(readFileSync(f, "utf8")).messages.filter((m: { text?: string }) => m.text).length;
-    expect(await hasta(() => conTexto(ruta) === 0)).toBe(true);
-    expect(JSON.parse(readFileSync(ruta, "utf8")).borrado).toBeTruthy();
-    expect(conTexto(vivo)).toBe(1);
+    const withText = (f: string) => JSON.parse(readFileSync(f, "utf8")).messages.filter((m: { text?: string }) => m.text).length;
+    expect(await hasta(() => withText(file) === 0)).toBe(true);
+    expect(JSON.parse(readFileSync(file, "utf8")).borrado).toBeTruthy();
+    expect(withText(live)).toBe(1);
   } finally {
     d.kill("SIGKILL");
   }

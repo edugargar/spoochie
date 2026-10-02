@@ -10,18 +10,20 @@ export type SessionRecord = {
   token: string;
   pid: number;
   startedAt: number;
-  /** Si es un Claude aparte, el id del spoochie que atiende. No se le asigna otro. */
+  /** If this is an aside Claude, the id of the spoochie it handles. It is never given another.
+   *  The field name stays `aparte`: it is written to sessions/*.json. */
   aparte?: string;
-  /** Ultima vez que la persona escribio en esa sesion (mtime del registro, que el hook
-   *  UserPromptSubmit toca). Es lo que dice "la terminal en la que estoy trabajando". */
+  /** Last time the person typed in that session (the record's mtime, which the
+   *  UserPromptSubmit hook touches). It is what says "the terminal I am working in". */
   activeAt?: number;
 };
 
-/** El id acaba siendo un nombre de fichero. Cuando el hook no trae session_id se
- *  usa la ruta del socket, que lleva barras: sin limpiar, escribir el registro
- *  petaba con ENOENT y la sesion se quedaba sin dar de alta sin que nadie lo viera. */
-const nombreSeguro = (id: string) => id.replace(/[^A-Za-z0-9._-]/g, "_").slice(-120) || "sesion";
-const file = (id: string) => join(SESSIONS_DIR, `${nombreSeguro(id)}.json`);
+/** The id ends up as a file name. When the hook brings no session_id the socket path
+ *  is used, which has slashes: without cleaning, writing the record blew up with ENOENT
+ *  and the session went unregistered without anyone noticing.
+ *  The fallback name stays "sesion" so existing record files keep their names. */
+const safeName = (id: string) => id.replace(/[^A-Za-z0-9._-]/g, "_").slice(-120) || "sesion";
+const file = (id: string) => join(SESSIONS_DIR, `${safeName(id)}.json`);
 
 export function register(rec: SessionRecord) {
   ensureDirs();
@@ -37,15 +39,15 @@ function alive(pid: number) {
 }
 
 /**
- * Un registro con permisos flojos no se lee.
+ * A record with loose permissions is not read.
  *
- * Cada fichero lleva el token del buzon de esa sesion, que es lo que permite entregarle
- * mensajes sin que salte el dialogo de aprobacion. Se escribe con 0600, pero si alguien
- * lo afloja (un rsync, un backup, un umask raro) el token queda legible para otros
- * usuarios de la maquina. Mejor negarse y decirlo que seguir como si nada.
+ * Each file carries that session's inbox token, which is what lets messages be
+ * delivered to it without the approval dialog popping up. It is written with 0600, but
+ * if someone loosens it (an rsync, a backup, an odd umask) the token becomes readable by
+ * other users on the machine. Better to refuse and say so than to carry on as if nothing.
  */
-export function loosePermissions(ruta: string): boolean {
-  try { return (statSync(ruta).mode & 0o077) !== 0; } catch { return false; }
+export function loosePermissions(path: string): boolean {
+  try { return (statSync(path).mode & 0o077) !== 0; } catch { return false; }
 }
 
 /** Sessions whose process is still running. Sweeps records left by crashed sessions. */
@@ -55,15 +57,15 @@ export function liveSessions(): SessionRecord[] {
   for (const f of readdirSync(SESSIONS_DIR)) {
     if (!f.endsWith(".json")) continue;
     const p = join(SESSIONS_DIR, f);
-    if (loosePermissions(p)) { console.error(`spoochie: ignoro ${f}, tiene permisos abiertos (chmod 600)`); continue; }
+    if (loosePermissions(p)) { console.error(`spoochie: ignoring ${f}, its permissions are open (chmod 600)`); continue; }
     let rec: SessionRecord;
     try { rec = JSON.parse(readFileSync(p, "utf8")); } catch { continue; }
-    // Un Claude aparte recibe por stdin del demonio: no tiene socket que comprobar.
+    // An aside Claude receives through stdin from the daemon: it has no socket to check.
     if (!alive(rec.pid) || (!rec.aparte && !existsSync(rec.socket))) { try { unlinkSync(p); } catch {} continue; }
     try { rec.activeAt = Math.max(rec.startedAt, statSync(p).mtimeMs); } catch { rec.activeAt = rec.startedAt; }
     out.push(rec);
   }
-  // La mas activa primera: la que tiene el ultimo prompt del humano, no la ultima en arrancar.
+  // Most active first: the one with the human's latest prompt, not the latest to start.
   return out.sort((a, b) => (b.activeAt ?? b.startedAt) - (a.activeAt ?? a.startedAt));
 }
 

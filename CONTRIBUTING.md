@@ -10,7 +10,7 @@ bun test
 ```
 
 Tests isolate all state under a temporary `SPOOCHIE_HOME`; they never touch your real
-`~/.claude/spoochie`. Two suites start real daemons (`tests/dos-maquinas*.test.ts`) and
+`~/.claude/spoochie`. Two suites start real daemons (`tests/two-machines*.test.ts`) and
 take a few seconds.
 
 ## Before anything is pushed: a real conversation
