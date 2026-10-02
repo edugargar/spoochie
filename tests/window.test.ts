@@ -61,6 +61,9 @@ test("the window script enters the repo, carries the leash and the aside's varia
   expect(s).toContain("cd '/tmp/my repo'");
   expect(s).toContain("SPOOCHIE_ASIDE='w1'");
   expect(s).toContain("SPOOCHIE_ASIDE_SESSION='aparte-w1-x'");
+  // And the 0.9.10 names, for a window whose installed plugin is older than the daemon.
+  expect(s).toContain("SPOOCHIE_APARTE='w1'");
+  expect(s).toContain("SPOOCHIE_APARTE_SESION='aparte-w1-x'");
   expect(s).toContain("--allowedTools");
   // Since window and background share `asideFlags`, every word of the exec is quoted
   // by sq(), flags included: the shell gets the same thing.

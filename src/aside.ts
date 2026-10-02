@@ -258,6 +258,12 @@ export function windowScript(t: T.Thread, cwd: string, sessionId: string): strin
     `export PATH=${sq(process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin")}`,
     `export SPOOCHIE_ASIDE=${sq(t.id)}`,
     `export SPOOCHIE_ASIDE_SESSION=${sq(sessionId)}`,
+    // The window's SessionStart hook belongs to whatever plugin version Claude Code has
+    // installed, which can be older than this daemon. Up to 0.9.10 it read only these
+    // names; without them it registered the window as an ordinary session and the aside
+    // never got its first turn (seen in the real test of this change).
+    `export SPOOCHIE_APARTE=${sq(t.id)}`,
+    `export SPOOCHIE_APARTE_SESION=${sq(sessionId)}`,
     process.env.SPOOCHIE_HOME ? `export SPOOCHIE_HOME=${sq(process.env.SPOOCHIE_HOME)}` : `unset SPOOCHIE_HOME`,
     `cd ${sq(cwd)} || exit 1`,
     `printf '\\033]0;spoochie ${t.id}\\007'`,
@@ -299,7 +305,7 @@ export function launch(t: T.Thread, cwd: string, how: Mode = asideMode()): Aside
   ensureDirs();
   mkdirSync(ASIDE_DIR, { recursive: true, mode: 0o700 });
   const base = { sessionId: asideSession(t.id), name: asideName(t.id), cwd, startedAt: Date.now(), aparte: t.id };
-  const env = cleanEnv({ SPOOCHIE_ASIDE: t.id, SPOOCHIE_ASIDE_SESSION: base.sessionId });
+  const env = cleanEnv({ SPOOCHIE_ASIDE: t.id, SPOOCHIE_ASIDE_SESSION: base.sessionId, SPOOCHIE_APARTE: t.id, SPOOCHIE_APARTE_SESION: base.sessionId });
 
   if (how === "window") {
     const script = join(ASIDE_DIR, `${t.id}.command`);
