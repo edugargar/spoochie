@@ -4,7 +4,7 @@ import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { mkdtempSync, mkdirSync, existsSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { hasta, plazo } from "./espera.ts";
+import { hasta, plazo } from "./wait.ts";
 
 /**
  * Una version anterior hablando con HEAD, en las dos direcciones.
@@ -56,8 +56,8 @@ test.if(hay)("la version anterior y HEAD se entienden en las dos direcciones", a
   const version = execFileSync("bun", ["run", join(VIEJA!, "src", "cli.ts"), "--version"], { encoding: "utf8" }).trim();
   console.log(`compatibilidad: HEAD contra ${version}`);
 
-  const { misClaves } = await import("../src/nostr.ts");
-  const kn = misClaves({} as any), kv = misClaves({} as any);
+  const { myKeys } = await import("../src/nostr.ts");
+  const kn = myKeys({} as any), kv = myKeys({} as any);
   const casas: [string, ReturnType<typeof fakeInbox>, typeof kn, typeof kv, string, string, string, string][] = [
     [NUEVA_HOME, N, kn, kv, "Nueva", "Vieja", "U_N", join(import.meta.dir, "..", "src", "daemon.ts")],
     [VIEJA_HOME, V, kv, kn, "Vieja", "Nueva", "U_V", join(VIEJA!, "src", "daemon.ts")],

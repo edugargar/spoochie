@@ -25,20 +25,20 @@ import { SimplePool } from "nostr-tools/pool";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils.js";
 import * as Cfg from "./config.ts";
 import * as T from "./threads.ts";
-import { PROTOCOLO, leerVersion } from "./protocolo.ts";
-import { ROOT, ensureDirs, escribirAtomico } from "./paths.ts";
+import { PROTOCOL, readVersion } from "./protocol.ts";
+import { ROOT, ensureDirs, writeAtomic } from "./paths.ts";
 import { MAX_BYTES, SPOOL } from "./files.ts";
 import { VERSION } from "./version.ts";
 
-export const RELAYS_POR_DEFECTO = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"];
+export const DEFAULT_RELAYS = ["wss://relay.damus.io", "wss://nos.lol", "wss://relay.primal.net"];
 const RUMOR = 14, SELLO = 13, ENVOLTURA = 1059, BORRADO = 5;
 /** NIP-59 falsea created_at hasta dos dias atras: al suscribirse hay que mirar desde antes. */
 const DOS_DIAS_S = 2 * 24 * 3600;
 
-export type Claves = { sk: string; pk: string };
+export type Keys = { sk: string; pk: string };
 
 /** Las claves de esta persona; nacen la primera vez que hacen falta y van en la config a 0600. */
-export function misClaves(c: Cfg.Config): Claves {
+export function myKeys(c: Cfg.Config): Keys {
   if (c.nostr?.sk && c.nostr?.pk) return { sk: c.nostr.sk, pk: c.nostr.pk };
   const sk = generateSecretKey();
   const claves = { sk: bytesToHex(sk), pk: getPublicKey(sk) };
@@ -46,14 +46,14 @@ export function misClaves(c: Cfg.Config): Claves {
   return claves;
 }
 export const npub = (pk: string) => nip19.npubEncode(pk);
-export function pkDe(npubOHex: string): string | null {
+export function pkOf(npubOHex: string): string | null {
   if (/^[0-9a-f]{64}$/.test(npubOHex)) return npubOHex;
   try { const d = nip19.decode(npubOHex); return d.type === "npub" ? (d.data as string) : null; } catch { return null; }
 }
-export const misReles = (c: Cfg.Config) => c.nostr?.relays?.length ? c.nostr.relays : RELAYS_POR_DEFECTO;
+export const myRelays = (c: Cfg.Config) => c.nostr?.relays?.length ? c.nostr.relays : DEFAULT_RELAYS;
 
 /** Lo que va en la etiqueta `sp` del rumor: el sobre de spoochie. */
-export type Sobre = {
+export type Envelope = {
   v: number;
   id: string;
   kind: "invite" | "msg" | "accept" | "close" | "notice" | "hola" | "file";
@@ -77,7 +77,7 @@ export type Sobre = {
  * 20 KB crudos son 27 KB en base64, ~38 KB de sello y ~55 KB de envoltura: cabe en
  * nos.lol (128 KB por mensaje) con margen. Una captura de 500 KB son 25 sobres.
  */
-export const TROZO = 20 * 1024;
+export const CHUNK = 20 * 1024;
 const FID_VALIDO = /^[A-Za-z0-9_-]{1,32}$/;
 const nombreSeguro = (n: string) => n.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120) || "fichero";
 const PARTES = ".partes";
@@ -90,7 +90,7 @@ const descifrar = (ev: { content: string; pubkey: string }, sk: string) => JSON.
 
 /** Envuelve un mensaje para un receptor. Devuelve la envoltura y la clave de un solo uso
  *  con la que se firmo, para poder pedir su borrado despues. */
-export function envolver(sk: string, paraPk: string, sobre: Sobre, texto: string): { wrap: Event; wsk: string } {
+export function wrapEnvelope(sk: string, paraPk: string, sobre: Envelope, texto: string): { wrap: Event; wsk: string } {
   const rumor = { kind: RUMOR, created_at: ahora(), pubkey: getPublicKey(hexToBytes(sk)), content: texto,
     tags: [["p", paraPk], ...(sobre.subject ? [["subject", sobre.subject]] : []), ["sp", JSON.stringify({ ...sobre, app: VERSION })]] };
   const sello = finalizeEvent({ kind: SELLO, created_at: fechaFalsa(), tags: [], content: cifrar(rumor, sk, paraPk) } as EventTemplate, hexToBytes(sk));
@@ -99,10 +99,10 @@ export function envolver(sk: string, paraPk: string, sobre: Sobre, texto: string
   return { wrap, wsk: bytesToHex(wskBytes) };
 }
 
-export type Abierto = { de: string; sobre: Sobre; texto: string; subject?: string };
+export type Opened = { de: string; sobre: Envelope; texto: string; subject?: string };
 
 /** Abre una envoltura dirigida a mi. Null si no es para mi, no es de spoochie o esta mal. */
-export function abrir(wrap: Event, sk: string): Abierto | null {
+export function open(wrap: Event, sk: string): Opened | null {
   try {
     if (wrap.kind !== ENVOLTURA) return null;
     const sello = descifrar(wrap, sk);
@@ -111,13 +111,13 @@ export function abrir(wrap: Event, sk: string): Abierto | null {
     if (rumor.kind !== RUMOR || rumor.pubkey !== sello.pubkey) return null;
     const sp = rumor.tags.find((t: string[]) => t[0] === "sp")?.[1];
     if (!sp) return null;
-    const sobre = JSON.parse(sp) as Sobre;
+    const sobre = JSON.parse(sp) as Envelope;
     // Aqui NO se juzga la version. `abrir` decide si el sobre es de spoochie y esta
     // bien formado; que hacer con una version que no entiendo lo decide `recibir`, que
     // es quien puede decirlo en el hilo. Ponia `sobre.v !== 1`, asi que un sobre del
     // protocolo 2 (y uno sin `v`, de antes de que el campo existiera) se evaporaba sin
     // dejar rastro, mientras el otro lado lo veia entregado. La regla escrita en
-    // protocolo.ts y publicada en docs/PROTOCOLO.md dice justo lo contrario, y por
+    // protocolo.ts y publicada en docs/PROTOCOL.md dice justo lo contrario, y por
     // Slack si se cumplia: las dos rutas hacian cosas distintas.
     if (sobre.v !== undefined && typeof sobre.v !== "number") return null;
     if (typeof sobre.id !== "string" || !/^[A-Za-z0-9_-]{1,32}$/.test(sobre.id)) return null;
@@ -126,7 +126,7 @@ export function abrir(wrap: Event, sk: string): Abierto | null {
 }
 
 /** La peticion de borrado de una envoltura, firmada con su clave de un solo uso. */
-export function peticionBorrado(id: string, wsk: string): Event {
+export function deletionRequest(id: string, wsk: string): Event {
   return finalizeEvent({ kind: BORRADO, created_at: ahora(), tags: [["e", id], ["k", String(ENVOLTURA)]], content: "spoochie cerrado" } as EventTemplate, hexToBytes(wsk));
 }
 
@@ -141,7 +141,7 @@ export type Pool = {
 
 /** Un pool sobre un directorio compartido: cada publish es un fichero, cada suscripcion
  *  lo lee cada 200 ms. Con el se prueban dos demonios de verdad sin tocar ningun rele. */
-export function poolDeFichero(dir: string): Pool {
+export function filePool(dir: string): Pool {
   const { mkdirSync, readdirSync } = require("node:fs") as typeof import("node:fs");
   mkdirSync(dir, { recursive: true });
   const vistos = new Set<string>();
@@ -168,7 +168,7 @@ export function poolDeFichero(dir: string): Pool {
   };
 }
 
-export function poolReal(): Pool {
+export function realPool(): Pool {
   let pool = new SimplePool();
   return {
     publish: (relays, ev) => pool.publish(relays, ev),
@@ -185,15 +185,15 @@ export type Callbacks = {
   onRemoteAccept: (t: T.Thread, como: string) => Promise<void>;
   onCierre: (t: T.Thread, motivo: string) => Promise<void>;
   /** Alguien a quien invite ya esta dentro: me manda su clave y sus reles. */
-  onHola: (de: string, sobre: Sobre, nombre: string) => Promise<void>;
+  onHola: (de: string, sobre: Envelope, nombre: string) => Promise<void>;
   /** Un sobre de una clave que no esta en la agenda. Ver desconocidos.ts. */
-  onDesconocido?: (de: string, sobre: Sobre) => Promise<void>;
+  onDesconocido?: (de: string, sobre: Envelope) => Promise<void>;
   log: (...a: unknown[]) => void;
 };
 
 /** Cada cuanto se tiran las conexiones y se vuelve a pedir todo. Lo que un rele no
  *  mando en ese rato llega en la vuelta siguiente, porque el filtro pide dos dias. */
-export const REFRESCO_MS = 5 * 60_000;
+export const REFRESH_MS = 5 * 60_000;
 
 export class NostrBridge {
   private vistos = new Set<string>();
@@ -202,8 +202,8 @@ export class NostrBridge {
   private cerrado = false;
   private refrescoMs: number;
   private esperaPublicarMs: number;
-  constructor(readonly sk: string, readonly pk: string, readonly relays: string[], private cb: Callbacks, private pool: Pool = poolReal(), opts: { refrescoMs?: number; esperaPublicarMs?: number } = {}) {
-    this.refrescoMs = opts.refrescoMs ?? REFRESCO_MS;
+  constructor(readonly sk: string, readonly pk: string, readonly relays: string[], private cb: Callbacks, private pool: Pool = realPool(), opts: { refrescoMs?: number; esperaPublicarMs?: number } = {}) {
+    this.refrescoMs = opts.refrescoMs ?? REFRESH_MS;
     this.esperaPublicarMs = opts.esperaPublicarMs ?? 8000;
     try { if (existsSync(VISTOS)) for (const id of JSON.parse(readFileSync(VISTOS, "utf8"))) this.vistos.add(id); } catch {}
   }
@@ -211,12 +211,12 @@ export class NostrBridge {
   static fromConfig(cb: Callbacks, pool?: Pool): NostrBridge | null {
     const c = Cfg.load();
     if (!c.nostr?.sk || !c.nostr?.pk) return null;
-    return new NostrBridge(c.nostr.sk, c.nostr.pk, misReles(c), cb, pool);
+    return new NostrBridge(c.nostr.sk, c.nostr.pk, myRelays(c), cb, pool);
   }
 
   private guardarVistos() {
     ensureDirs();
-    try { escribirAtomico(VISTOS, JSON.stringify([...this.vistos].slice(-5000))); } catch {}
+    try { writeAtomic(VISTOS, JSON.stringify([...this.vistos].slice(-5000))); } catch {}
   }
 
   /**
@@ -279,10 +279,10 @@ export class NostrBridge {
     if (this.vistos.has(ev.id)) return;
     this.vistos.add(ev.id);
     this.guardarVistos();
-    const a = abrir(ev, this.sk);
+    const a = open(ev, this.sk);
     if (!a) return;
     const c = Cfg.load();
-    const contacto = Cfg.contactoPorNpub(c, a.de);
+    const contacto = Cfg.contactByNpub(c, a.de);
     if (a.sobre.kind === "hola") {
       await this.cb.onHola(a.de, a.sobre, a.sobre.fromName ?? a.texto);
       return;
@@ -298,7 +298,7 @@ export class NostrBridge {
     }
     // Si no entiendo el sobre no puedo tratarlo como si lo entendiera: le faltaria
     // justo la parte que lo acota o la que lo retiene. Se dice y no se entrega.
-    const lectura = leerVersion(a.sobre.v, a.sobre.app);
+    const lectura = readVersion(a.sobre.v, a.sobre.app);
     if (!lectura.entiendo) {
       this.cb.log("nostr", a.sobre.id, `sobre no entregado: ${lectura.por}`);
       // Si es una invitacion todavia no hay hilo donde decirlo, y por Nostr no hay otro
@@ -307,7 +307,7 @@ export class NostrBridge {
       if (t0) await this.cb.onMessage(t0, { at: Date.now(), from: t0.from.sessionId === `nostr:${a.de}` ? t0.from.sessionId : t0.to.sessionId, author: "claude", kind: "text", text: `[spoochie] Un mensaje de la otra maquina no se ha entregado: ${lectura.por}`, firma: "ok" });
       return;
     }
-    Cfg.tocarContacto({ npub: a.de });
+    Cfg.touchContact({ npub: a.de });
     if (a.sobre.kind === "invite") { await this.materializar(a, contacto); return; }
     if (a.sobre.kind === "file") { await this.trozo(a); return; }
     const t = T.load(a.sobre.id);
@@ -334,7 +334,7 @@ export class NostrBridge {
    * cualquiera que sepa cifrar hacia mi clave es prestarle mi demonio.
    */
   private rechazados = new Map<string, number>();
-  private async contestarDesconocido(a: Abierto, c: Cfg.Config) {
+  private async contestarDesconocido(a: Opened, c: Cfg.Config) {
     const ahoraMs = Date.now();
     const ultimo = this.rechazados.get(a.de);
     if (ultimo !== undefined && ahoraMs - ultimo < 24 * 3600_000) return;
@@ -343,32 +343,32 @@ export class NostrBridge {
     this.rechazados.set(a.de, ahoraMs);
     const quien = (c.human ?? "").replace(/[\[\]\r\n\t]/g, "").trim().slice(0, 30) || "Quien has llamado";
     const texto = `${quien} no te tiene en su agenda de spoochie, asi que no le ha llegado. Pidele que te invite`;
-    const { wrap } = envolver(this.sk, a.de, { v: PROTOCOLO, id: a.sobre.id, kind: "close" }, texto);
+    const { wrap } = wrapEnvelope(this.sk, a.de, { v: PROTOCOL, id: a.sobre.id, kind: "close" }, texto);
     try { await Promise.any(this.pool.publish(this.relays, wrap)); this.cb.log("nostr", a.sobre.id, "contestado: no esta en la agenda", a.de.slice(0, 12)); }
     catch (e) { this.cb.log("nostr", a.sobre.id, "no se pudo contestar al desconocido", String(e)); }
   }
 
   /** Un spoochie que me llega de otra maquina: queda pendiente hasta que mi humano acepte. */
-  private async materializar(a: Abierto, contacto: { id: string; name: string; relays?: string[] }) {
-    if (T.load(a.sobre.id) || T.yaVisto(a.sobre.id)) return;
+  private async materializar(a: Opened, contacto: { id: string; name: string; relays?: string[] }) {
+    if (T.load(a.sobre.id) || T.alreadySeen(a.sobre.id)) return;
     // Un contacto no te llena el estado con spoochies que no has contestado: ver
     // `cabeOtroDe`. Los que ya hay caducan solos a las 4 h.
-    if (!T.cabeOtroDe(`nostr:${a.de}`)) {
-      this.cb.log("nostr", a.sobre.id, `${contacto.name} ya tiene ${T.MAX_PENDIENTES_POR_PERSONA} spoochies tuyos sin contestar; este no entra`);
+    if (!T.roomForAnotherFrom(`nostr:${a.de}`)) {
+      this.cb.log("nostr", a.sobre.id, `${contacto.name} ya tiene ${T.MAX_PENDING_PER_PERSON} spoochies tuyos sin contestar; este no entra`);
       return;
     }
     const now = Date.now();
-    const nombre = T.nombreParaEnsenar(contacto.name, a.sobre.fromName, contacto.id);
+    const nombre = T.displayName(contacto.name, a.sobre.fromName, contacto.id);
     const t: T.Thread = {
       id: a.sobre.id,
-      subject: T.asuntoDeFuera(a.sobre.subject ?? a.subject),
+      subject: T.outsideSubject(a.sobre.subject ?? a.subject),
       // El nombre sale de la agenda, no del sobre: ver `nombreParaEnsenar`.
       from: { sessionId: `nostr:${a.de}`, name: nombre, cwd: "(otra maquina)", human: nombre, slackUser: contacto.id.startsWith("nostr:") ? undefined : contacto.id },
       to: { sessionId: `nostr:${this.pk}`, name: "yo", cwd: "(esta maquina)", slackUser: Cfg.load().slack?.userId },
       state: "pending", createdAt: now, lastActivityAt: now,
-      context: T.contextoDeFuera(a.sobre.context),
+      context: T.outsideContext(a.sobre.context),
       transporte: "nostr",
-      nostr: { otro: a.de, relays: a.sobre.relays ?? contacto.relays ?? RELAYS_POR_DEFECTO, enviados: [] },
+      nostr: { otro: a.de, relays: a.sobre.relays ?? contacto.relays ?? DEFAULT_RELAYS, enviados: [] },
       messages: [],
     };
     T.save(t);
@@ -382,20 +382,20 @@ export class NostrBridge {
    * garantizan el orden: los trozos pueden llegar antes que la invitacion, y entonces
    * el fichero espera en el spool hasta que el hilo exista.
    */
-  private async trozo(a: Abierto) {
+  private async trozo(a: Opened) {
     const f = a.sobre.file;
     if (!f || !FID_VALIDO.test(String(f.fid)) || !Number.isInteger(f.n) || !Number.isInteger(f.total) || f.n < 0 || f.n >= f.total) return;
-    if (f.total > Math.ceil(MAX_BYTES / TROZO) || !(f.size >= 0 && f.size <= MAX_BYTES)) { this.cb.log("nostr", "fichero demasiado grande; ignorado", f.name); return; }
+    if (f.total > Math.ceil(MAX_BYTES / CHUNK) || !(f.size >= 0 && f.size <= MAX_BYTES)) { this.cb.log("nostr", "fichero demasiado grande; ignorado", f.name); return; }
     // Los numeros de arriba los declara quien envia; esto son los bytes que llegan de
     // verdad. Sin esta linea un solo sobre traia un trozo tan grande como el rele
     // aguantara: medido, 3 MB escritos en disco con TROZO a 20 KB, y decodificados
     // enteros en memoria antes de que nadie comprobara nada. Un trozo mas grande que un
     // trozo no es un trozo de spoochie.
     const bruto = Buffer.from(a.texto, "base64");
-    if (bruto.length > TROZO) { this.cb.log("nostr", "trozo mas grande que un trozo; ignorado", f.name, bruto.length); return; }
+    if (bruto.length > CHUNK) { this.cb.log("nostr", "trozo mas grande que un trozo; ignorado", f.name, bruto.length); return; }
     const t = T.load(a.sobre.id);
     if (t && (t.transporte !== "nostr" || t.nostr?.otro !== a.de || t.state === "closed")) return;
-    if (!t && T.yaVisto(a.sobre.id)) return;
+    if (!t && T.alreadySeen(a.sobre.id)) return;
     const dir = join(SPOOL, a.sobre.id, PARTES, f.fid);
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     writeFileSync(join(dir, String(f.n)), bruto, { mode: 0o600 });
@@ -411,7 +411,7 @@ export class NostrBridge {
     writeFileSync(destino, bytes, { mode: 0o600 });
     const listos = join(SPOOL, a.sobre.id, LISTOS);
     const cola: string[] = existsSync(listos) ? JSON.parse(readFileSync(listos, "utf8")) : [];
-    escribirAtomico(listos, JSON.stringify([...cola, destino]));
+    writeAtomic(listos, JSON.stringify([...cola, destino]));
     if (t) await this.entregarListos(t);
   }
 
@@ -434,17 +434,17 @@ export class NostrBridge {
       let bytes: Buffer;
       try { if (statSync(ruta).size > MAX_BYTES) { this.cb.log("nostr", "fichero de mas de 10 MB; no se manda", ruta); continue; } bytes = readFileSync(ruta); } catch { continue; }
       const fid = Math.random().toString(36).slice(2, 10);
-      const total = Math.max(1, Math.ceil(bytes.length / TROZO));
+      const total = Math.max(1, Math.ceil(bytes.length / CHUNK));
       for (let n = 0; n < total; n++) {
-        const ok = await this.enviar(t, { v: PROTOCOLO, id: t.id, kind: "file", file: { fid, n, total, name: basename(ruta), size: bytes.length } }, bytes.subarray(n * TROZO, (n + 1) * TROZO).toString("base64"));
+        const ok = await this.enviar(t, { v: PROTOCOL, id: t.id, kind: "file", file: { fid, n, total, name: basename(ruta), size: bytes.length } }, bytes.subarray(n * CHUNK, (n + 1) * CHUNK).toString("base64"));
         if (!ok) { this.cb.log("nostr", "fichero a medias, un trozo no se publico", ruta); break; }
       }
     }
   }
 
-  private async enviar(t: T.Thread, sobre: Sobre, texto: string): Promise<boolean> {
+  private async enviar(t: T.Thread, sobre: Envelope, texto: string): Promise<boolean> {
     if (!t.nostr) return false;
-    const { wrap, wsk } = envolver(this.sk, t.nostr.otro, sobre, texto);
+    const { wrap, wsk } = wrapEnvelope(this.sk, t.nostr.otro, sobre, texto);
     const reles = [...new Set([...t.nostr.relays, ...this.relays])];
     try {
       await Promise.any(this.pool.publish(reles, wrap));
@@ -458,21 +458,21 @@ export class NostrBridge {
   /** Abre un spoochie hacia otra maquina: la invitacion es el primer sobre. */
   async openThread(t: T.Thread, otroPk: string, relays: string[]): Promise<boolean> {
     t.transporte = "nostr";
-    t.nostr = { otro: otroPk, relays: relays.length ? relays : RELAYS_POR_DEFECTO, enviados: [] };
-    const ok = await this.enviar(t, { v: PROTOCOLO, id: t.id, kind: "invite", subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context, relays: this.relays }, t.messages[0]?.text ?? "");
+    t.nostr = { otro: otroPk, relays: relays.length ? relays : DEFAULT_RELAYS, enviados: [] };
+    const ok = await this.enviar(t, { v: PROTOCOL, id: t.id, kind: "invite", subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context, relays: this.relays }, t.messages[0]?.text ?? "");
     if (ok) await this.enviarFicheros(T.load(t.id) ?? t, t.messages[0]?.files);
     return ok;
   }
 
   async post(t: T.Thread, notice: string, m?: T.Msg): Promise<boolean> {
-    const kind: Sobre["kind"] = m ? "msg" : notice.includes("ha aceptado el tunel") ? "accept" : notice.includes("cerrado (") ? "close" : "notice";
+    const kind: Envelope["kind"] = m ? "msg" : notice.includes("ha aceptado el tunel") ? "accept" : notice.includes("cerrado (") ? "close" : "notice";
     const texto = m ? m.text : kind === "close" ? (t.closeReason ?? "cerrado") : notice;
     // Los ficheros van antes que el texto, para que el otro lado los tenga al leerlo.
     if (m?.files?.length) await this.enviarFicheros(t, m.files);
-    return this.enviar(T.load(t.id) ?? t, { v: PROTOCOLO, id: t.id, kind, subject: t.subject, ...(m ? { kindOfMsg: m.kind } : {}) }, texto);
+    return this.enviar(T.load(t.id) ?? t, { v: PROTOCOL, id: t.id, kind, subject: t.subject, ...(m ? { kindOfMsg: m.kind } : {}) }, texto);
   }
 
-  async aviso(t: T.Thread, texto: string) { await this.enviar(t, { v: PROTOCOLO, id: t.id, kind: "notice", subject: t.subject }, texto); }
+  async aviso(t: T.Thread, texto: string) { await this.enviar(t, { v: PROTOCOL, id: t.id, kind: "notice", subject: t.subject }, texto); }
   async pensandoOn(_t: T.Thread, _quien: string) {}
   async pensandoOff(_t: T.Thread) {}
 
@@ -480,7 +480,7 @@ export class NostrBridge {
   async borrarHilo(t: T.Thread): Promise<number> {
     let n = 0;
     for (const e of t.nostr?.enviados ?? []) {
-      try { await Promise.any(this.pool.publish([...new Set([...t.nostr!.relays, ...this.relays])], peticionBorrado(e.id, e.wsk))); n++; } catch {}
+      try { await Promise.any(this.pool.publish([...new Set([...t.nostr!.relays, ...this.relays])], deletionRequest(e.id, e.wsk))); n++; } catch {}
     }
     return n;
   }
@@ -494,7 +494,7 @@ export class NostrBridge {
    * contesta no cuelga el alta: a los `esperaPublicarMs` se deja de esperar.
    */
   async hola(paraPk: string, relays: string[], nombre: string, slackId?: string, k?: string): Promise<boolean> {
-    const { wrap } = envolver(this.sk, paraPk, { v: PROTOCOLO, id: "hola", kind: "hola", fromName: nombre, slack: slackId, relays: this.relays, k }, `${nombre} ya esta en spoochie`);
+    const { wrap } = wrapEnvelope(this.sk, paraPk, { v: PROTOCOL, id: "hola", kind: "hola", fromName: nombre, slack: slackId, relays: this.relays, k }, `${nombre} ya esta en spoochie`);
     let aceptados = 0;
     const todos = this.pool.publish([...new Set([...relays, ...this.relays])], wrap).map(p => p.then(() => { aceptados++; }, () => {}));
     await Promise.race([Promise.all(todos), new Promise(r => setTimeout(r, this.esperaPublicarMs).unref?.())]);

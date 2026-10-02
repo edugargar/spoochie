@@ -19,12 +19,12 @@
  * para buscar personas, que es lo unico que el bot no puede hacer.
  */
 import * as Cfg from "./config.ts";
-import { misClaves, firmar, verificarSobre, type Veredicto } from "./firma.ts";
+import { myKeys, makeSignature, verifyEnvelope, type Verdict } from "./signing.ts";
 import * as T from "./threads.ts";
-import { VERSION, linea, masNuevaQue } from "./version.ts";
-import { PLUGIN } from "./origen.ts";
-import { subir, bajar } from "./files.ts";
-import { PROTOCOLO, leerVersion } from "./protocolo.ts";
+import { VERSION, versionLine, newerThan } from "./version.ts";
+import { PLUGIN } from "./origin.ts";
+import { upload, download } from "./files.ts";
+import { PROTOCOL, readVersion } from "./protocol.ts";
 
 const API = "https://slack.com/api/";
 /** Cabecera legible por maquina que va en el primer mensaje del hilo. Es lo que
@@ -71,14 +71,14 @@ export type Envelope = {
  *  fijada de mis sobres anteriores: sin firma, cualquiera con el token del bot podia
  *  poner una clave Nostr a mi nombre. Va atado a quien lo recibe y a la hora, como
  *  cualquier otro sobre desde 0.9.9. */
-export function holaFirmado(me: string, to: string, nombre: string, np: string, r: string[]): Envelope & { np: string; r: string[] } {
+export function signedHello(me: string, to: string, nombre: string, np: string, r: string[]): Envelope & { np: string; r: string[] } {
   const env: Envelope & { np: string; r: string[] } = {
-    v: PROTOCOLO, id: "hola", kind: "hola", from: me, to, fromName: nombre, np, r,
+    v: PROTOCOL, id: "hola", kind: "hola", from: me, to, fromName: nombre, np, r,
     app: VERSION, ts: Math.floor(Date.now() / 1000), sv: 2,
   };
-  const k = misClaves(Cfg.load());
+  const k = myKeys(Cfg.load());
   env.pk = k.pub;
-  env.sig = firmar(k.priv, env, np);
+  env.sig = makeSignature(k.priv, env, np);
   return env;
 }
 
@@ -91,13 +91,13 @@ export function holaFirmado(me: string, to: string, nombre: string, np: string, 
  * vieja, el ladron tambien puede firmar esto: por eso la rotacion se dice en el DM en
  * texto, para que la persona lo vea y pregunte si no lo esperaba.
  */
-export function rotaFirmado(me: string, to: string, nombre: string, pubNueva: string, priv: string, pubVieja: string): Envelope & { pkNueva: string } {
+export function signedRotation(me: string, to: string, nombre: string, pubNueva: string, priv: string, pubVieja: string): Envelope & { pkNueva: string } {
   const env: Envelope & { pkNueva: string } = {
-    v: PROTOCOLO, id: "rota", kind: "rota", from: me, to, fromName: nombre, pkNueva: pubNueva,
+    v: PROTOCOL, id: "rota", kind: "rota", from: me, to, fromName: nombre, pkNueva: pubNueva,
     app: VERSION, ts: Math.floor(Date.now() / 1000), sv: 2,
   };
   env.pk = pubVieja;
-  env.sig = firmar(priv, env, pubNueva);
+  env.sig = makeSignature(priv, env, pubNueva);
   return env;
 }
 
@@ -117,13 +117,13 @@ export function chunk(text: string, size = 2800, max = 12): string[] {
 }
 
 /** Un id de spoochie es corto y de letras y numeros: acaba siendo nombre de fichero. */
-export const ID_VALIDO = /^[A-Za-z0-9_-]{1,32}$/;
+export const VALID_ID = /^[A-Za-z0-9_-]{1,32}$/;
 
 export function envelopeOf(msg: any): Envelope | null {
   const p = msg?.metadata?.event_payload;
   // El id viene de fuera y termina en join(THREADS_DIR, id + ".json"): un "../settings"
   // escribiria fuera del directorio de hilos. Sin id valido no hay sobre.
-  return msg?.metadata?.event_type === EVENT && typeof p?.id === "string" && ID_VALIDO.test(p.id) && p?.from ? (p as Envelope) : null;
+  return msg?.metadata?.event_type === EVENT && typeof p?.id === "string" && VALID_ID.test(p.id) && p?.from ? (p as Envelope) : null;
 }
 
 /** Un aviso del sistema, en una linea y en cristiano. */
@@ -219,7 +219,7 @@ export function inviteBlocks(t: T.Thread): Block[] {
  * Slack no tiene forma de escapar dentro de una cerca, asi que la cerca deja de serlo:
  * los acentos agudos se parecen y no cierran nada.
  */
-export const sinCercas = (texto: string) => texto.replace(/`{3,}/g, m => "´".repeat(m.length));
+export const noFences = (texto: string) => texto.replace(/`{3,}/g, m => "´".repeat(m.length));
 
 /** Un turno. El autor va arriba en pequeno, el contenido debajo. */
 export function messageBlocks(t: T.Thread, m: T.Msg): Block[] {
@@ -229,7 +229,7 @@ export function messageBlocks(t: T.Thread, m: T.Msg): Block[] {
 
   if (m.kind === "patch") {
     blocks.push(sec("Parche propuesto. Aplícalo tú si te convence, nadie escribe en tu máquina."));
-    for (const c of chunk(sinCercas(m.text), 2700, Math.ceil(T.MAX_PARCHE / 2700))) blocks.push(body("```\n" + c + "\n```"));
+    for (const c of chunk(noFences(m.text), 2700, Math.ceil(T.MAX_PATCH / 2700))) blocks.push(body("```\n" + c + "\n```"));
   } else if (m.kind === "branch") {
     // Una rama va entre comillas simples: un backtick dentro las cierra igual.
     blocks.push(body(`Rama para revisar: \`${m.text.replace(/`/g, "´")}\``));
@@ -259,9 +259,9 @@ export function noticeBlocks(t: T.Thread, rendered: string): { blocks: Block[]; 
 
 /** Un acuse a secas: aceptar, vale, ok. No es un turno de conversacion. */
 const ACUSES = /^(acepto|aceptado|vale|ok|okey|oki|dale|si|sí|venga|adelante|perfecto|genial|gracias|👍|✅)[\s.!]*$/i;
-export const esAcuse = (t: string) => ACUSES.test(t.trim());
+export const isAck = (t: string) => ACUSES.test(t.trim());
 /** Por debajo de esto, lo que el receptor escribe estando pendiente es solo "acepto". */
-export const ACEPTAR_A_SECAS = 60;
+export const BARE_ACCEPT = 60;
 
 /** Texto plano de respaldo: es lo que sale en la notificación del móvil. */
 export function fallbackText(t: T.Thread, m: T.Msg): string {
@@ -296,7 +296,7 @@ type OnCierre = (t: T.Thread, motivo: string) => Promise<void>;
  * 25, 60 s. El equipo son los contactos de la agenda mas uno. Si Slack devuelve 429
  * igualmente, el demonio se congela lo que Slack le diga (ver `frozen`).
  */
-export function cadenciaDescubrir(equipo: number, sueloMs = 5_000): number {
+export function discoveryCadence(equipo: number, sueloMs = 5_000): number {
   return Math.max(sueloMs, Math.round(Math.max(1, equipo) * 60_000 / 25));
 }
 
@@ -403,7 +403,7 @@ export class SlackBridge {
     const otra = env.app ?? "0.7.1";
     const fresco = T.load(t.id) ?? t;
     if (fresco.versionOtro !== otra) { fresco.versionOtro = otra; T.save(fresco); }
-    if (fresco.avisoVersion || linea(otra) === linea(VERSION) || !masNuevaQue(VERSION, otra) || !fresco.slack) return;
+    if (fresco.avisoVersion || versionLine(otra) === versionLine(VERSION) || !newerThan(VERSION, otra) || !fresco.slack) return;
     fresco.avisoVersion = true;
     T.save(fresco);
     const quien = env.from === fresco.from.slackUser ? (fresco.from.human ?? fresco.from.name) : (fresco.to.human ?? fresco.to.name);
@@ -480,7 +480,7 @@ export class SlackBridge {
     const { channel, tipo } = await this.hogar(t, dm);
     let aviso: { channel: string; ts: string } | undefined;
     const env: Envelope = {
-      v: PROTOCOLO, id: t.id, kind: "invite", from: t.from.slackUser ?? this.me,
+      v: PROTOCOL, id: t.id, kind: "invite", from: t.from.slackUser ?? this.me,
       subject: t.subject, fromName: t.from.human ?? t.from.name, context: t.context,
     };
     this.firma(env, t.messages[0]?.text ?? "", t.to.slackUser);
@@ -508,7 +508,7 @@ export class SlackBridge {
     // Los ficheros del primer mensaje se suben al hilo recien creado. Antes solo los
     // subia post(), asi que una captura adjunta al abrir se quedaba en la maquina.
     for (const f of t.messages[0]?.files ?? []) {
-      await subir(this.botToken, f, channel, post.ts);
+      await upload(this.botToken, f, channel, post.ts);
     }
     return { channel, ts: post.ts, ...(aviso ? { aviso } : {}) };
   }
@@ -524,7 +524,7 @@ export class SlackBridge {
         blocks: [ctx(`:key: ${nombre} ya puede hablar contigo por Nostr: los spoochies entre vosotros iran cifrados y no pasaran por Slack. Slack seguira avisandote.`)],
         // Firmado con mi clave ed25519 (la que ya tienen fijada de mis sobres): sin
         // firma, cualquiera con el token del bot podia poner una clave a mi nombre.
-        metadata: { event_type: EVENT, event_payload: holaFirmado(this.me, userId, nombre, np, r) },
+        metadata: { event_type: EVENT, event_payload: signedHello(this.me, userId, nombre, np, r) },
       });
       return true;
     } catch { return false; }
@@ -536,22 +536,22 @@ export class SlackBridge {
       await this.call("chat.postMessage", {
         channel: im.channel.id, text: `${nombre} ha cambiado su clave de firma de spoochie.`,
         blocks: [ctx(`:key: ${nombre} ha cambiado su clave de firma de spoochie. Su Claude lo comprueba con la clave que ya tenia fijada y se queda con la nueva. *Si ${nombre} no te ha dicho que iba a rotar, preguntaselo por otro sitio antes de seguir.*`)],
-        metadata: { event_type: EVENT, event_payload: rotaFirmado(this.me, userId, nombre, pubNueva, priv, pubVieja) },
+        metadata: { event_type: EVENT, event_payload: signedRotation(this.me, userId, nombre, pubNueva, priv, pubVieja) },
       });
       return true;
     } catch { return false; }
   }
   /** Al recibir una rotacion por Slack. */
-  onRota: ((de: string, pkNueva: string, veredicto: Veredicto) => Promise<void>) | null = null;
+  onRota: ((de: string, pkNueva: string, veredicto: Verdict) => Promise<void>) | null = null;
 
   /** Al recibir un hola por Slack. */
-  onHola: ((de: string, nombre: string, np: string, r: string[], veredicto: Veredicto) => Promise<void>) | null = null;
+  onHola: ((de: string, nombre: string, np: string, r: string[], veredicto: Verdict) => Promise<void>) | null = null;
 
   /** Un aviso a una persona por su DM con el bot, sin sobre: el hilo vive en otro sitio. */
   async avisarDm(userId: string, texto: string): Promise<boolean> {
     try {
       const im = await this.call("conversations.open", { users: userId });
-      await this.call("chat.postMessage", { channel: im.channel.id, text: texto, blocks: [ctx(texto)], metadata: { event_type: EVENT, event_payload: { v: PROTOCOLO, id: "aviso", kind: "notice", from: this.me } } });
+      await this.call("chat.postMessage", { channel: im.channel.id, text: texto, blocks: [ctx(texto)], metadata: { event_type: EVENT, event_payload: { v: PROTOCOL, id: "aviso", kind: "notice", from: this.me } } });
       return true;
     } catch { return false; }
   }
@@ -585,7 +585,7 @@ export class SlackBridge {
     await this.pensandoOff(t);
     const mine = t.from.slackUser === this.me ? t.from : t.to;
     const env: Envelope = {
-      v: PROTOCOLO, id: t.id,
+      v: PROTOCOL, id: t.id,
       kind: m ? "msg" : notice.includes("ha aceptado el tunel") ? "accept" : notice.includes("cerrado (") ? "close" : "notice",
       from: mine.slackUser ?? this.me,
       ...(m ? { kindOfMsg: m.kind } : {}),
@@ -603,7 +603,7 @@ export class SlackBridge {
     }
     // Los ficheros van al hilo antes que el texto, para que se lean juntos.
     if (m?.files?.length) {
-      for (const f of m.files) await subir(this.botToken, f, t.slack.channel, t.slack.ts);
+      for (const f of m.files) await upload(this.botToken, f, t.slack.channel, t.slack.ts);
     }
     try {
       await this.call("chat.postMessage", {
@@ -630,7 +630,7 @@ export class SlackBridge {
         blocks: [ctx(`:hourglass_flowing_sand: _${quien} está mirando su código…_`)],
         // Sin sobre, el demonio del otro lado se lo tragaba como si fuera una persona
         // escribiendo, y su Claude recibia "Sam esta mirando su codigo" como un turno.
-        metadata: { event_type: EVENT, event_payload: { v: PROTOCOLO, id: t.id, kind: "notice", from: this.me } },
+        metadata: { event_type: EVENT, event_payload: { v: PROTOCOL, id: t.id, kind: "notice", from: this.me } },
       });
       this.pensando.set(t.id, { ts: r.ts, desde: Date.now() });
     } catch {}
@@ -677,7 +677,7 @@ export class SlackBridge {
   /** Lo que gasta este demonio ahora mismo, para poder decirlo en `spoochie doctor`. */
   presupuesto(): { hilos: number; historyPorMin: number; repliesPorMin: number } {
     const vivos = T.all().filter(t => t.state !== "closed" && t.slack).length;
-    const cadencia = cadenciaDescubrir(Object.keys(Cfg.load().contacts ?? {}).length + 1);
+    const cadencia = discoveryCadence(Object.keys(Cfg.load().contacts ?? {}).length + 1);
     return {
       hilos: vivos,
       historyPorMin: Math.round(60_000 / cadencia),
@@ -707,7 +707,7 @@ export class SlackBridge {
     }
 
     // El buzon se mira tan a menudo como el cupo compartido permita al equipo que hay.
-    const cadencia = cadenciaDescubrir(Object.keys(Cfg.load().contacts ?? {}).length + 1);
+    const cadencia = discoveryCadence(Object.keys(Cfg.load().contacts ?? {}).length + 1);
     if (ahora - this.ultimoDescubrir >= cadencia) {
       this.ultimoDescubrir = ahora;
       await this.discover();
@@ -735,7 +735,7 @@ export class SlackBridge {
       // local, que es lo unico que el Claude de esta maquina puede abrir.
       const suyos = (rep as any).files as any[] | undefined;
       if (suyos?.length && rep.user !== this.me) {
-        const rutas = await bajar(this.botToken, suyos, t.id);
+        const rutas = await download(this.botToken, suyos, t.id);
         if (rutas.length) {
           await this.onMessage(t, {
             at: Math.round(Number(rep.ts) * 1000),
@@ -760,13 +760,13 @@ export class SlackBridge {
         if (env.kind === "notice" || env.kind === "invite") continue;
         const texto = bodyFromBlocks((rep as any).blocks) || rep.text || "";
         // Antes que la firma: si no entiendo el sobre, no puedo afirmar nada sobre el.
-        const lectura = leerVersion(env.v, env.app);
+        const lectura = readVersion(env.v, env.app);
         if (!lectura.entiendo) {
           await this.aviso(t, `:warning: un mensaje de ${env.fromName ?? env.from} ${lectura.por}`);
           continue;
         }
-        const firma = verificarSobre(env, texto);
-        if (firma === "ok" || firma === "nueva" || firma === "vieja") Cfg.tocarContacto({ id: env.from });
+        const firma = verifyEnvelope(env, texto);
+        if (firma === "ok" || firma === "nueva" || firma === "vieja") Cfg.touchContact({ id: env.from });
         // Lo que no se entrega, y por que. Antes solo se paraba "mala"; una firma buena
         // de un sobre viejo reenviado, o de uno dirigido a otra persona, entraba igual.
         const NO_ENTRA: Record<string, string> = {
@@ -829,7 +829,7 @@ export class SlackBridge {
       // un "aceptarlo" se reenvio a la otra persona como si fuera un mensaje.
       if (esMio && t.to.slackUser === this.me && t.state === "pending") {
         await this.onAccept(t, "en Slack");
-        if (esAcuse(texto) || texto.length < ACEPTAR_A_SECAS) continue;
+        if (isAck(texto) || texto.length < BARE_ACCEPT) continue;
       }
       // "suelta" / "descarta" del receptor sobre lo que el vigilante retuvo.
       if (esMio && this.onOrden && /^(suelta|libera|entrega|release)[\s.!]*$/i.test(texto)) { await this.onOrden(t, "suelta"); continue; }
@@ -838,7 +838,7 @@ export class SlackBridge {
       if (esMio) continue;
       // Un "acepto" a secas no es un turno: reenviarlo solo consigue que el Claude
       // de enfrente conteste "con un acepto no me llega".
-      if (esAcuse(texto)) continue;
+      if (isAck(texto)) continue;
       // Un mensaje vacio no se entrega. Pasaba con los adjuntos sin texto: al otro
       // lado le llegaba "Fulano (humano, en persona):" y nada mas debajo.
       if (!texto) continue;
@@ -859,7 +859,7 @@ export class SlackBridge {
     try {
       await this.call("chat.postMessage", {
         channel, thread_ts, text: texto, blocks: [ctx(texto)],
-        metadata: { event_type: EVENT, event_payload: { v: PROTOCOLO, id: "aviso", kind: "notice", from: this.me } },
+        metadata: { event_type: EVENT, event_payload: { v: PROTOCOL, id: "aviso", kind: "notice", from: this.me } },
       });
     } catch {}
   }
@@ -870,14 +870,14 @@ export class SlackBridge {
     env.app = VERSION;
     const c = Cfg.load();
     if (!c.slack) return;
-    const k = misClaves(c);
+    const k = myKeys(c);
     // Todo lo que la firma tiene que atar se pone ANTES de firmar, y viaja en el sobre
     // para que el otro lado reconstruya los mismos bytes.
     if (to) env.to = to;
     env.ts = Math.floor(Date.now() / 1000);
     env.sv = 2;
     env.pk = k.pub;
-    env.sig = firmar(k.priv, env, text);
+    env.sig = makeSignature(k.priv, env, text);
   }
 
   /** Cual de los dos lados soy yo en este hilo. */
@@ -901,22 +901,22 @@ export class SlackBridge {
       const env = envelopeOf(msg);
       if (env?.kind === "hola" && env.from !== this.me && env.np && /^[0-9a-f]{64}$/.test(env.np) && !this.holasVistos.has(msg.ts)) {
         this.holasVistos.add(msg.ts);
-        if (this.onHola) await this.onHola(env.from, env.fromName ?? env.from, env.np, Array.isArray(env.r) ? env.r : [], verificarSobre({ id: "hola", kind: "hola", from: env.from, fromName: env.fromName, pk: env.pk, sig: env.sig }, env.np));
+        if (this.onHola) await this.onHola(env.from, env.fromName ?? env.from, env.np, Array.isArray(env.r) ? env.r : [], verifyEnvelope({ id: "hola", kind: "hola", from: env.from, fromName: env.fromName, pk: env.pk, sig: env.sig }, env.np));
         continue;
       }
       if (env?.kind === "rota" && env.from !== this.me && typeof (env as any).pkNueva === "string") {
         // Se comprueba contra la clave que YA estaba fijada: el texto firmado es la nueva.
-        if (this.onRota) await this.onRota(env.from, (env as any).pkNueva, verificarSobre(env, (env as any).pkNueva));
+        if (this.onRota) await this.onRota(env.from, (env as any).pkNueva, verifyEnvelope(env, (env as any).pkNueva));
         continue;
       }
       if (!env || env.kind !== "invite" || known.has(env.id) || env.from === this.me) continue;
-      const lecturaInv = leerVersion(env.v, env.app);
+      const lecturaInv = readVersion(env.v, env.app);
       if (!lecturaInv.entiendo) {
         known.add(env.id);
         await this.avisoEn(ch, msg.thread_ts ?? msg.ts, `:warning: una invitacion de ${env.fromName ?? env.from} ${lecturaInv.por}`);
         continue;
       }
-      const vInv = verificarSobre(env, bodyFromBlocks(msg.blocks));
+      const vInv = verifyEnvelope(env, bodyFromBlocks(msg.blocks));
       if (vInv === "mala" || vInv === "caducada" || vInv === "ajena" || vInv === "degradada" || vInv === "desconocida") {
         known.add(env.id);
         const por = vInv === "mala" ? "pero la firma no es suya"
@@ -928,11 +928,11 @@ export class SlackBridge {
         continue;
       }
       // Un spoochie que esta maquina ya conocio no vuelve, aunque se borre el estado.
-      if (T.yaVisto(env.id)) continue;
+      if (T.alreadySeen(env.id)) continue;
       // Y una misma persona no te llena el estado con spoochies sin contestar.
-      if (!T.cabeOtroDe(`slack:${env.from}`)) {
+      if (!T.roomForAnotherFrom(`slack:${env.from}`)) {
         known.add(env.id);
-        await this.avisoEn(ch, msg.thread_ts ?? msg.ts, `:hourglass: ya tienes ${T.MAX_PENDIENTES_POR_PERSONA} spoochies de ${env.fromName ?? env.from} sin contestar. Este no entra; contesta o deja caducar alguno.`);
+        await this.avisoEn(ch, msg.thread_ts ?? msg.ts, `:hourglass: ya tienes ${T.MAX_PENDING_PER_PERSON} spoochies de ${env.fromName ?? env.from} sin contestar. Este no entra; contesta o deja caducar alguno.`);
         continue;
       }
       // El aviso del DM puede apuntar al hilo de verdad (un grupo o un canal).
@@ -948,16 +948,16 @@ export class SlackBridge {
     // El nombre sale de tu agenda, no del sobre: `fromName` no esta en la firma, asi que
     // un sobre firmado por una persona podia ensenarse con el nombre de otra, y ese
     // nombre es lo primero que se lee en el aviso. Ver `nombreParaEnsenar`.
-    const nombre = T.nombreParaEnsenar(Cfg.contactById(Cfg.load(), env.from)?.name, env.fromName, env.from);
+    const nombre = T.displayName(Cfg.contactById(Cfg.load(), env.from)?.name, env.fromName, env.from);
     const t: T.Thread = {
       id: env.id,
-      subject: T.asuntoDeFuera(env.subject),
+      subject: T.outsideSubject(env.subject),
       from: { sessionId: `slack:${env.from}`, name: nombre, cwd: "(otra maquina)", human: nombre, slackUser: env.from },
       to: { sessionId: `slack:${this.me}`, name: "yo", cwd: "(esta maquina)", slackUser: this.me },
       state: "pending",
       createdAt: now,
       lastActivityAt: now,
-      context: T.contextoDeFuera(env.context),
+      context: T.outsideContext(env.context),
       slack: { channel, ts },
       messages: [],
     };

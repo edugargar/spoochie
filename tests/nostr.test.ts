@@ -3,17 +3,17 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { verifyEvent } from "nostr-tools";
-import { envolver, abrir, peticionBorrado, NostrBridge, poolDeFichero, misClaves, npub, pkDe, type Pool } from "../src/nostr.ts";
+import { wrapEnvelope, open, deletionRequest, NostrBridge, filePool, myKeys, npub, pkOf, type Pool } from "../src/nostr.ts";
 import * as Cfg from "../src/config.ts";
 import * as T from "../src/threads.ts";
-import { hasta, plazo } from "./espera.ts";
+import { hasta, plazo } from "./wait.ts";
 
-const claves = () => misClaves({ guardian: false, transcript: false } as any);
+const claves = () => myKeys({ guardian: false, transcript: false } as any);
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 test("un sobre envuelto solo lo abre el receptor, dice de quien es, y lleva asunto y texto legibles", () => {
   const a = claves(), b = claves(), x = claves();
-  const { wrap, wsk } = envolver(a.sk, b.pk, { v: 1, id: "n1", kind: "msg", subject: "el boton" }, "es el min-width");
+  const { wrap, wsk } = wrapEnvelope(a.sk, b.pk, { v: 1, id: "n1", kind: "msg", subject: "el boton" }, "es el min-width");
   // El rele solo ve: kind 1059, una clave de un solo uso, un p, y una fecha falseada.
   expect(wrap.kind).toBe(1059);
   expect(wrap.pubkey).not.toBe(a.pk);
@@ -21,22 +21,22 @@ test("un sobre envuelto solo lo abre el receptor, dice de quien es, y lleva asun
   expect(JSON.stringify(wrap)).not.toContain("min-width");
   expect(JSON.stringify(wrap)).not.toContain("el boton");
   expect(verifyEvent(wrap)).toBe(true);
-  const ab = abrir(wrap, b.sk)!;
+  const ab = open(wrap, b.sk)!;
   expect(ab.de).toBe(a.pk);
   expect(ab.texto).toBe("es el min-width");
   expect(ab.subject).toBe("el boton");
   expect(ab.sobre.kind).toBe("msg");
   expect(ab.sobre.app).toMatch(/^\d+\.\d+\.\d+$/);
   // Otra clave no lo abre.
-  expect(abrir(wrap, x.sk)).toBeNull();
+  expect(open(wrap, x.sk)).toBeNull();
   // La peticion de borrado va firmada con la clave de un solo uso de esa envoltura.
-  const del = peticionBorrado(wrap.id, wsk);
+  const del = deletionRequest(wrap.id, wsk);
   expect(del.kind).toBe(5);
   expect(del.pubkey).toBe(wrap.pubkey);
   expect(del.tags).toContainEqual(["e", wrap.id]);
   expect(verifyEvent(del)).toBe(true);
   expect(npub(a.pk)).toStartWith("npub1");
-  expect(pkDe(npub(a.pk))).toBe(a.pk);
+  expect(pkOf(npub(a.pk))).toBe(a.pk);
 });
 
 /** Un pool en memoria: apunta lo publicado y deja inyectar lo que "llega del rele". */
@@ -66,12 +66,12 @@ test("el puente materializa una invitacion de un contacto, entrega sus turnos, i
   B.escuchar();
 
   // El hola de alguien que se acaba de dar de alta.
-  inyectar(envolver(x.sk, b.pk, { v: 1, id: "hola", kind: "hola", fromName: "Xavi", relays: ["wss://x"] }, "Xavi ya esta").wrap);
+  inyectar(wrapEnvelope(x.sk, b.pk, { v: 1, id: "hola", kind: "hola", fromName: "Xavi", relays: ["wss://x"] }, "Xavi ya esta").wrap);
   await sleep(50);
   expect(holas).toEqual(["Xavi"]);
 
   // La invitacion de Ana, que esta en la agenda: nace el hilo, pendiente, y entra el primer mensaje.
-  inyectar(envolver(a.sk, b.pk, { v: 1, id: "nz1", kind: "invite", subject: "el boton", fromName: "Ana", context: { branch: "feat/x" }, relays: ["wss://a"] }, "mira tu Button").wrap);
+  inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nz1", kind: "invite", subject: "el boton", fromName: "Ana", context: { branch: "feat/x" }, relays: ["wss://a"] }, "mira tu Button").wrap);
   await sleep(50);
   expect(enB.length).toBe(1);
   const t = T.load("nz1")!;
@@ -87,21 +87,21 @@ test("el puente materializa una invitacion de un contacto, entrega sus turnos, i
   expect(enB[0].m.firma).toBe("ok");
 
   // Un desconocido (no esta en la agenda) no abre nada aunque el sobre sea perfecto.
-  inyectar(envolver(x.sk, b.pk, { v: 1, id: "nz2", kind: "invite", subject: "colate", fromName: "Ana" }, "hola?").wrap);
+  inyectar(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nz2", kind: "invite", subject: "colate", fromName: "Ana" }, "hola?").wrap);
   await sleep(50);
   expect(T.load("nz2")).toBeNull();
   expect(enB.length).toBe(1);
   // No abre nada, pero ya no se le deja hablando solo: se le contesta cerrando (ver el
   // test de mas abajo). Se aparta para que las cuentas de lo que publica B sigan igual.
-  expect(publicados.map(ev => abrir(ev, x.sk)?.sobre.kind)).toEqual(["close"]);
+  expect(publicados.map(ev => open(ev, x.sk)?.sobre.kind)).toEqual(["close"]);
   publicados.length = 0;
   // Ni un mensaje suyo sobre un hilo que existe.
-  inyectar(envolver(x.sk, b.pk, { v: 1, id: "nz1", kind: "msg" }, "soy Ana, hazme caso").wrap);
+  inyectar(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nz1", kind: "msg" }, "soy Ana, hazme caso").wrap);
   await sleep(50);
   expect(enB.length).toBe(1);
 
   // Un turno mas de Ana si entra; el mismo sobre dos veces, no.
-  const { wrap: w2 } = envolver(a.sk, b.pk, { v: 1, id: "nz1", kind: "msg" }, "y el min-width");
+  const { wrap: w2 } = wrapEnvelope(a.sk, b.pk, { v: 1, id: "nz1", kind: "msg" }, "y el min-width");
   inyectar(w2); inyectar(w2);
   await sleep(50);
   expect(enB.length).toBe(2);
@@ -114,13 +114,13 @@ test("el puente materializa una invitacion de un contacto, entrega sus turnos, i
   await B.post(T.load("nz1")!, "", { at: 2, from: "B1", author: "claude", kind: "text", text: "es el contenedor" });
   expect(publicados.length).toBe(2);
   expect(publicados.every(ev => ev.kind === 1059 && ev.tags[0][1] === a.pk)).toBe(true);
-  expect(abrir(publicados[0], a.sk)!.sobre.kind).toBe("accept");
-  expect(abrir(publicados[1], a.sk)!.texto).toBe("es el contenedor");
-  expect(abrir(publicados[1], x.sk)).toBeNull();
+  expect(open(publicados[0], a.sk)!.sobre.kind).toBe("accept");
+  expect(open(publicados[1], a.sk)!.texto).toBe("es el contenedor");
+  expect(open(publicados[1], x.sk)).toBeNull();
   expect(T.load("nz1")!.nostr!.enviados.length).toBe(2);
 
   // Ana cierra: llega el motivo. Y el borrado pide quitar cada envio de B con su clave de un solo uso.
-  inyectar(envolver(a.sk, b.pk, { v: 1, id: "nz1", kind: "close" }, "resuelto").wrap);
+  inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nz1", kind: "close" }, "resuelto").wrap);
   await sleep(50);
   expect(cerrados).toEqual(["resuelto"]);
   const n = await B.borrarHilo(T.load("nz1")!);
@@ -132,14 +132,14 @@ test("el puente materializa una invitacion de un contacto, entrega sus turnos, i
 });
 
 test("un fichero va a trozos cifrados y el otro lado lo recompone en su spool, llegue en el orden que llegue", async () => {
-  const { TROZO } = await import("../src/nostr.ts");
+  const { CHUNK } = await import("../src/nostr.ts");
   const { SPOOL } = await import("../src/files.ts");
   const { writeFileSync, existsSync, readFileSync } = await import("node:fs");
   const a = claves(), b = claves();
   const c = Cfg.load();
   Cfg.addContact(c, { id: "U_A2", name: "Ana", npub: a.pk, relays: ["wss://a"] });
   Cfg.save(c);
-  const bytes = Buffer.alloc(TROZO * 2 + 777);
+  const bytes = Buffer.alloc(CHUNK * 2 + 777);
   for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 31) & 0xff;
   const captura = join(mkdtempSync(join(tmpdir(), "sp-cap-")), "pantalla.png");
   writeFileSync(captura, bytes);
@@ -151,7 +151,7 @@ test("un fichero va a trozos cifrados y el otro lado lo recompone en su spool, l
   const tA: T.Thread = { id: "nf1", subject: "captura", from: { sessionId: "A1", name: "a", cwd: "/a" }, to: { sessionId: `nostr:${b.pk}`, name: "Bea", cwd: "(otra)" }, state: "open", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: b.pk, relays: ["wss://b"], enviados: [] }, messages: [] };
   T.save(tA);
   expect(await A.post(tA, "", { at: 2, from: "A1", author: "claude", kind: "text", text: "mira la captura", files: [captura] })).toBe(true);
-  const abiertos = salida.publicados.map(ev => abrir(ev, b.sk)!);
+  const abiertos = salida.publicados.map(ev => open(ev, b.sk)!);
   expect(abiertos.map(x => x.sobre.kind)).toEqual(["file", "file", "file", "msg"]);
   expect(abiertos.slice(0, 3).map(x => x.sobre.file!.n)).toEqual([0, 1, 2]);
   expect(abiertos[0].sobre.file!.total).toBe(3);
@@ -168,7 +168,7 @@ test("un fichero va a trozos cifrados y el otro lado lo recompone en su spool, l
   B.escuchar();
   const tB: T.Thread = { ...tA, id: "nf2", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)", human: "Ana" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] } };
   T.save(tB);
-  const trozos = [0, 1, 2].map(n => envolver(a.sk, b.pk, { v: 1, id: "nf2", kind: "file", file: { fid: "f2", n, total: 3, name: "../../pantalla.png", size: bytes.length } }, bytes.subarray(n * TROZO, (n + 1) * TROZO).toString("base64")).wrap);
+  const trozos = [0, 1, 2].map(n => wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf2", kind: "file", file: { fid: "f2", n, total: 3, name: "../../pantalla.png", size: bytes.length } }, bytes.subarray(n * CHUNK, (n + 1) * CHUNK).toString("base64")).wrap);
   entrada.inyectar(trozos[2]); entrada.inyectar(trozos[0]);
   await sleep(50);
   expect(enB.length).toBe(0);
@@ -182,17 +182,17 @@ test("un fichero va a trozos cifrados y el otro lado lo recompone en su spool, l
   expect(existsSync(join(SPOOL, "nf2", ".partes"))).toBe(false);
 
   // Un trozo que llega antes que la invitacion espera en el spool; con la invitacion se entrega.
-  entrada.inyectar(envolver(a.sk, b.pk, { v: 1, id: "nf3", kind: "file", file: { fid: "f3", n: 0, total: 1, name: "log.txt", size: 3 } }, Buffer.from("abc").toString("base64")).wrap);
+  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf3", kind: "file", file: { fid: "f3", n: 0, total: 1, name: "log.txt", size: 3 } }, Buffer.from("abc").toString("base64")).wrap);
   await sleep(50);
   expect(T.load("nf3")).toBeNull();
   expect(enB.length).toBe(1);
-  entrada.inyectar(envolver(a.sk, b.pk, { v: 1, id: "nf3", kind: "invite", subject: "el log", fromName: "Ana", relays: ["wss://a"] }, "mira el log").wrap);
+  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf3", kind: "invite", subject: "el log", fromName: "Ana", relays: ["wss://a"] }, "mira el log").wrap);
   await hasta(() => enB.length === 3);
   expect(enB[1].text).toBe("mira el log");
   expect(readFileSync(enB[2].files![0], "utf8")).toBe("abc");
 
   // Un fichero declarado por encima del tope no toca el disco.
-  entrada.inyectar(envolver(a.sk, b.pk, { v: 1, id: "nf2", kind: "file", file: { fid: "f9", n: 0, total: 99999, name: "x", size: 1 } }, "AA==").wrap);
+  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nf2", kind: "file", file: { fid: "f9", n: 0, total: 99999, name: "x", size: 1 } }, "AA==").wrap);
   await sleep(50);
   expect(existsSync(join(SPOOL, "nf2", ".partes", "f9"))).toBe(false);
   B.cerrar();
@@ -212,8 +212,8 @@ test("un sobre que llega despues de cerrar no resucita el hilo ni deja ficheros 
   B.escuchar();
   const t: T.Thread = { id: "nc1", subject: "tarde", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)", human: "Ana" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, state: "closed", closeReason: "resuelto", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] }, messages: [] };
   T.save(t);
-  entrada.inyectar(envolver(a.sk, b.pk, { v: 1, id: "nc1", kind: "msg" }, "esto llega tarde").wrap);
-  entrada.inyectar(envolver(a.sk, b.pk, { v: 1, id: "nc1", kind: "file", file: { fid: "f1", n: 0, total: 1, name: "tarde.png", size: 3 } }, Buffer.from("abc").toString("base64")).wrap);
+  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nc1", kind: "msg" }, "esto llega tarde").wrap);
+  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nc1", kind: "file", file: { fid: "f1", n: 0, total: 1, name: "tarde.png", size: 3 } }, Buffer.from("abc").toString("base64")).wrap);
   await sleep(100);
   expect(enB).toEqual([]);
   expect(T.load("nc1")!.messages).toEqual([]);
@@ -239,7 +239,7 @@ test("un puente cerrado no vuelve a suscribirse ni entrega nada, aunque el rele 
   expect(suscripciones).toBe(1);
   const t: T.Thread = { id: "nx1", subject: "x", from: { sessionId: `nostr:${a.pk}`, name: "Ana", cwd: "(otra)" }, to: { sessionId: `nostr:${b.pk}`, name: "yo", cwd: "(esta)" }, state: "open", createdAt: 1, lastActivityAt: 1, context: {}, transporte: "nostr", nostr: { otro: a.pk, relays: ["wss://a"], enviados: [] }, messages: [] };
   T.save(t);
-  entrega!(envolver(a.sk, b.pk, { v: 1, id: "nx1", kind: "msg" }, "uno").wrap);
+  entrega!(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nx1", kind: "msg" }, "uno").wrap);
   await sleep(50);
   expect(enB.length).toBe(1);
   // Se cierra (como hace el demonio al recargar la config) y el rele avisa del cierre.
@@ -260,7 +260,7 @@ test("un puente cerrado no vuelve a suscribirse ni entrega nada, aunque el rele 
  * rele, o sea nadie si el rele es de quien envia.
  */
 test("un trozo mas grande que TROZO no toca el disco", async () => {
-  const { TROZO } = await import("../src/nostr.ts");
+  const { CHUNK } = await import("../src/nostr.ts");
   const { SPOOL } = await import("../src/files.ts");
   const { existsSync, readFileSync } = await import("node:fs");
   const a = claves(), b = claves();
@@ -270,13 +270,13 @@ test("un trozo mas grande que TROZO no toca el disco", async () => {
   const entrada = poolMemoria();
   const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, entrada.pool);
   B.escuchar();
-  const gordo = Buffer.alloc(TROZO * 4, 0x41);
-  entrada.inyectar(envolver(a.sk, b.pk, { v: 1, id: "ngordo", kind: "file", file: { fid: "fg", n: 0, total: 1, name: "x.bin", size: gordo.length } }, gordo.toString("base64")).wrap);
+  const gordo = Buffer.alloc(CHUNK * 4, 0x41);
+  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "ngordo", kind: "file", file: { fid: "fg", n: 0, total: 1, name: "x.bin", size: gordo.length } }, gordo.toString("base64")).wrap);
   await sleep(80);
   expect(existsSync(join(SPOOL, "ngordo"))).toBe(false);
   // Y uno del tamano correcto por la misma puerta si entra.
-  const cabe = Buffer.alloc(TROZO, 0x42);
-  entrada.inyectar(envolver(a.sk, b.pk, { v: 1, id: "ncabe", kind: "file", file: { fid: "fc", n: 0, total: 1, name: "y.bin", size: cabe.length } }, cabe.toString("base64")).wrap);
+  const cabe = Buffer.alloc(CHUNK, 0x42);
+  entrada.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "ncabe", kind: "file", file: { fid: "fc", n: 0, total: 1, name: "y.bin", size: cabe.length } }, cabe.toString("base64")).wrap);
   await hasta(() => existsSync(join(SPOOL, "ncabe", "fc-y.bin")));
   expect(readFileSync(join(SPOOL, "ncabe", "fc-y.bin")).equals(cabe)).toBe(true);
 });
@@ -347,11 +347,11 @@ test("a la invitacion de una clave que no esta en la agenda se le contesta cerra
   }, pool);
   B.escuchar();
 
-  inyectar(envolver(x.sk, b.pk, { v: 1, id: "nd1", kind: "invite", subject: "el playbook", fromName: "Adrian" }, "explicamelo").wrap);
+  inyectar(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nd1", kind: "invite", subject: "el playbook", fromName: "Adrian" }, "explicamelo").wrap);
   await sleep(50);
   expect(T.load("nd1")).toBeNull();
   expect(publicados).toHaveLength(1);
-  const r = abrir(publicados[0], x.sk)!;
+  const r = open(publicados[0], x.sk)!;
   expect(r.de).toBe(b.pk);
   expect(r.sobre.kind).toBe("close");
   expect(r.sobre.id).toBe("nd1");
@@ -360,12 +360,12 @@ test("a la invitacion de una clave que no esta en la agenda se le contesta cerra
   expect(r.texto).not.toContain("playbook");
   expect(r.texto).not.toContain("Adrian");
   // Cabe entero en el motivo de cierre que acepta el otro lado.
-  expect(T.motivoDeFuera(r.texto)).toBe(r.texto);
+  expect(T.outsideReason(r.texto)).toBe(r.texto);
 
   // Otra invitacion de la misma clave el mismo dia: no se contesta otra vez.
-  inyectar(envolver(x.sk, b.pk, { v: 1, id: "nd2", kind: "invite", subject: "otra" }, "otra").wrap);
+  inyectar(wrapEnvelope(x.sk, b.pk, { v: 1, id: "nd2", kind: "invite", subject: "otra" }, "otra").wrap);
   // Y a un mensaje suelto tampoco: no hay spoochie suyo que cerrar.
-  inyectar(envolver(claves().sk, b.pk, { v: 1, id: "nd3", kind: "msg" }, "hola?").wrap);
+  inyectar(wrapEnvelope(claves().sk, b.pk, { v: 1, id: "nd3", kind: "msg" }, "hola?").wrap);
   await sleep(50);
   expect(publicados).toHaveLength(1);
   B.cerrar();
@@ -383,7 +383,7 @@ test("y ese cierre le llega a quien abrio: su spoochie se cierra con el motivo",
   const deB = poolMemoria();
   const B = new NostrBridge(b.sk, b.pk, ["wss://b"], { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} }, deB.pool);
   B.escuchar();
-  deB.inyectar(envolver(a.sk, b.pk, { v: 1, id: "nd4", kind: "invite", subject: "el playbook" }, "explicamelo").wrap);
+  deB.inyectar(wrapEnvelope(a.sk, b.pk, { v: 1, id: "nd4", kind: "invite", subject: "el playbook" }, "explicamelo").wrap);
   await sleep(50);
   expect(deB.publicados).toHaveLength(1);
 

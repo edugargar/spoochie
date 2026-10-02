@@ -8,7 +8,7 @@ import { userInfo } from "node:os";
 import { DAEMON_SOCK, DAEMON_LOG, ensureDirs } from "./paths.ts";
 import { register, liveSessions, unregister, type SessionRecord } from "./registry.ts";
 import * as Cfg from "./config.ts";
-import { MAX_MENSAJE, MAX_PARCHE, urlDeTranscript } from "./threads.ts";
+import { MAX_MESSAGE, MAX_PATCH, transcriptUrlOf } from "./threads.ts";
 import { TRANSCRIPTS_DIR } from "./transcript.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -43,8 +43,8 @@ async function ensureDaemon() {
   if (existsSync(DAEMON_SOCK)) {
     try { await rpc({ op: "ping" }, 1500); return; } catch {}
   }
-  const { arrancarDemonio } = await import("./arranque.ts");
-  arrancarDemonio();
+  const { startDaemon } = await import("./startup.ts");
+  startDaemon();
   // Bajo launchd el primer arranque puede tardar: si el anterior acaba de morir,
   // launchd espera su ThrottleInterval (10 s) antes de volver a intentarlo.
   for (let i = 0; i < 150; i++) {
@@ -162,20 +162,20 @@ async function main() {
   // tiene que contestar aunque todo lo demas este roto, porque si no contesta la
   // herramienta se ejecuta.
   if (cmd === "portero") {
-    const { portero } = await import("./portero.ts");
-    const { comandoCli } = await import("./aparte.ts");
+    const { gatekeeper } = await import("./gatekeeper.ts");
+    const { cliCommand } = await import("./aside.ts");
     let entrada: unknown = null;
     try { entrada = JSON.parse(await new Response(Bun.stdin.stream()).text()); } catch {}
-    console.log(JSON.stringify(portero(entrada, comandoCli())));
+    console.log(JSON.stringify(gatekeeper(entrada, cliCommand())));
     return;
   }
 
   // El hook Stop del Claude aparte: que no se calle sin haber contestado por el tunel.
   if (cmd === "centinela") {
-    const { centinela } = await import("./centinela.ts");
+    const { sentinel } = await import("./sentinel.ts");
     let entrada: unknown = null;
     try { entrada = JSON.parse(await new Response(Bun.stdin.stream()).text()); } catch {}
-    console.log(JSON.stringify(centinela(entrada, process.env.SPOOCHIE_APARTE, process.env.SPOOCHIE_APARTE_SESION)));
+    console.log(JSON.stringify(sentinel(entrada, process.env.SPOOCHIE_APARTE, process.env.SPOOCHIE_APARTE_SESION)));
     return;
   }
 
@@ -216,7 +216,7 @@ async function main() {
     // En macOS el demonio pasa a launchd, que lo mantiene vivo y lo levanta al
     // arrancar. Se hace aqui, en cada arranque de sesion, porque la ruta del plugin
     // cambia con cada version y el plist tiene que seguirla.
-    try { const { instalarLaunchd } = await import("./arranque.ts"); const r = instalarLaunchd(); if (r !== "igual" && r !== "no") console.error(`spoochie: demonio ${r} en launchd`); } catch {}
+    try { const { installLaunchd } = await import("./startup.ts"); const r = installLaunchd(); if (r !== "igual" && r !== "no") console.error(`spoochie: demonio ${r} en launchd`); } catch {}
     await ensureDaemon();
     try { await rpc({ op: "claim", sessionId }, 5000); } catch {}
     return;
@@ -275,26 +275,26 @@ async function main() {
   if (cmd === "invite") {
     const c = Cfg.load();
     const bot = Cfg.slackBotToken(c);
-    const { crearInvitacion, textoInvitacion, datosInvitacion } = await import("./alta.ts");
-    const { misClaves } = await import("./firma.ts");
+    const { createInvite, inviteText, inviteData } = await import("./join.ts");
+    const { myKeys } = await import("./signing.ts");
     const N = await import("./nostr.ts");
-    const nk = N.misClaves(c);
+    const nk = N.myKeys(c);
     Cfg.save(c);
     // La primera invitacion es la que crea la clave Nostr, y el demonio de esta maquina
     // arranco antes, sin ella: sin avisarle no escucha, y el hola de quien entra se queda
     // en los reles. Medido en la prueba real: 4 minutos sin la clave de Bea; tras el
     // reload entro en 1 s.
     if (existsSync(DAEMON_SOCK)) await rpc({ op: "slack-reload" }).catch(() => {});
-    const yo = { id: c.slack?.userId ?? `nostr:${nk.pk}`, name: c.human ?? userInfo().username, pk: misClaves(c).pub, np: nk.pk, r: N.misReles(c) };
+    const yo = { id: c.slack?.userId ?? `nostr:${nk.pk}`, name: c.human ?? userInfo().username, pk: myKeys(c).pub, np: nk.pk, r: N.myRelays(c) };
     // Sin Slack: una invitacion solo por Nostr, para mandar por donde sea. No hay DM
     // que enviar; se imprime y listo.
     if (!bot || !c.slack?.userId) {
-      const { nuevaInvitacion } = await import("./claves.ts");
-      const k = nuevaInvitacion(c, { name: flag(rest, "name") });
+      const { newInvite } = await import("./keys.ts");
+      const k = newInvite(c, { name: flag(rest, "name") });
       Cfg.save(c);
-      const blob = crearInvitacion({ n: flag(rest, "name"), i: yo, k });
-      console.log(textoInvitacion(blob, yo.name));
-      console.log(`\n(Sin Slack: mandale esto por donde quieras. Cuando lo pegue, su clave te llegara por Nostr y podras escribirle @${Cfg.claveContacto(flag(rest, "name") ?? "nombre")}.)`);
+      const blob = createInvite({ n: flag(rest, "name"), i: yo, k });
+      console.log(inviteText(blob, yo.name));
+      console.log(`\n(Sin Slack: mandale esto por donde quieras. Cuando lo pegue, su clave te llegara por Nostr y podras escribirle @${Cfg.contactKey(flag(rest, "name") ?? "nombre")}.)`);
       return;
     }
     const { whoIs } = await import("./slack.ts");
@@ -326,23 +326,23 @@ async function main() {
         console.error(`no se a quien mandarsela: pasa su id de Slack, --to U01234567 (esta en su perfil, "Copiar id de miembro").`);
         process.exit(1); return;
       }
-      const { nuevaInvitacion } = await import("./claves.ts");
-      const k = nuevaInvitacion(c, dest);
+      const { newInvite } = await import("./keys.ts");
+      const k = newInvite(c, dest);
       Cfg.save(c);
-      const blob = crearInvitacion(datosInvitacion({ team: quien.team, dest, yo, k }));
+      const blob = createInvite(inviteData({ team: quien.team, dest, yo, k }));
       const im = await api("conversations.open", { users: dest.id });
       if (!im.ok) { console.error(`no puedo abrir el DM con ${dest.name}: ${im.error}`); process.exit(1); return; }
-      const post = await api("chat.postMessage", { channel: im.channel.id, text: textoInvitacion(blob, yo.name) });
+      const post = await api("chat.postMessage", { channel: im.channel.id, text: inviteText(blob, yo.name) });
       if (!post.ok) { console.error(`no he podido mandar el DM: ${post.error}`); process.exit(1); return; }
       Cfg.addContact(c, dest); Cfg.save(c);
-      console.log(`Enviada a ${dest.name} por DM del bot, con los pasos dentro. Ya puedes escribirle @${Cfg.claveContacto(dest.name)}.`);
+      console.log(`Enviada a ${dest.name} por DM del bot, con los pasos dentro. Ya puedes escribirle @${Cfg.contactKey(dest.name)}.`);
       return;
     }
 
-    const { nuevaInvitacion } = await import("./claves.ts");
-    const k = nuevaInvitacion(c, { name: flag(rest, "name") });
+    const { newInvite } = await import("./keys.ts");
+    const k = newInvite(c, { name: flag(rest, "name") });
     Cfg.save(c);
-    const blob = crearInvitacion({ t: quien.team, i: yo, k });
+    const blob = createInvite({ t: quien.team, i: yo, k });
     console.log(`Mandale esto a quien quieras dar de alta. Es una linea:\n`);
     console.log(`  /spoochie:join ${blob}\n`);
     console.log(`Lleva tus claves publicas y nada mas: ninguna contrasena, ningun token.`);
@@ -352,16 +352,16 @@ async function main() {
   }
 
   if (cmd === "join") {
-    const { limpiarCadena, leerInvitacion } = await import("./alta.ts");
+    const { cleanString, readInvite } = await import("./join.ts");
     // Se limpia todo lo pegado, no solo rest[0]: quien se da de alta pega la linea
     // entera tal cual se la mandaron, con "spoochie join" delante y comillas de Slack.
-    const blob = limpiarCadena(rest.join(" "));
+    const blob = cleanString(rest.join(" "));
     if (!blob) {
       console.error("no veo ninguna invitacion en lo que has pegado.");
       console.error("Pidele a quien te da de alta que corra `spoochie invite` y mandarte la linea entera.");
       process.exit(2); return;
     }
-    const datos = leerInvitacion(blob);
+    const datos = readInvite(blob);
     if (!datos) { console.error("esa cadena no es una invitacion de spoochie"); process.exit(2); return; }
 
     // Una invitacion de 0.9.7 o anterior hecha con --con-slack traia el token del bot
@@ -385,24 +385,24 @@ async function main() {
     // sistema (que en la primera prueba real salio como el usuario de la maquina en todo el hilo).
     if (!c.human || c.human === userInfo().username) c.human = flag(rest, "nombre") ?? datos.n ?? c.human ?? userInfo().username;
     if (datos.i) Cfg.addContact(c, { id: datos.i.id, name: datos.i.name, pk: datos.i.pk, npub: datos.i.np, relays: datos.i.r });
-    const { misClaves } = await import("./firma.ts");
-    misClaves(c);
+    const { myKeys } = await import("./signing.ts");
+    myKeys(c);
     const N = await import("./nostr.ts");
-    const nk = N.misClaves(c);
+    const nk = N.myKeys(c);
     Cfg.save(c);
-    if (datos.i) console.log(`Te ha invitado ${datos.i.name}: ya puedes escribirle @${Cfg.claveContacto(datos.i.name)}.`);
+    if (datos.i) console.log(`Te ha invitado ${datos.i.name}: ya puedes escribirle @${Cfg.contactKey(datos.i.name)}.`);
     if (userId) console.log(`Listo${datos.t ? ` en ${datos.t}` : ""}, como ${userId}. Los avisos por Slack te los manda el bot de quien te escriba.`);
     else console.log(`Listo. No me has dicho tu id de Slack, asi que no habra avisos por DM: pasalo con --user U01234567 y vuelve a pegar la invitacion.`);
-    console.log(`Tu clave Nostr: ${N.npub(nk.pk)} (reles: ${N.misReles(c).join(", ")}).`);
+    console.log(`Tu clave Nostr: ${N.npub(nk.pk)} (reles: ${N.myRelays(c).join(", ")}).`);
     // El saludo: quien invito recibe mi clave por Nostr y ya puede abrirme spoochies cifrados.
     if (datos.i?.np) {
-      const b = new N.NostrBridge(nk.sk, nk.pk, N.misReles(c), { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} },
-        process.env.SPOOCHIE_NOSTR_DIR ? N.poolDeFichero(process.env.SPOOCHIE_NOSTR_DIR) : undefined);
+      const b = new N.NostrBridge(nk.sk, nk.pk, N.myRelays(c), { onMessage: async () => {}, onRemoteAccept: async () => {}, onCierre: async () => {}, onHola: async () => {}, log: () => {} },
+        process.env.SPOOCHIE_NOSTR_DIR ? N.filePool(process.env.SPOOCHIE_NOSTR_DIR) : undefined);
       const ok = await b.hola(datos.i.np, datos.i.r ?? [], c.human ?? userInfo().username, userId, datos.k);
       b.cerrar();
       console.log(ok ? `Le he mandado tu clave a ${datos.i.name} por Nostr.` : `No he podido mandar tu clave por Nostr (sin red a los reles); ${datos.i.name} tendra que anadirte con --npub.`);
     }
-    try { const { instalarLaunchd } = await import("./arranque.ts"); instalarLaunchd(); } catch {}
+    try { const { installLaunchd } = await import("./startup.ts"); installLaunchd(); } catch {}
     await ensureDaemon();
     await rpc({ op: "slack-reload" }).catch(() => {});
 
@@ -422,25 +422,25 @@ async function main() {
   if (cmd === "nostr") {
     const N = await import("./nostr.ts");
     const c = Cfg.load();
-    const k = N.misClaves(c);
+    const k = N.myKeys(c);
     const reles = flag(rest, "relays");
     if (reles) { c.nostr = { ...c.nostr, relays: reles.split(",").map(s => s.trim()).filter(s => /^wss?:\/\//.test(s)) }; }
     Cfg.save(c);
-    console.log(JSON.stringify({ npub: N.npub(k.pk), pk: k.pk, relays: N.misReles(c), transporte: c.transporte ?? "nostr (si el otro tiene clave)" }, null, 2));
+    console.log(JSON.stringify({ npub: N.npub(k.pk), pk: k.pk, relays: N.myRelays(c), transporte: c.transporte ?? "nostr (si el otro tiene clave)" }, null, 2));
     return;
   }
 
   // El registro de lo que decidieron las personas. Solo hechos y nombres: nunca el
   // texto de los mensajes, porque el borrado al cerrar tiene que seguir siendo verdad.
   if (cmd === "auditoria") {
-    const { leer, FICHERO } = await import("./auditoria.ts");
+    const { read, FILE } = await import("./audit.ts");
     const n = Number(flag(rest, "n") ?? 50);
-    const lineas = leer(n);
-    if (!lineas.length) { console.log(`(nada apuntado todavia; el registro vive en ${FICHERO})`); return; }
+    const lineas = read(n);
+    if (!lineas.length) { console.log(`(nada apuntado todavia; el registro vive en ${FILE})`); return; }
     for (const l of lineas) {
       console.log(`${l.cuando.slice(0, 19).replace("T", " ")}  ${l.hecho.padEnd(15)} ${l.id.padEnd(8)} ${l.quien.padEnd(14)} ${l.detalle}`);
     }
-    console.log(`\n${FICHERO} · no se borra al cerrar un spoochie: son hechos, no conversacion.`);
+    console.log(`\n${FILE} · no se borra al cerrar un spoochie: son hechos, no conversacion.`);
     return;
   }
 
@@ -449,8 +449,8 @@ async function main() {
   // Cambiar tu clave de firma sin que todo el equipo tenga que reinvitarte.
   if (cmd === "rotar") {
     const c = Cfg.load();
-    const { nuevasClaves, misClaves } = await import("./firma.ts");
-    const vieja = misClaves(c);
+    const { newKeys, myKeys } = await import("./signing.ts");
+    const vieja = myKeys(c);
     const bot = Cfg.slackBotToken(c);
     if (!bot || !c.slack?.userId) { console.error("la rotacion se anuncia por el DM del bot, y aqui no hay Slack configurado"); process.exit(1); return; }
     const contactos = Object.values(c.contacts ?? {}).filter(x => x.pk && !x.id.startsWith("nostr:"));
@@ -462,7 +462,7 @@ async function main() {
       return;
     }
     const { SlackBridge } = await import("./slack.ts");
-    const nueva = nuevasClaves();
+    const nueva = newKeys();
     const puente = SlackBridge.fromConfig(async () => {}, async () => {}, async () => {}, () => {}, async () => {});
     if (!puente) { console.error("no puedo abrir el puente de Slack"); process.exit(1); return; }
     let n = 0;
@@ -472,8 +472,8 @@ async function main() {
     }
     c.keys = nueva;
     Cfg.save(c);
-    const { apuntar } = await import("./auditoria.ts");
-    apuntar("clave-fijada", "-", c.human ?? "esta maquina", `rotacion propia · avisados ${n}/${contactos.length}`);
+    const { record } = await import("./audit.ts");
+    record("clave-fijada", "-", c.human ?? "esta maquina", `rotacion propia · avisados ${n}/${contactos.length}`);
     console.log(`Clave nueva puesta y anunciada a ${n} de ${contactos.length} contacto(s).`);
     if (n < contactos.length) console.log(`A los que no se enteraron, tendran que hacer  spoochie contacts --olvidar-clave ${c.human ?? ""}  y reinvitarte.`);
     return;
@@ -492,23 +492,23 @@ async function main() {
   }
 
   if (cmd === "llavero") {
-    const L = await import("./llavero.ts");
+    const L = await import("./keychain.ts");
     const c = Cfg.load();
     const que = rest[0];
-    if (!L.disponible()) { console.error("el llavero solo esta en macOS (y hace falta el comando `security`)"); process.exit(1); return; }
+    if (!L.available()) { console.error("el llavero solo esta en macOS (y hace falta el comando `security`)"); process.exit(1); return; }
     if (que === "on") {
-      const movidos = Cfg.alLlavero(c);
+      const movidos = Cfg.toKeychain(c);
       Cfg.save(c);
-      console.log(movidos.length ? `Al llavero: ${movidos.join(", ")}. En config.json queda "${L.SENAL}" en su sitio.` : "No habia nada que mover.");
+      console.log(movidos.length ? `Al llavero: ${movidos.join(", ")}. En config.json queda "${L.MARKER}" en su sitio.` : "No habia nada que mover.");
       return;
     }
     if (que === "off") {
-      const vueltos = Cfg.delLlavero(c);
+      const vueltos = Cfg.fromKeychain(c);
       Cfg.save(c);
       console.log(vueltos.length ? `De vuelta a config.json: ${vueltos.join(", ")}. Vuelven a estar en claro, a 0600.` : "En el llavero no habia nada de spoochie.");
       return;
     }
-    const estado = Object.entries(L.CUENTAS).map(([k, cuenta]) => `${k.padEnd(6)} ${L.leer(cuenta) ? "en el llavero" : "en config.json"}`);
+    const estado = Object.entries(L.ACCOUNTS).map(([k, cuenta]) => `${k.padEnd(6)} ${L.read(cuenta) ? "en el llavero" : "en config.json"}`);
     console.log(estado.join("\n"));
     console.log(`\nspoochie llavero on   los mueve al llavero de macOS`);
     console.log(`spoochie llavero off  los devuelve a config.json`);
@@ -523,24 +523,24 @@ async function main() {
     const vincular = flag(rest, "vincular");
     if (vincular) {
       const N = await import("./nostr.ts");
-      const { vincularClave } = await import("./claves.ts");
-      const Des = await import("./desconocidos.ts");
+      const { bindKey } = await import("./keys.ts");
+      const Des = await import("./strangers.ts");
       const quien = Cfg.contact(c, vincular.replace(/^@/, "")) ?? Cfg.contactById(c, vincular);
       if (!quien) { console.error(`no tengo a nadie como ${vincular} en la agenda: invitale primero (spoochie invite --to <su id>)`); process.exit(1); return; }
-      const pk = N.pkDe(flag(rest, "npub") ?? "");
+      const pk = N.pkOf(flag(rest, "npub") ?? "");
       if (!pk) { console.error(`falta su clave: --npub npub1... o los 64 caracteres en hexadecimal (spoochie doctor ensena la que llego)`); process.exit(1); return; }
-      const v = vincularClave(c, { id: quien.id, name: quien.name, npub: pk, relays: N.RELAYS_POR_DEFECTO });
-      if (v === "conflicto") { console.error(`no la vinculo: o ${quien.name} ya tiene otra clave, o esa clave es de otro contacto. Si hay que cambiarla: spoochie contacts --olvidar-clave ${Cfg.claveContacto(quien.name)}`); process.exit(1); return; }
+      const v = bindKey(c, { id: quien.id, name: quien.name, npub: pk, relays: N.DEFAULT_RELAYS });
+      if (v === "conflicto") { console.error(`no la vinculo: o ${quien.name} ya tiene otra clave, o esa clave es de otro contacto. Si hay que cambiarla: spoochie contacts --olvidar-clave ${Cfg.contactKey(quien.name)}`); process.exit(1); return; }
       // Su invitacion ya no hace falta: dejarla viva es dejar un nonce que mete claves.
       for (const [k, inv] of Object.entries(c.invitaciones ?? {})) if (inv.id === quien.id) delete c.invitaciones![k];
       Cfg.save(c);
-      Des.olvidar(pk);
+      Des.forget(pk);
       console.log(`${v === "igual" ? "Ya la tenia" : "Vinculada"}: ${quien.name} es la clave ${pk.slice(0, 8)}...${pk.slice(-4)}. Si no lo has hecho, comprueba con ${quien.name} que su \`spoochie nostr\` dice esa misma.`);
       return;
     }
     const olvidar = flag(rest, "olvidar-clave");
     if (olvidar) {
-      const k = Cfg.claveContacto(olvidar);
+      const k = Cfg.contactKey(olvidar);
       const x = c.contacts?.[k];
       if (!x) { console.error(`no tengo a nadie como @${k}`); process.exit(1); return; }
       delete x.npub; delete x.relays;
@@ -548,13 +548,13 @@ async function main() {
       console.log(`Clave Nostr de ${x.name} olvidada. Con ${x.name} va por Slack hasta que le invites de nuevo (spoochie invite --to ${x.id}).`);
       return;
     }
-    const Conf = await import("./confianza.ts");
+    const Conf = await import("./trust.ts");
     const nivel = flag(rest, "nivel");
     if (nivel) {
-      const { ponerNivel } = await import("./confianza.ts");
+      const { setLevel } = await import("./trust.ts");
       const valor = rest[rest.indexOf("--nivel") + 2];
       if (valor !== "alto" && valor !== "normal") { console.error("el nivel es `alto` o `normal`:  spoochie contacts --nivel <nombre> alto"); process.exit(2); return; }
-      const r = ponerNivel(c, nivel, valor);
+      const r = setLevel(c, nivel, valor);
       if (!r.ok) { console.error(r.error); process.exit(1); return; }
       Cfg.save(c);
       console.log(valor === "alto"
@@ -566,7 +566,7 @@ async function main() {
       const extra = [
         // Cuando se le oyo por ultima vez. No dice si esta ahora, dice cuando estuvo:
         // es lo mas cerca de "presencia" que se puede decir sin inventarse un sondeo.
-        x.visto ? `visto ${Conf.hace(x.visto)}` : null,
+        x.visto ? `visto ${Conf.ago(x.visto)}` : null,
         x.nivel === "alto" ? "confianza:alta" : null,
         x.auto?.length ? `entran solos: ${x.auto.join(",")}` : null,
       ].filter(Boolean).join("  ");
@@ -589,8 +589,8 @@ async function main() {
       console.error("Lo que pide actuar se sigue reteniendo igual: la confianza no abre esa puerta.");
       process.exit(2); return;
     }
-    const { confiar } = await import("./confianza.ts");
-    const r = confiar(c, quien, repo, has(rest, "quitar"));
+    const { trust } = await import("./trust.ts");
+    const r = trust(c, quien, repo, has(rest, "quitar"));
     if (!r.ok) { console.error(r.error); process.exit(1); return; }
     Cfg.save(c);
     console.log(r.repos.length
@@ -709,7 +709,7 @@ async function main() {
         ? (f === "-" ? await new Response(Bun.stdin.stream()).text() : readFileSync(rpath(f), "utf8"))
         : rest.slice(1).find(a => !a.startsWith("--"));
       if (!id || !text?.trim()) { console.error("falta el texto del mensaje\n" + USAGE); process.exit(2); }
-      if (text.length > MAX_MENSAJE) { console.error(`el mensaje pasa de ${MAX_MENSAJE} caracteres (${text.length}). Cortalo tu o manda un parche.`); process.exit(2); }
+      if (text.length > MAX_MESSAGE) { console.error(`el mensaje pasa de ${MAX_MESSAGE} caracteres (${text.length}). Cortalo tu o manda un parche.`); process.exit(2); }
       const r = await rpc({ op: "say", sessionId: me.sessionId, id, text, files: fileList(rest), author: has(args(rest, 2), "human") ? "human" : "claude" });
       out(r);
       if (r?.delivered === "publicado") console.log("Publicado en el hilo de Slack. La respuesta del otro lado te llegara aqui como un turno mas; no hay que hacer nada.");
@@ -725,8 +725,8 @@ async function main() {
       if (!diff?.trim()) { console.error("no hay diff que mandar"); process.exit(2); }
       // Por Slack un parche mas gordo que esto llegaba cortado, con un "sigue en el
       // transcript" que el otro lado no puede aplicar. Mejor decirlo aqui.
-      if (diff.length > MAX_PARCHE) {
-        console.error(`el parche son ${diff.length} caracteres y por el tunel caben ${MAX_PARCHE}.`);
+      if (diff.length > MAX_PATCH) {
+        console.error(`el parche son ${diff.length} caracteres y por el tunel caben ${MAX_PATCH}.`);
         console.error(`Empuja la rama y mandala:  spoochie branch ${id ?? "<id>"} <rama>`);
         process.exit(2);
       }
@@ -772,9 +772,9 @@ async function main() {
       break;
     }
     case "doctor": {
-      const { revisar } = await import("./doctor.ts");
+      const { check } = await import("./doctor.ts");
       let malos = 0;
-      for (const c of await revisar()) {
+      for (const c of await check()) {
         const marca = c.ok === true ? "  ok " : c.ok === "aviso" ? " nota" : "FALLO";
         if (c.ok === false) malos++;
         console.log(`${marca}  ${c.que.padEnd(26)} ${c.detalle}`);
@@ -804,7 +804,7 @@ async function main() {
       if (url) {
         // Se comprueba aqui tambien, no solo en el demonio: el error se lee mejor donde
         // se escribio el comando, y el que lo escribe suele ser un Claude.
-        const v = urlDeTranscript(url);
+        const v = transcriptUrlOf(url);
         if (!v.ok) { console.error(`spoochie transcript --url: ${v.error}`); process.exit(1); }
         out(await rpc({ op: "transcript-url", id, url: v.url, sessionId: whoAmI().sessionId }));
         break;

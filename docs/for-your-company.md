@@ -41,5 +41,5 @@ touching files, for trying it out.
 - Works inside one Slack workspace. Two companies with different Slacks can't spoochie
   each other (yet: see "The registry" in the README's roadmap).
 - One bot token per workspace, shared by the team through invitations. Rotate it when
-  someone leaves: `scripts/rotar-token-slack.sh` walks you through it.
+  someone leaves: `scripts/rotate-slack-token.sh` walks you through it.
 - MIT. Do what you want; keep the notice.

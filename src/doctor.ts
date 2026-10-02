@@ -8,18 +8,18 @@
 import { existsSync, readdirSync, statSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { ROOT, SESSIONS_DIR, THREADS_DIR, DAEMON_SOCK, DAEMON_LOCK, OUTBOX_FILE } from "./paths.ts";
-import { liveSessions, permisosFlojos } from "./registry.ts";
+import { liveSessions, loosePermissions } from "./registry.ts";
 import * as Cfg from "./config.ts";
 import * as T from "./threads.ts";
-import * as Des from "./desconocidos.ts";
+import * as Des from "./strangers.ts";
 import { whoIs } from "./slack.ts";
 
-export type Chequeo = { ok: boolean | "aviso"; que: string; detalle: string };
+export type Check = { ok: boolean | "aviso"; que: string; detalle: string };
 
 const modo = (p: string) => { try { return (statSync(p).mode & 0o777).toString(8).padStart(3, "0"); } catch { return "?"; } };
 
-export async function revisar(): Promise<Chequeo[]> {
-  const out: Chequeo[] = [];
+export async function check(): Promise<Check[]> {
+  const out: Check[] = [];
   const c = Cfg.load();
 
   out.push({
@@ -28,12 +28,12 @@ export async function revisar(): Promise<Chequeo[]> {
     detalle: existsSync(DAEMON_LOCK) ? `vivo, pid ${(await Bun.file(DAEMON_LOCK).text()).trim()}` : "no esta corriendo",
   });
   {
-    const { edadLatido, launchdInstalado } = await import("./arranque.ts");
-    const edad = edadLatido();
+    const { heartbeatAge, launchdInstalled } = await import("./startup.ts");
+    const edad = heartbeatAge();
     out.push({
       ok: edad !== null && edad < 90,
       que: "latido del demonio",
-      detalle: edad === null ? "nunca ha latido" : edad < 90 ? `hace ${Math.round(edad)} s${launchdInstalado() ? ", bajo launchd" : ", arrancado por un hook (muere con el reinicio)"}` : `hace ${Math.round(edad)} s: esta colgado o muerto`,
+      detalle: edad === null ? "nunca ha latido" : edad < 90 ? `hace ${Math.round(edad)} s${launchdInstalled() ? ", bajo launchd" : ", arrancado por un hook (muere con el reinicio)"}` : `hace ${Math.round(edad)} s: esta colgado o muerto`,
     });
   }
 
@@ -45,7 +45,7 @@ export async function revisar(): Promise<Chequeo[]> {
   });
 
   const flojos = existsSync(SESSIONS_DIR)
-    ? readdirSync(SESSIONS_DIR).filter(f => f.endsWith(".json") && permisosFlojos(join(SESSIONS_DIR, f)))
+    ? readdirSync(SESSIONS_DIR).filter(f => f.endsWith(".json") && loosePermissions(join(SESSIONS_DIR, f)))
     : [];
   out.push({
     ok: flojos.length === 0,
@@ -84,7 +84,7 @@ export async function revisar(): Promise<Chequeo[]> {
     }
     if (c.slack.tokenFile) {
       out.push({
-        ok: !permisosFlojos(c.slack.tokenFile),
+        ok: !loosePermissions(c.slack.tokenFile),
         que: "fichero de tokens",
         detalle: `${c.slack.tokenFile} en ${modo(c.slack.tokenFile)}`,
       });
@@ -117,7 +117,7 @@ export async function revisar(): Promise<Chequeo[]> {
     out.push({
       ok: c.nostr?.pk ? true : "aviso",
       que: "Nostr",
-      detalle: c.nostr?.pk ? `${N.npub(c.nostr.pk).slice(0, 16)}..., reles: ${N.misReles(c).join(", ")}${c.transporte === "slack" ? " (los hilos van por Slack)" : ""}` : "sin clave todavia: nace con `spoochie nostr`, `invite` o `join`",
+      detalle: c.nostr?.pk ? `${N.npub(c.nostr.pk).slice(0, 16)}..., reles: ${N.myRelays(c).join(", ")}${c.transporte === "slack" ? " (los hilos van por Slack)" : ""}` : "sin clave todavia: nace con `spoochie nostr`, `invite` o `join`",
     });
     const sinClave = Object.values(c.contacts ?? {}).filter(k => !k.npub).map(k => k.name);
     if (sinClave.length) out.push({ ok: "aviso", que: "contactos sin clave Nostr", detalle: `${sinClave.join(", ")}: con ellos va por Slack hasta que su spoochie (>= 0.9) mande su clave` });
@@ -137,14 +137,14 @@ export async function revisar(): Promise<Chequeo[]> {
 
   {
     const { VERSION } = await import("./version.ts");
-    const { avisoNueva } = await import("./actualizacion.ts");
-    const nueva = await avisoNueva();
+    const { newVersionNotice } = await import("./update.ts");
+    const nueva = await newVersionNotice();
     out.push({ ok: nueva ? "aviso" : true, que: "version", detalle: nueva ? `${VERSION}; ${nueva}` : `${VERSION}, la ultima publicada` });
-    const { versionLatido, edadLatido, pathDelAgenteInstalado, encontrarClaude } = await import("./arranque.ts");
-    const c = chequeoClaude(pathDelAgenteInstalado(), encontrarClaude);
+    const { heartbeatVersion, heartbeatAge, installedAgentPath, findClaude } = await import("./startup.ts");
+    const c = claudeCheck(installedAgentPath(), findClaude);
     if (c) out.push(c);
-    const late = versionLatido();
-    const vivo = (edadLatido() ?? Infinity) < 90;
+    const late = heartbeatVersion();
+    const vivo = (heartbeatAge() ?? Infinity) < 90;
     if (vivo && late !== VERSION) out.push({
       ok: "aviso",
       que: "version del demonio",
@@ -168,13 +168,13 @@ export async function revisar(): Promise<Chequeo[]> {
     // Lo que imprime el hook entra en el contexto de ESA sesion y ahi se queda; si
     // fallo y la persona reinicio, sin esto no hay forma de saberlo despues.
     const p = join(ROOT, "arranque.txt");
-    const chequeo = ultimoArranque(existsSync(p) ? readFileSync(p, "utf8") : null);
+    const chequeo = lastStart(existsSync(p) ? readFileSync(p, "utf8") : null);
     if (chequeo) out.push(chequeo);
   }
 
   // La parte de auditoria: no "esto esta roto", sino "esto es una credencial o un resto
   // que no deberia seguir aqui". Los fallos de seguridad tampoco dan error.
-  out.push(...auditar(c));
+  out.push(...audit(c));
 
   return out;
 }
@@ -190,7 +190,7 @@ export async function revisar(): Promise<Chequeo[]> {
  * y `doctor` decia que estaba todo bien, porque comprobaba que el demonio viviera y no
  * que pudiera hacer lo unico para lo que vive.
  */
-export function chequeoClaude(pathDelDemonio: string | null, encontrar: (dirs: string[]) => string | null): Chequeo | null {
+export function claudeCheck(pathDelDemonio: string | null, encontrar: (dirs: string[]) => string | null): Check | null {
   if (!pathDelDemonio) return null;
   const dir = encontrar(pathDelDemonio.split(":"));
   return dir
@@ -198,15 +198,15 @@ export function chequeoClaude(pathDelDemonio: string | null, encontrar: (dirs: s
     : { ok: false, que: "claude en el PATH del demonio", detalle: `no esta en ${pathDelDemonio}: un spoochie aceptado no se puede atender. Abre una sesion de Claude Code (el hook lo arregla) o corre \`spoochie register\`` };
 }
 
-export function ultimoArranque(texto: string | null): Chequeo | null {
+export function lastStart(texto: string | null): Check | null {
   if (!texto?.trim()) return null;
   const [cuando, estado, detalle] = texto.trim().split("\n")[0].split("\t");
   if (estado !== "fallo") return { ok: true, que: "ultimo arranque del hook", detalle: `${detalle ?? "sin detalle"} (${cuando})` };
   return { ok: false, que: "ultimo arranque del hook", detalle: `${detalle ?? "fallo sin detalle"} (${cuando})` };
 }
 
-export function auditar(c: Cfg.Config, ahora = Date.now()): Chequeo[] {
-  const out: Chequeo[] = [];
+export function audit(c: Cfg.Config, ahora = Date.now()): Check[] {
+  const out: Check[] = [];
 
   // Invitaciones sin canjear: cada una es un nonce que todavia deja entrar una clave.
   const pendientes = Object.values(c.invitaciones ?? {});
@@ -222,7 +222,7 @@ export function auditar(c: Cfg.Config, ahora = Date.now()): Chequeo[] {
   // Quien ha intentado hablarme sin estar en la agenda. Todo lo que no es la clave lo
   // dice el sobre, y asi se ensena. Si dice ser un contacto que aun no tiene clave
   // Nostr, es casi seguro un alta que no llego, y la salida es vincularla a mano.
-  for (const d of Des.recientes(ahora)) {
+  for (const d of Des.recent(ahora)) {
     const suyo = d.slack ? Cfg.contactById(c, d.slack) as { id: string; name: string; npub?: string } | null : null;
     const cuando = new Date(d.ultima).toLocaleString("es-ES", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     const que = d.kind === "hola" ? "se dio de alta y su clave no entro" : d.kind === "invite" ? "intento abrirte un spoochie" : `te mando un sobre (${d.kind})`;

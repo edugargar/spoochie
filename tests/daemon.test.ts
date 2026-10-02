@@ -8,7 +8,7 @@ import { register } from "../src/registry.ts";
 import * as Cfg from "../src/config.ts";
 import * as T from "../src/threads.ts";
 import { DAEMON_SOCK } from "../src/paths.ts";
-import { plazo } from "./espera.ts";
+import { plazo } from "./wait.ts";
 
 /** Un buzon falso: hace de sesion de Claude y apunta lo que le entregan. */
 function fakeInbox(name: string) {
@@ -152,8 +152,8 @@ test("varios mensajes seguidos del mismo lado salen como uno", async () => {
 }, plazo(20_000));
 
 test("un mensaje que pasa del limite se rechaza antes de salir, no se corta", async () => {
-  const { MAX_MENSAJE } = await import("../src/threads.ts");
-  expect(MAX_MENSAJE).toBeGreaterThan(20_000);
+  const { MAX_MESSAGE } = await import("../src/threads.ts");
+  expect(MAX_MESSAGE).toBeGreaterThan(20_000);
 });
 
 test("al cerrar, la conversacion se borra en local y queda el sobre", async () => {

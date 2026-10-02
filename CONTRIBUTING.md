@@ -16,7 +16,7 @@ take a few seconds.
 ## Before anything is pushed: a real conversation
 
 ```sh
-bun scripts/prueba-real.ts
+bun scripts/real-test.ts
 ```
 
 Green tests are not proof that two people can talk. They use fake inboxes, relays in a
@@ -29,7 +29,7 @@ on the notice, and a question whose answer only exists in the other person's rep
 passes only if that answer reaches the first person's Claude. It takes a few minutes and
 uses the screen, and leaves three screenshots.
 
-On success it writes a seal for the tree of `HEAD` under `.git/spoochie-prueba-real/`. The
+On success it writes a seal for the tree of `HEAD` under `.git/spoochie-real-test/`. The
 pre-push hook refuses any commit or tag whose tree has no seal, and a dirty tree gets no
 seal. The seal is per tree, not per commit, because a rebase merge on GitHub rewrites the
 commit and keeps the files, and the files are what was tested.

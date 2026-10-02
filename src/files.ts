@@ -21,10 +21,10 @@ export const SPOOL = join(ROOT, "files");
 
 const seguro = (n: string) => n.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120) || "fichero";
 
-export type Subido = { id: string; nombre: string };
+export type Uploaded = { id: string; nombre: string };
 
 /** Sube un fichero al hilo. Devuelve null si no cabe o si Slack dice que no. */
-export async function subir(token: string, ruta: string, channel: string, threadTs: string): Promise<Subido | null> {
+export async function upload(token: string, ruta: string, channel: string, threadTs: string): Promise<Uploaded | null> {
   let bytes: Buffer;
   try {
     if (statSync(ruta).size > MAX_BYTES) return null;
@@ -60,7 +60,7 @@ export async function subir(token: string, ruta: string, channel: string, thread
 const ANFITRIONES = /^https:\/\/([a-z0-9-]+\.)*slack(-files)?\.com\//i;
 
 /** Baja los ficheros de un mensaje al spool y devuelve sus rutas locales. */
-export async function bajar(token: string, ficheros: any[], threadId: string): Promise<string[]> {
+export async function download(token: string, ficheros: any[], threadId: string): Promise<string[]> {
   // El id llega validado por `ID_VALIDO` desde que se materializa el hilo, pero esta
   // funcion no lo sabe: aqui acaba en un `join`, y un id con `../` escribe fuera del
   // spool. Se limpia igual, que cuesta una linea y no depende de nadie.
@@ -103,7 +103,7 @@ export async function bajar(token: string, ficheros: any[], threadId: string): P
  * Se le da lo mismo que a un spoochie sin aceptar. Un directorio con hilo vivo no se
  * toca: de ese se encarga `purgar` al cerrar.
  */
-export function barrerHuerfanos(hayHilo: (id: string) => boolean, ttlMs: number, ahora = Date.now()): string[] {
+export function sweepOrphans(hayHilo: (id: string) => boolean, ttlMs: number, ahora = Date.now()): string[] {
   if (!existsSync(SPOOL)) return [];
   const barridos: string[] = [];
   for (const id of readdirSync(SPOOL)) {

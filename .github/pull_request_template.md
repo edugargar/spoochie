@@ -9,4 +9,4 @@ a screenshot).
 
 ## Leak check
 
-- [ ] No names, employer, Slack ids or internal app names. `bun scripts/fugas.ts` passes locally.
+- [ ] No names, employer, Slack ids or internal app names. `bun scripts/leaks.ts` passes locally.

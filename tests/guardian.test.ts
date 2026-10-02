@@ -12,10 +12,10 @@ test("un mensaje vacio tampoco", async () => {
   expect((await judge("asunto", "   ")).verdict).toBe("dentro");
 });
 
-import corpus from "./corpus-vigilante.json" with { type: "json" };
+import corpus from "./watcher-corpus.json" with { type: "json" };
 
 /**
- * El corpus se corre contra Haiku con `bun scripts/vigilante.ts`, no aqui: un test que
+ * El corpus se corre contra Haiku con `bun scripts/watcher.ts`, no aqui: un test que
  * llama a un modelo cuesta dinero y falla por la red, y a la semana nadie lo mira. Lo
  * que si se comprueba aqui, sin red y en un milisegundo, es que el corpus sigue siendo
  * un corpus y que el prompt sigue nombrando lo que el corpus prueba. Borrar una linea

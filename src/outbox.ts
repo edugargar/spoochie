@@ -16,23 +16,23 @@
  */
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from "node:fs";
 import * as T from "./threads.ts";
-import { OUTBOX_FILE, ensureDirs, escribirAtomico } from "./paths.ts";
+import { OUTBOX_FILE, ensureDirs, writeAtomic } from "./paths.ts";
 
-export const UNION_MS = 2_500;
-export const REINTENTO_MS = 60_000;
+export const MERGE_MS = 2_500;
+export const RETRY_MS = 60_000;
 
-export type Salida = (t: T.Thread, m: T.Msg) => Promise<boolean | void>;
+export type Send = (t: T.Thread, m: T.Msg) => Promise<boolean | void>;
 
 type Caja = { msgs: T.Msg[]; timer: ReturnType<typeof setTimeout> | null; fallos: number };
 const outbox = new Map<string, Caja>();
-let salidaPorDefecto: Salida | null = null;
+let salidaPorDefecto: Send | null = null;
 let reintento: ReturnType<typeof setInterval> | null = null;
 
 function guardar() {
   ensureDirs();
   const datos = [...outbox].map(([key, c]) => ({ key, msgs: c.msgs, fallos: c.fallos }));
   try {
-    if (datos.length) escribirAtomico(OUTBOX_FILE, JSON.stringify(datos));
+    if (datos.length) writeAtomic(OUTBOX_FILE, JSON.stringify(datos));
     else if (existsSync(OUTBOX_FILE)) unlinkSync(OUTBOX_FILE);
   } catch {}
 }
@@ -49,7 +49,7 @@ function unir(msgs: T.Msg[]): T.Msg {
   return unido;
 }
 
-async function sacar(key: string, salida: Salida) {
+async function sacar(key: string, salida: Send) {
   const caja = outbox.get(key);
   if (!caja) return;
   caja.timer = null;
@@ -63,7 +63,7 @@ async function sacar(key: string, salida: Salida) {
 }
 
 /** Cola un mensaje; sale solo cuando pasa la ventana de union sin que llegue otro. */
-export function encolar(t: T.Thread, m: T.Msg, salida: Salida, ventanaMs = UNION_MS) {
+export function enqueue(t: T.Thread, m: T.Msg, salida: Send, ventanaMs = MERGE_MS) {
   const key = `${t.id}:${m.from}`;
   // Un parche o una rama no se unen con nada: van tal cual.
   if (m.kind !== "text") { void salida(t, m); return; }
@@ -76,7 +76,7 @@ export function encolar(t: T.Thread, m: T.Msg, salida: Salida, ventanaMs = UNION
 }
 
 /** Lo que quedo en disco de un demonio anterior sale ahora; lo que falle, cada minuto. */
-export function reanudar(salida: Salida): number {
+export function resume(salida: Send): number {
   salidaPorDefecto = salida;
   let n = 0;
   if (existsSync(OUTBOX_FILE)) {
@@ -93,13 +93,13 @@ export function reanudar(salida: Salida): number {
     reintento = setInterval(() => {
       if (!salidaPorDefecto) return;
       for (const [key, c] of outbox) if (!c.timer) void sacar(key, salidaPorDefecto);
-    }, REINTENTO_MS);
+    }, RETRY_MS);
     reintento.unref();
   }
   return n;
 }
 
 /** Para los tests y `doctor`: cuantos mensajes esperan salir. */
-export function pendientes(): number {
+export function pending(): number {
   return [...outbox.values()].reduce((a, c) => a + c.msgs.length, 0);
 }

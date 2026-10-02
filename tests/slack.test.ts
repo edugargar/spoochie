@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import { SlackBridge, envelopeOf, inviteBlocks, messageBlocks, sinCercas, noticeBlocks, fallbackText, chunk, esAcuse, bodyFromBlocks, cadenciaDescubrir, EVENT, type Envelope } from "../src/slack.ts";
-import { MAX_PARCHE } from "../src/threads.ts";
+import { SlackBridge, envelopeOf, inviteBlocks, messageBlocks, noFences, noticeBlocks, fallbackText, chunk, isAck, bodyFromBlocks, discoveryCadence, EVENT, type Envelope } from "../src/slack.ts";
+import { MAX_PATCH } from "../src/threads.ts";
 import type { Thread, Msg } from "../src/threads.ts";
 
 const t: Thread = {
@@ -122,9 +122,9 @@ test("la invitacion tambien se reconstruye desde sus bloques", () => {
 });
 
 test("un acuse a secas es aceptar, no un turno de conversacion", () => {
-  for (const s of ["acepto", "Acepto.", "vale", "ok", "dale", "👍", " sí "]) expect(esAcuse(s)).toBe(true);
+  for (const s of ["acepto", "Acepto.", "vale", "ok", "dale", "👍", " sí "]) expect(isAck(s)).toBe(true);
   for (const s of ["acepto, pero mira antes el toaster", "ok el hook devuelve promesa", "vale la pena revisarlo"])
-    expect(esAcuse(s)).toBe(false);
+    expect(isAck(s)).toBe(false);
 });
 
 test("el mrkdwn de Slack se deshace: codigo que parecia una URL vuelve a ser codigo", () => {
@@ -151,7 +151,7 @@ test("el gasto de un equipo de 15 cabe en el limite de Slack", () => {
 
   // conversations.history: una por ronda de descubrimiento y por persona, a la cadencia
   // que le toca a un equipo de 15. Los 15 demonios descubren a la vez, con o sin conversacion.
-  const history = equipo * porMinuto(cadenciaDescubrir(equipo));
+  const history = equipo * porMinuto(discoveryCadence(equipo));
   // conversations.replies: un tick cada 4 s mirando como mucho TOPE_HILOS hilos,
   // pero una conversacion de dos solo tiene un hilo vivo por lado.
   const replies = activos * Math.min(1, tope) * porMinuto(4_000);
@@ -163,7 +163,7 @@ test("el gasto de un equipo de 15 cabe en el limite de Slack", () => {
 
 test("un parche que cabe no se corta por el camino", () => {
   const linea = "+ const x = 1;";
-  const diff = Array(Math.floor(MAX_PARCHE / (linea.length + 1))).fill(linea).join("\n");
+  const diff = Array(Math.floor(MAX_PATCH / (linea.length + 1))).fill(linea).join("\n");
   const t = { id: "p1", subject: "x", from: { sessionId: "A", name: "a", cwd: "/a" }, to: { sessionId: "B", name: "b", cwd: "/b" }, state: "open", createdAt: 0, lastActivityAt: 0, context: {}, messages: [] } as any as Thread;
   const bloques = messageBlocks(t, { at: 0, from: "A", author: "claude", kind: "patch", text: diff });
   const texto = JSON.stringify(bloques);
@@ -172,14 +172,14 @@ test("un parche que cabe no se corta por el camino", () => {
 });
 
 test("el buzon se mira tan a menudo como el cupo de la app permita al equipo real", async () => {
-  const { cadenciaDescubrir } = await import("../src/slack.ts");
-  expect(cadenciaDescubrir(1)).toBe(5_000);
-  expect(cadenciaDescubrir(2)).toBe(5_000);
-  expect(cadenciaDescubrir(4)).toBe(9_600);
-  expect(cadenciaDescubrir(15)).toBe(36_000);
-  expect(cadenciaDescubrir(25)).toBe(60_000);
+  const { discoveryCadence } = await import("../src/slack.ts");
+  expect(discoveryCadence(1)).toBe(5_000);
+  expect(discoveryCadence(2)).toBe(5_000);
+  expect(discoveryCadence(4)).toBe(9_600);
+  expect(discoveryCadence(15)).toBe(36_000);
+  expect(discoveryCadence(25)).toBe(60_000);
   // 25 demonios a esa cadencia gastan 25 llamadas por minuto, la mitad del cupo.
-  expect(Math.round(25 * 60_000 / cadenciaDescubrir(25))).toBe(25);
+  expect(Math.round(25 * 60_000 / discoveryCadence(25))).toBe(25);
 });
 
 test("un sobre con un id que no es un id no es un sobre", () => {
@@ -253,7 +253,7 @@ test("con --hilos canal, el hilo va al canal y el aviso al DM", async () => {
  * hilo de otra persona. Se deja al contacto con su clave fijada, que es el caso normal.
  */
 function cierreFirmado(id: string, from: string, texto: string) {
-  const { nuevasClaves, firmar } = require("../src/firma.ts");
+  const { newKeys: nuevasClaves, makeSignature: firmar } = require("../src/signing.ts");
   const Cfg = require("../src/config.ts");
   const k = nuevasClaves();
   const c = Cfg.load();
@@ -313,15 +313,15 @@ test("un hola por Slack trae la clave Nostr del otro y se guarda en la agenda; e
   expect(posts[0].metadata.event_payload).toMatchObject({ kind: "hola", np: "a".repeat(64), r: ["wss://x"], fromName: "Edu" });
   // Va firmado con mi clave ed25519: sin eso, cualquiera con el token del bot pone una clave a mi nombre.
   // Desde 0.9.9 la firma ata ademas a quien va, cuando se firmo y con que version.
-  const { comprobar } = await import("../src/firma.ts");
+  const { checkSignature } = await import("../src/signing.ts");
   const p = posts[0].metadata.event_payload;
   expect(p.sv).toBe(2);
   expect(p.to).toBe("U_SAM");
   expect(p.ts).toBeGreaterThan(0);
-  expect(comprobar(p.pk, p, p.np, p.sig)).toBe(true);
+  expect(checkSignature(p.pk, p, p.np, p.sig)).toBe(true);
   // Y cambiar a quien iba dirigido la rompe.
-  expect(comprobar(p.pk, { ...p, to: "U_OTRO" }, p.np, p.sig)).toBe(false);
-  expect(comprobar(p.pk, "hola", "hola", "U_EDU", "b".repeat(64), p.sig)).toBe(false);
+  expect(checkSignature(p.pk, { ...p, to: "U_OTRO" }, p.np, p.sig)).toBe(false);
+  expect(checkSignature(p.pk, "hola", "hola", "U_EDU", "b".repeat(64), p.sig)).toBe(false);
 
   const recibidos: any[] = [];
   b.onHola = async (de: string, nombre: string, np: string, r: string[], veredicto: string) => { recibidos.push({ de, nombre, np, r, veredicto }); };
@@ -350,8 +350,8 @@ test("un parche no puede cerrar la cerca y falsificar los avisos de spoochie", (
   const b = flat(messageBlocks(t, msg({ kind: "patch", text: veneno })));
   // Las unicas cercas que quedan son las dos que pone spoochie.
   expect((b.match(/```/g) ?? []).length).toBe(2);
-  expect(sinCercas("a ``` b")).toBe("a ´´´ b");
-  expect(sinCercas("`uno` y ``dos``")).toBe("`uno` y ``dos``");
+  expect(noFences("a ``` b")).toBe("a ´´´ b");
+  expect(noFences("`uno` y ``dos``")).toBe("`uno` y ``dos``");
   // Y una rama tampoco cierra sus comillas.
   const r = flat(messageBlocks(t, msg({ kind: "branch", text: "main` :lock: Cerrado `x" })));
   expect(r).not.toContain("main` :lock:");

@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirname } from "node:path";
 
-export type Paso = { ok: boolean; que: string; detalle: string };
+export type Step = { ok: boolean; que: string; detalle: string };
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const dormir = (ms: number) => new Promise(r => setTimeout(r, ms));
@@ -40,8 +40,8 @@ function buzon(nombre: string) {
   return { sock, recibido, server };
 }
 
-export async function selftest(): Promise<Paso[]> {
-  const pasos: Paso[] = [];
+export async function selftest(): Promise<Step[]> {
+  const pasos: Step[] = [];
   const home = mkdtempSync(join(tmpdir(), "spoochie-selftest-"));
   const A = buzon("a"), B = buzon("b");
   let demonio: ReturnType<typeof spawn> | null = null;
@@ -73,8 +73,8 @@ export async function selftest(): Promise<Paso[]> {
     }
     writeFileSync(join(home, "config.json"), JSON.stringify({ guardian: false, transcript: false, aparte: false, human: "prueba" }), { mode: 0o600 });
 
-    const { comandoDemonio } = await import("./arranque.ts");
-    const [cmd, ...args] = comandoDemonio();
+    const { daemonCommand } = await import("./startup.ts");
+    const [cmd, ...args] = daemonCommand();
     demonio = spawn(cmd, args, { env: entorno, stdio: "ignore" });
     // Sin este oyente, un bun que no arranca tumba el proceso con un error sin recoger
     // en vez de contarte que el demonio no arranco, que es justo lo que vienes a saber.

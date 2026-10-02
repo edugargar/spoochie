@@ -313,7 +313,7 @@ Not in a policy document: built, each with its test.
 
 ## The envelope, written down
 
-What travels between two machines is documented in [docs/PROTOCOLO.md](docs/PROTOCOLO.md):
+What travels between two machines is documented in [docs/PROTOCOL.md](docs/PROTOCOL.md):
 the fields, the exact bytes the signature covers, the order a receiver checks things in,
 and what happens to an envelope from a version it does not understand. It is there so
 something other than Claude Code can speak it, and so a change to the wire format is a
@@ -329,9 +329,9 @@ consumer AI assistants keeps finding broken, and a claim without a check is mark
 
 | The promise | What proves it |
 |---|---|
-| **No server of ours.** Nothing routes through infrastructure we run. | `tests/dos-maquinas-nostr.test.ts` runs two real daemons, two homes, two key sets, with no Slack and no relay of ours, and a full open/accept/answer/close. `tests/rele.test.ts` runs the real transport against a relay it can kill. |
+| **No server of ours.** Nothing routes through infrastructure we run. | `tests/two-machines-nostr.test.ts` runs two real daemons, two homes, two key sets, with no Slack and no relay of ours, and a full open/accept/answer/close. `tests/relay.test.ts` runs the real transport against a relay it can kill. |
 | **The model is yours.** No key of ours, no model of ours. | The guardian shells out to `claude -p` (`src/guardian.ts`), the side Claude is your `claude` binary. There is no API key anywhere in this repo, and the leak scanner fails the build if one appears. |
-| **Closing deletes it.** Not "hides", not "archives". | After a close, `tests/dos-maquinas-nostr.test.ts` walks **every file on both machines** and asserts the conversation text is in none of them. `tests/slack.test.ts` asserts the bot's own messages, files, root and notice are deleted. `doctor` re-checks it on a real machine and complains if a closed spoochie still holds text. |
+| **Closing deletes it.** Not "hides", not "archives". | After a close, `tests/two-machines-nostr.test.ts` walks **every file on both machines** and asserts the conversation text is in none of them. `tests/slack.test.ts` asserts the bot's own messages, files, root and notice are deleted. `doctor` re-checks it on a real machine and complains if a closed spoochie still holds text. |
 
 The keys stay yours too: `spoochie llavero on` moves them to the macOS keychain, and
 `spoochie rotar` changes your signing key without anyone re-inviting you.
@@ -603,7 +603,7 @@ for wiring from your `~/.claude/settings.json`.
 [CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the pull-request flow (`main` is
 protected, checks are required for everyone), the version policy and how a release is
 cut. [SECURITY.md](SECURITY.md) says how to report a vulnerability and what CI checks on
-every push, including the leak check in `scripts/fugas.ts`.
+every push, including the leak check in `scripts/leaks.ts`.
 
 ---
 
