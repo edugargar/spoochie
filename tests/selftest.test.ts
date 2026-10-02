@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { selftest } from "../src/selftest.ts";
-import { plazo } from "./espera.ts";
+import { plazo } from "./wait.ts";
 
 /**
  * Un paso en verde porque nunca llego a ejecutarse es peor que un fallo: te hace

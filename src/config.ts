@@ -1,7 +1,7 @@
 import { readFileSync, existsSync, renameSync, openSync, closeSync, unlinkSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { ROOT, ensureDirs, escribirAtomico } from "./paths.ts";
-import * as L from "./llavero.ts";
+import { ROOT, ensureDirs, writeAtomic } from "./paths.ts";
+import * as L from "./keychain.ts";
 
 export type Config = {
   /** Nombre con el que te ven los demas. Por defecto, tu usuario del sistema. */
@@ -86,7 +86,7 @@ const COPIA = `${FILE}.bak`;
  * entera, y guardar encima de algo que no entendemos los pierde para siempre.
  */
 let rota = false;
-export const configIlegible = () => rota;
+export const unreadableConfig = () => rota;
 
 function leerDe(ruta: string): Config | null {
   try {
@@ -119,12 +119,12 @@ export function load(): Config {
   ensureDirs();
   if (!existsSync(FILE)) { rota = false; ultimoLeido = null; return { ...DEFAULTS }; }
   const c = leerDe(FILE);
-  if (c) { rota = false; try { ultimoLeido = readFileSync(FILE, "utf8"); } catch { ultimoLeido = null; } return rellenarDelLlavero(c); }
+  if (c) { rota = false; try { ultimoLeido = readFileSync(FILE, "utf8"); } catch { ultimoLeido = null; } return fillFromKeychain(c); }
   const copia = leerDe(COPIA);
   if (copia) {
     rota = false;
     console.error(`spoochie: ${FILE} no se entiende; sigo con la copia de seguridad (${COPIA}). Mira los dos antes de tocar nada.`);
-    return rellenarDelLlavero(copia);
+    return fillFromKeychain(copia);
   }
   rota = true;
   console.error(`spoochie: ${FILE} no se entiende y no hay copia utilizable. NO voy a escribir encima: ahi estan tu clave de firma, tu clave Nostr, el token del bot y tu agenda. Guardalo a un lado y mira que tiene dentro.`);
@@ -136,35 +136,35 @@ export function load(): Config {
  * deja la senal: mejor que spoochie diga "no tengo clave" a que firme con la cadena
  * "@llavero" y el otro lado descarte los sobres sin saber por que.
  */
-export function rellenarDelLlavero(c: Config): Config {
-  const necesita = c.keys?.priv === L.SENAL || c.nostr?.sk === L.SENAL || c.slack?.botToken === L.SENAL;
+export function fillFromKeychain(c: Config): Config {
+  const necesita = c.keys?.priv === L.MARKER || c.nostr?.sk === L.MARKER || c.slack?.botToken === L.MARKER;
   if (!necesita) return c;
-  if (c.keys?.priv === L.SENAL) { const v = L.leer(L.CUENTAS.firma); if (v) c.keys = { ...c.keys, priv: v }; }
-  if (c.nostr?.sk === L.SENAL) { const v = L.leer(L.CUENTAS.nostr); if (v) c.nostr = { ...c.nostr, sk: v }; }
-  if (c.slack?.botToken === L.SENAL) { const v = L.leer(L.CUENTAS.bot); if (v) c.slack = { ...c.slack!, botToken: v }; }
+  if (c.keys?.priv === L.MARKER) { const v = L.read(L.ACCOUNTS.firma); if (v) c.keys = { ...c.keys, priv: v }; }
+  if (c.nostr?.sk === L.MARKER) { const v = L.read(L.ACCOUNTS.nostr); if (v) c.nostr = { ...c.nostr, sk: v }; }
+  if (c.slack?.botToken === L.MARKER) { const v = L.read(L.ACCOUNTS.bot); if (v) c.slack = { ...c.slack!, botToken: v }; }
   return c;
 }
 
 /** Mueve los tres secretos al llavero y deja la senal en el fichero. Devuelve cuales. */
-export function alLlavero(c: Config): string[] {
+export function toKeychain(c: Config): string[] {
   const movidos: string[] = [];
-  if (c.keys?.priv && c.keys.priv !== L.SENAL && L.guardar(L.CUENTAS.firma, c.keys.priv)) { c.keys.priv = L.SENAL; movidos.push("clave de firma"); }
-  if (c.nostr?.sk && c.nostr.sk !== L.SENAL && L.guardar(L.CUENTAS.nostr, c.nostr.sk)) { c.nostr.sk = L.SENAL; movidos.push("clave Nostr"); }
-  if (c.slack?.botToken && c.slack.botToken !== L.SENAL && L.guardar(L.CUENTAS.bot, c.slack.botToken)) { c.slack.botToken = L.SENAL; movidos.push("token del bot"); }
+  if (c.keys?.priv && c.keys.priv !== L.MARKER && L.store(L.ACCOUNTS.firma, c.keys.priv)) { c.keys.priv = L.MARKER; movidos.push("clave de firma"); }
+  if (c.nostr?.sk && c.nostr.sk !== L.MARKER && L.store(L.ACCOUNTS.nostr, c.nostr.sk)) { c.nostr.sk = L.MARKER; movidos.push("clave Nostr"); }
+  if (c.slack?.botToken && c.slack.botToken !== L.MARKER && L.store(L.ACCOUNTS.bot, c.slack.botToken)) { c.slack.botToken = L.MARKER; movidos.push("token del bot"); }
   return movidos;
 }
 
 /** Los saca del llavero y los devuelve al fichero. Para poder deshacer. */
-export function delLlavero(c: Config): string[] {
+export function fromKeychain(c: Config): string[] {
   const vueltos: string[] = [];
-  const par: [keyof typeof L.CUENTAS, (v: string) => void][] = [
+  const par: [keyof typeof L.ACCOUNTS, (v: string) => void][] = [
     ["firma", v => { c.keys = { ...c.keys!, priv: v }; }],
     ["nostr", v => { c.nostr = { ...c.nostr, sk: v }; }],
     ["bot", v => { c.slack = { ...c.slack!, botToken: v }; }],
   ];
   for (const [cuenta, poner] of par) {
-    const v = L.leer(L.CUENTAS[cuenta]);
-    if (v) { poner(v); L.borrar(L.CUENTAS[cuenta]); vueltos.push(cuenta); }
+    const v = L.read(L.ACCOUNTS[cuenta]);
+    if (v) { poner(v); L.remove(L.ACCOUNTS[cuenta]); vueltos.push(cuenta); }
   }
   return vueltos;
 }
@@ -193,7 +193,7 @@ export function slackBotToken(c: Config): string | null {
 
 /** Guarda un contacto por su nombre en minusculas y sin espacios, que es como se
  *  escribe despues de la arroba. */
-export function contactoPorNpub(c: Config, pk: string): { id: string; name: string; pk?: string; npub?: string; relays?: string[] } | null {
+export function contactByNpub(c: Config, pk: string): { id: string; name: string; pk?: string; npub?: string; relays?: string[] } | null {
   return Object.values(c.contacts ?? {}).find(x => x.npub === pk) ?? null;
 }
 
@@ -205,7 +205,7 @@ export function addContact(c: Config, p: { id: string; name: string; pk?: string
   }
   // El nombre lo pone el emisor del sobre y no va firmado: un id nuevo que se llame
   // "Edu" no puede quedarse con la entrada del Edu de verdad. Va con sufijo.
-  let clave = claveContacto(p.name);
+  let clave = contactKey(p.name);
   const ocupada = c.contacts?.[clave];
   if (ocupada && ocupada.id !== p.id) clave = `${clave}-${p.id.slice(-4).toLowerCase()}`;
   c.contacts = { ...(c.contacts ?? {}), [clave]: { ...previo, ...p, pk: p.pk ?? previo?.pk, npub: p.npub ?? previo?.npub, relays: p.relays ?? previo?.relays } };
@@ -215,10 +215,10 @@ export function contactById(c: Config, id: string): { id: string; name: string; 
   return Object.values(c.contacts ?? {}).find(x => x.id === id) ?? null;
 }
 
-export const claveContacto = (n: string) => n.toLowerCase().replace(/\s+/g, "");
+export const contactKey = (n: string) => n.toLowerCase().replace(/\s+/g, "");
 
 export function contact(c: Config, needle: string): { id: string; name: string; pk?: string } | null {
-  return c.contacts?.[claveContacto(needle)] ?? null;
+  return c.contacts?.[contactKey(needle)] ?? null;
 }
 
 const CANDADO = `${FILE}.lock`;
@@ -265,12 +265,12 @@ export function save(c: Config) {
   conCandado(() => {
     const enDisco = existsSync(FILE) ? readFileSync(FILE, "utf8") : null;
     if (enDisco !== null && enDisco !== ultimoLeido) recuperarLoDeOtros(c, enDisco);
-    const texto = JSON.stringify(enmascarar(c), null, 2);
+    const texto = JSON.stringify(mask(c), null, 2);
     // La copia del anterior primero, y luego el nuevo de una pieza (`escribirAtomico`).
     // Aqui dentro estan las tres claves y la agenda: si algo se tuerce, se quiere poder
     // volver atras, no solo no quedarse a medias.
     try { if (existsSync(FILE)) renameSync(FILE, COPIA); } catch {}
-    escribirAtomico(FILE, texto);
+    writeAtomic(FILE, texto);
     ultimoLeido = texto;
   });
 }
@@ -293,7 +293,7 @@ function recuperarLoDeOtros(c: Config, enDisco: string) {
 }
 
 /** Para las pruebas: olvida que la config estaba rota. */
-export function olvidarRota() { rota = false; }
+export function forgetBroken() { rota = false; }
 
 /**
  * Vuelve a poner la senal en los secretos que viven en el llavero.
@@ -303,12 +303,12 @@ export function olvidarRota() { rota = false; }
  * claro otra vez, y el llavero quedaba de adorno. Se decide preguntandole al llavero,
  * no recordando un estado: si ahi hay una clave para esa cuenta, en el fichero va la senal.
  */
-export function enmascarar(c: Config): Config {
-  if (!L.disponible()) return c;
+export function mask(c: Config): Config {
+  if (!L.available()) return c;
   const copia: Config = JSON.parse(JSON.stringify(c));
-  if (copia.keys?.priv && L.leer(L.CUENTAS.firma)) copia.keys.priv = L.SENAL;
-  if (copia.nostr?.sk && L.leer(L.CUENTAS.nostr)) copia.nostr.sk = L.SENAL;
-  if (copia.slack?.botToken && L.leer(L.CUENTAS.bot)) copia.slack.botToken = L.SENAL;
+  if (copia.keys?.priv && L.read(L.ACCOUNTS.firma)) copia.keys.priv = L.MARKER;
+  if (copia.nostr?.sk && L.read(L.ACCOUNTS.nostr)) copia.nostr.sk = L.MARKER;
+  if (copia.slack?.botToken && L.read(L.ACCOUNTS.bot)) copia.slack.botToken = L.MARKER;
   return copia;
 }
 
@@ -320,9 +320,9 @@ export function enmascarar(c: Config): Config {
  * que se guarda es un hecho que ya tenemos: cuando llego lo ultimo suyo. `spoochie
  * contacts` lo pinta, y con eso se decide si abrir un tunel ahora o escribir por Slack.
  */
-export function tocarContacto(remitente: { id?: string; npub?: string }, ahora = Date.now()) {
+export function touchContact(remitente: { id?: string; npub?: string }, ahora = Date.now()) {
   const c = load();
-  const x = (remitente.id ? contactById(c, remitente.id) : null) ?? (remitente.npub ? contactoPorNpub(c, remitente.npub) : null);
+  const x = (remitente.id ? contactById(c, remitente.id) : null) ?? (remitente.npub ? contactByNpub(c, remitente.npub) : null);
   if (!x) return;
   (x as { visto?: number }).visto = ahora;
   save(c);

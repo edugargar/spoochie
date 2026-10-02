@@ -10,11 +10,11 @@ export const ROOT = process.env.SPOOCHIE_HOME ?? join(homedir(), ".claude", "spo
  *  claves, agenda, hilos) vivia en ~/.claude/spochie: la primera vez que arranca la
  *  version nueva se lo lleva tal cual al directorio nuevo, para que nadie tenga que
  *  volver a darse de alta. Solo si el nuevo no existe todavia. */
-export function migrarEstado(viejo: string, nuevo: string): boolean {
+export function migrateState(viejo: string, nuevo: string): boolean {
   if (!existsSync(viejo) || existsSync(nuevo)) return false;
   try { renameSync(viejo, nuevo); return true; } catch { return false; }
 }
-if (!process.env.SPOOCHIE_HOME) migrarEstado(join(homedir(), ".claude", "spochie"), ROOT);
+if (!process.env.SPOOCHIE_HOME) migrateState(join(homedir(), ".claude", "spochie"), ROOT);
 export const SESSIONS_DIR = join(ROOT, "sessions");
 export const THREADS_DIR = join(ROOT, "threads");
 export const DAEMON_SOCK = join(ROOT, "daemon.sock");
@@ -66,7 +66,7 @@ const HEREDABLES = [
 /** Prefijos que si pasan enteros. `CLAUDE_` NO: ahi viven las del buzon. */
 const PREFIJOS_HEREDABLES = ["SPOOCHIE_", "ANTHROPIC_"];
 
-export function entornoLimpio(extra: Record<string, string | undefined> = {}, base = process.env): Record<string, string> {
+export function cleanEnv(extra: Record<string, string | undefined> = {}, base = process.env): Record<string, string> {
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(base)) {
     if (v === undefined) continue;
@@ -89,7 +89,7 @@ export function entornoLimpio(extra: Record<string, string | undefined> = {}, ba
  * Se escribe al lado y se renombra. El rename es atomico dentro del mismo disco: quien
  * lea ve el fichero viejo entero o el nuevo entero, nunca la mitad de ninguno.
  */
-export function escribirAtomico(ruta: string, texto: string, mode = 0o600) {
+export function writeAtomic(ruta: string, texto: string, mode = 0o600) {
   const temp = `${ruta}.nuevo`;
   writeFileSync(temp, texto, { mode });
   try {

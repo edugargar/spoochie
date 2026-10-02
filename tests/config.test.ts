@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { plazo } from "./espera.ts";
+import { plazo } from "./wait.ts";
 
 test("un nombre de contacto ya ocupado por otro id no se pisa: va con sufijo", async () => {
   const Cfg = await import("../src/config.ts");
@@ -47,13 +47,13 @@ test("una config a medias no se lleva por delante tus claves ni tu agenda", asyn
   expect(d.human).toBe("Edu");
   expect(d.keys?.priv).toBe("PRIV-DE-FIRMA");
   expect(Cfg.contactById(d, "U_ATOM")?.name).toBe("Sam");
-  expect(Cfg.configIlegible()).toBe(false);
+  expect(Cfg.unreadableConfig()).toBe(false);
 
   // Y si tampoco hay copia, se dice y NO se escribe encima: cambiar "no se leerla" por
   // "no existe" es perder las tres claves para siempre.
   writeFileSync(`${F}.bak`, "{ esto tampoco");
   const e = Cfg.load();
-  expect(Cfg.configIlegible()).toBe(true);
+  expect(Cfg.unreadableConfig()).toBe(true);
   const antes = readFileSync(F, "utf8");
   Cfg.save(e);
   expect(readFileSync(F, "utf8")).toBe(antes);
@@ -61,7 +61,7 @@ test("una config a medias no se lleva por delante tus claves ni tu agenda", asyn
 
   // Se deja como estaba para los demas tests del fichero.
   writeFileSync(F, entero);
-  Cfg.olvidarRota();
+  Cfg.forgetBroken();
   expect(Cfg.load().human).toBe("Edu");
 });
 

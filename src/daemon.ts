@@ -12,25 +12,25 @@ import { basename, join } from "node:path";
 import { DAEMON_SOCK, DAEMON_LOCK, DAEMON_LOG, ensureDirs } from "./paths.ts";
 import { liveSessions, findSession, unregister, type SessionRecord } from "./registry.ts";
 import * as T from "./threads.ts";
-import { encolar, reanudar } from "./outbox.ts";
-import { avisoNueva } from "./actualizacion.ts";
+import { enqueue, resume } from "./outbox.ts";
+import { newVersionNotice } from "./update.ts";
 import { VERSION } from "./version.ts";
-import { latir, LATIDO_MS } from "./arranque.ts";
-import * as Ap from "./aparte.ts";
-import * as Dlg from "./dialogo.ts";
-import * as Desconocidos from "./desconocidos.ts";
+import { beat, HEARTBEAT_MS } from "./startup.ts";
+import * as Ap from "./aside.ts";
+import * as Dlg from "./dialog.ts";
+import * as Desconocidos from "./strangers.ts";
 import * as Cfg from "./config.ts";
-import * as Conf from "./confianza.ts";
-import * as Aud from "./auditoria.ts";
+import * as Conf from "./trust.ts";
+import * as Aud from "./audit.ts";
 import { deliver } from "./inbox.ts";
 import { judge } from "./guardian.ts";
-import { publishTranscript, rutaTranscript } from "./transcript.ts";
-import { SPOOL, barrerHuerfanos } from "./files.ts";
-import { tocaHola } from "./holas.ts";
-import { holaPorNostr, holaPorSlack } from "./claves.ts";
+import { publishTranscript, transcriptPath } from "./transcript.ts";
+import { SPOOL, sweepOrphans } from "./files.ts";
+import { helloDue } from "./hellos.ts";
+import { helloByNostr, helloBySlack } from "./keys.ts";
 import { join } from "node:path";
 import { SlackBridge } from "./slack.ts";
-import { NostrBridge, poolDeFichero, pkDe, RELAYS_POR_DEFECTO } from "./nostr.ts";
+import { NostrBridge, filePool, pkOf, DEFAULT_RELAYS } from "./nostr.ts";
 import { repoMatches } from "./match.ts";
 
 /** Con un tick fijo de 20s, cada salto del tunel se comia hasta 20s de espera y una
@@ -63,7 +63,7 @@ const tieneHilo = (t: T.Thread) => Boolean(t.transporte === "nostr" ? t.nostr : 
 /** Pega la peticion de republicar el transcript al turno que ya va para esa sesion. */
 function conTranscript(t: T.Thread, sessionId: string, texto: string): string {
   if (!Cfg.load().transcript) return texto;
-  const tarea = T.tareaTranscript(t, sessionId, rutaTranscript(t.id));
+  const tarea = T.transcriptTask(t, sessionId, transcriptPath(t.id));
   return tarea ? texto + "\n" + tarea : texto;
 }
 
@@ -72,7 +72,7 @@ async function send(sess: SessionRecord | undefined, text: string) {
   const ap = sess.aparte ? apartes.get(sess.aparte) : undefined;
   if (ap) {
     // En segundo plano el aparte recibe por su entrada estandar, que es del demonio.
-    if (ap.modo === "fondo") return Ap.vivo(ap) ? Ap.turnoStdin(ap, text) : false;
+    if (ap.modo === "fondo") return Ap.alive(ap) ? Ap.stdinTurn(ap, text) : false;
     // La ventana aun no se ha registrado: se le guarda. Nada cae en otra sesion.
     if (!ap.listo) { ap.cola.push(text); return true; }
   }
@@ -81,7 +81,7 @@ async function send(sess: SessionRecord | undefined, text: string) {
 }
 
 /** Los Claudes aparte vivos, por id de spoochie. */
-const apartes = new Map<string, Ap.Aparte>();
+const apartes = new Map<string, Ap.Aside>();
 /** Lanzamientos en curso, para que dos accept/take a la vez no abran dos ventanas. */
 const atendiendo = new Map<string, Promise<SessionRecord | null>>();
 
@@ -97,22 +97,22 @@ function atender(t: T.Thread, cwd: string): Promise<SessionRecord | null> {
 const dormir = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 /** Arranca un `claude -p` y comprueba que no muere en el acto. */
-async function arrancarFondo(t: T.Thread, cwd: string): Promise<Ap.Aparte | null> {
-  const ap = Ap.lanzar(t, cwd, "fondo");
+async function arrancarFondo(t: T.Thread, cwd: string): Promise<Ap.Aside | null> {
+  const ap = Ap.launch(t, cwd, "fondo");
   if (!ap) return null;
   apartes.set(t.id, ap);
   ap.child!.on("error", e => log("aparte", t.id, "no arranca:", String(e)));
   ap.child!.on("exit", code => { if (apartes.get(t.id) === ap) apartes.delete(t.id); unregister(ap.sess.sessionId); log("aparte", t.id, "termino", code); });
   await dormir(300);
-  if (ap.child!.exitCode !== null) { log("aparte", t.id, "no arranca; mira", `${Ap.APARTE_DIR}/${t.id}.log`); apartes.delete(t.id); unregister(ap.sess.sessionId); return null; }
+  if (ap.child!.exitCode !== null) { log("aparte", t.id, "no arranca; mira", `${Ap.ASIDE_DIR}/${t.id}.log`); apartes.delete(t.id); unregister(ap.sess.sessionId); return null; }
   return ap;
 }
 
 /** Espera a que el hook SessionStart de la ventana escriba su registro con socket. */
-async function esperarVentana(ap: Ap.Aparte, ms: number): Promise<SessionRecord | undefined> {
+async function esperarVentana(ap: Ap.Aside, ms: number): Promise<SessionRecord | undefined> {
   const fin = Date.now() + ms;
   while (Date.now() < fin) {
-    const real = Ap.registroVentana(ap, liveSessions());
+    const real = Ap.windowRecord(ap, liveSessions());
     if (real) return real;
     await dormir(500);
   }
@@ -120,9 +120,9 @@ async function esperarVentana(ap: Ap.Aparte, ms: number): Promise<SessionRecord 
 }
 
 /** La ventana vieja se entera de que el spoochie se ha ido a otro sitio. */
-async function despedir(ap: Ap.Aparte, porque: string) {
-  if (ap.modo === "fondo") { Ap.matar(ap); return; }
-  const real = Ap.registroVentana(ap, liveSessions());
+async function despedir(ap: Ap.Aside, porque: string) {
+  if (ap.modo === "fondo") { Ap.killAside(ap); return; }
+  const real = Ap.windowRecord(ap, liveSessions());
   if (real) { try { await deliver(real, `[spoochie ${ap.id}] ${porque}. Esta ventana ya no atiende nada: puedes cerrarla.`); } catch {} }
   unregister(ap.sess.sessionId);
 }
@@ -131,18 +131,18 @@ async function atenderDeVerdad(t: T.Thread, cwd: string): Promise<SessionRecord 
   const viejo = apartes.get(t.id);
   // Ya hay uno vivo en ese mismo repo: no se relanza. Es lo que pasaba en e856, donde
   // dos accept seguidos mataron al primero y el segundo nacio en el repo equivocado.
-  if (viejo && Ap.vivo(viejo) && (viejo.origen ?? viejo.cwd) === cwd && sessById(viejo.sess.sessionId)) { log("aparte", t.id, "ya vivo en", cwd); return viejo.sess; }
+  if (viejo && Ap.alive(viejo) && (viejo.origen ?? viejo.cwd) === cwd && sessById(viejo.sess.sessionId)) { log("aparte", t.id, "ya vivo en", cwd); return viejo.sess; }
   if (viejo) { apartes.delete(t.id); await despedir(viejo, `pasa a atenderse desde ${cwd}`); }
 
   // Sobre una copia limpia del repo, no sobre el checkout de la persona.
   const origen = cwd;
-  const copia = Cfg.load().aparteCopia !== false ? Ap.copiaDeTrabajo(origen, t.id) : null;
+  const copia = Cfg.load().aparteCopia !== false ? Ap.worktreeCopy(origen, t.id) : null;
   if (Cfg.load().aparteCopia !== false && !copia) log("aparte", t.id, "sin copia (no es un repo git o fallo el worktree); en el checkout");
   cwd = copia ?? origen;
-  let ap = Ap.modo() === "ventana" ? Ap.lanzar(t, cwd, "ventana") : null;
+  let ap = Ap.asideMode() === "ventana" ? Ap.launch(t, cwd, "ventana") : null;
   if (ap) apartes.set(t.id, ap);
   else {
-    if (Ap.modo() === "ventana") log("aparte", t.id, "no pude abrir una ventana; va en segundo plano");
+    if (Ap.asideMode() === "ventana") log("aparte", t.id, "no pude abrir una ventana; va en segundo plano");
     ap = await arrancarFondo(t, cwd);
     if (!ap) return null;
   }
@@ -157,10 +157,10 @@ async function atenderDeVerdad(t: T.Thread, cwd: string): Promise<SessionRecord 
   // puede, y la sesion interactiva no debe verlo. El aparte es una sesion de Claude: lo hace el.
   if (Cfg.load().transcript && !fresco.transcriptOwner) fresco.transcriptOwner = ap.sess.sessionId;
   T.save(fresco);
-  const primero = conTranscript(fresco, ap.sess.sessionId, Ap.primerTurno(fresco, ap.sess.sessionId, Ap.comandoCli(), cwd, copia ? origen : undefined));
+  const primero = conTranscript(fresco, ap.sess.sessionId, Ap.firstTurn(fresco, ap.sess.sessionId, Ap.cliCommand(), cwd, copia ? origen : undefined));
 
   if (ap.modo === "fondo") {
-    Ap.turnoStdin(ap, primero);
+    Ap.stdinTurn(ap, primero);
     log("aparte", t.id, "atendido en segundo plano en", cwd);
     return ap.sess;
   }
@@ -176,8 +176,8 @@ async function atenderDeVerdad(t: T.Thread, cwd: string): Promise<SessionRecord 
     if (f2.transcriptOwner === ap.sess.sessionId) f2.transcriptOwner = fondo.sess.sessionId;
     T.save(f2);
     fondo.origen = origen;
-    Ap.turnoStdin(fondo, conTranscript(f2, fondo.sess.sessionId, Ap.primerTurno(f2, fondo.sess.sessionId, Ap.comandoCli(), cwd, copia ? origen : undefined)));
-    for (const x of ap.cola) Ap.turnoStdin(fondo, x);
+    Ap.stdinTurn(fondo, conTranscript(f2, fondo.sess.sessionId, Ap.firstTurn(f2, fondo.sess.sessionId, Ap.cliCommand(), cwd, copia ? origen : undefined)));
+    for (const x of ap.cola) Ap.stdinTurn(fondo, x);
     return fondo.sess;
   }
   ap.sess = real;
@@ -195,7 +195,7 @@ async function avisarDondeSeAtiende(t: T.Thread, sess: SessionRecord | null, cwd
   if (!sess || !p || !tieneHilo(t)) return;
   const como = apartes.get(t.id)?.modo === "ventana" ? "en una ventana nueva" : "en segundo plano";
   const copia = (T.load(t.id) ?? t).copiaDe ? ", sobre una copia limpia" : "";
-  const nueva = await avisoNueva();
+  const nueva = await newVersionNotice();
   await p.aviso(t, `:desktop_computer: ${Cfg.load().human ?? "aqui"} lo atiende un Claude aparte ${como}, en \`${basename(cwd)}\`${copia}.${nueva ? ` (${nueva})` : ""}`);
 }
 
@@ -246,7 +246,7 @@ async function handle(req: Req): Promise<any> {
         // se queda para avisar. Con --transporte slack, o sin clave, va por Slack.
         const npubOtro = (u as any).npub as string | undefined;
         if (nostr && npubOtro && cfg.transporte !== "slack") {
-          porNostr = { pk: npubOtro, relays: (u as any).relays ?? RELAYS_POR_DEFECTO };
+          porNostr = { pk: npubOtro, relays: (u as any).relays ?? DEFAULT_RELAYS };
           to = { sessionId: `nostr:${npubOtro}`, name: u.name, cwd: "(otra maquina)", human: u.name, slackUser: u.id.startsWith("nostr:") ? undefined : u.id };
         } else {
           if (!slack) return { ok: false, error: `${req.to} no tiene clave Nostr en tu agenda y aqui no hay Slack: pidele que se de de alta con tu invitacion` };
@@ -310,7 +310,7 @@ async function handle(req: Req): Promise<any> {
       if (Cfg.load().transcript) { t.transcriptOwner = me.sessionId; T.save(t); }
       const delivered = remote ? true : await sendToSide(t, t.to, T.renderInvite(t, t.to.sessionId));
       log("open", t.id, me.name, "->", to.name, delivered ? "entregado" : "FALLO");
-      Aud.apuntar("abierto", t.id, cfg.human ?? me.name, `-> ${to.human ?? to.name} · ${t.subject}`);
+      Aud.record("abierto", t.id, cfg.human ?? me.name, `-> ${to.human ?? to.name} · ${t.subject}`);
       return { ok: true, id: t.id, to: to.name, delivered, transcript: t.transcriptUrl };
     }
 
@@ -342,7 +342,7 @@ async function handle(req: Req): Promise<any> {
       }
       await refreshTranscript(t);
       log("accept", t.id, "por", t.acceptedBy, aparte ? `aparte en ${aparte}` : "aqui");
-      return { ok: true, id: t.id, state: t.state, aparte, ventana: aparte ? Ap.modo() === "ventana" : undefined };
+      return { ok: true, id: t.id, state: t.state, aparte, ventana: aparte ? Ap.asideMode() === "ventana" : undefined };
     }
 
     case "say": {
@@ -386,7 +386,7 @@ async function handle(req: Req): Promise<any> {
         // cerro el tunel dando por perdidos mensajes que habian salido en 3 s.
         let avisarSalida: (ok: boolean) => void = () => {};
         const salida = new Promise<boolean>(r => { avisarSalida = r; });
-        encolar(t, m, async (tt, mm) => {
+        enqueue(t, m, async (tt, mm) => {
           const otro = T.otherSide(tt, req.sessionId);
           const ok = await sendToSide(tt, otro, T.renderMessage(tt, mm, otro.sessionId), mm);
           log("salida", tt.id, ok ? `publicado ${porDonde(tt)}` : "FALLO al publicar");
@@ -417,14 +417,14 @@ async function handle(req: Req): Promise<any> {
     case "olvidar": {
       const c = Cfg.load();
       const quien = String(req.quien ?? "").replace(/^@/, "");
-      const clave = Cfg.claveContacto(quien);
+      const clave = Cfg.contactKey(quien);
       const x = c.contacts?.[clave];
       if (!x) return { ok: false, error: `no tengo a "${quien}" en la agenda` };
       const suyos = T.all().filter(t => t.state !== "closed" && (t.from.slackUser === x.id || t.to.slackUser === x.id || t.nostr?.otro === x.npub));
       for (const t of suyos) await closeThread(t, req.motivo ?? `${x.name} fuera de la agenda`, req.sessionId);
       delete c.contacts![clave];
       Cfg.save(c);
-      Aud.apuntar("confianza", "-", Cfg.load().human ?? "esta maquina", `olvidado ${x.name} (${x.id})${req.motivo ? ` · ${req.motivo}` : ""}`);
+      Aud.record("confianza", "-", Cfg.load().human ?? "esta maquina", `olvidado ${x.name} (${x.id})${req.motivo ? ` · ${req.motivo}` : ""}`);
       log("olvidar", x.id, x.name, `${suyos.length} spoochies cerrados`);
       return { ok: true, quien: x.name, cerrados: suyos.map(t => t.id) };
     }
@@ -465,12 +465,12 @@ async function handle(req: Req): Promise<any> {
     case "search": {
       return {
         ok: true,
-        hits: T.buscar(req.q).map(h => ({
+        hits: T.search(req.q).map(h => ({
           id: h.t.id, subject: h.t.subject, state: h.t.state, donde: h.donde,
           con: (h.t.from.human ?? h.t.from.name) + " y " + (h.t.to.human ?? h.t.to.name),
           cuando: new Date(h.t.createdAt).toISOString().slice(0, 16).replace("T", " "),
           rama: h.t.context.branch,
-          extracto: h.msg ? T.contexto(h.msg.text, req.q) : undefined,
+          extracto: h.msg ? T.snippet(h.msg.text, req.q) : undefined,
           transcript: h.t.transcriptUrl,
         })),
       };
@@ -513,7 +513,7 @@ async function handle(req: Req): Promise<any> {
       const t = T.load(req.id);
       if (!t) return { ok: false, error: `spoochie ${req.id} no existe` };
       if (t.state === "closed") return { ok: false, error: `spoochie ${req.id} esta cerrado` };
-      const actual = t.state === "open" && !T.esRemoto(t.to.sessionId) ? sessById(t.to.sessionId) : undefined;
+      const actual = t.state === "open" && !T.isRemote(t.to.sessionId) ? sessById(t.to.sessionId) : undefined;
       // Un aparte si se puede mover de repo con take; otra sesion interactiva viva, no.
       if (actual && !actual.aparte) return { ok: false, error: `spoochie ${req.id} ya lo atiende ${t.to.name}` };
       // Tomarlo desde una sesion fija el directorio. Si ya esta aceptado y toca Claude
@@ -524,7 +524,7 @@ async function handle(req: Req): Promise<any> {
         const mismo = (apActual?.origen ?? apActual?.cwd) === me.cwd && actual?.aparte;
         void atender(t, me.cwd).then(s => { if (!mismo) return avisarDondeSeAtiende(t, s, me.cwd); });
         log("take", t.id, "->", me.name, mismo ? "ya estaba en" : "aparte en", me.cwd);
-        return { ok: true, id: t.id, aparte: me.cwd, already: Boolean(mismo), ventana: Ap.modo() === "ventana" };
+        return { ok: true, id: t.id, aparte: me.cwd, already: Boolean(mismo), ventana: Ap.asideMode() === "ventana" };
       }
       if (actual?.aparte) {
         // --aqui sobre un spoochie que atendia un aparte: el aparte se despide.
@@ -555,7 +555,7 @@ async function handle(req: Req): Promise<any> {
       // Esta URL acaba publicada en el hilo de la otra persona. El aparte tiene
       // `spoochie transcript` en su lista blanca, asi que sin esto era una salida de
       // datos desde una maquina cuyo Claude es de solo lectura.
-      const v = T.urlDeTranscript(req.url);
+      const v = T.transcriptUrlOf(req.url);
       if (!v.ok) return { ok: false, error: v.error };
       req.url = v.url;
       t.transcriptUrl = v.url;
@@ -655,7 +655,7 @@ function siguienteAviso() {
  *  es un dialogo del sistema y la sesion no ve nada: solo presta su directorio para el
  *  Claude aparte. Sin escritorio, la invitacion entra en esa sesion como antes. */
 async function assign(t: T.Thread): Promise<string | null> {
-  if (t.state !== "pending" || !T.esRemoto(t.to.sessionId)) return null;
+  if (t.state !== "pending" || !T.isRemote(t.to.sessionId)) return null;
   // Quien abrio el tunel no es el destinatario: si se lo repartiera a si mismo,
   // se pisaria el nombre del otro lado y el transcript diria "Sam y Sam".
   const yo = Cfg.load().slack?.userId;
@@ -666,14 +666,14 @@ async function assign(t: T.Thread): Promise<string | null> {
   T.save(t);
   // Consentimiento permanente y acotado: esta persona, este repo. Sin dialogo, pero
   // no en silencio: queda dicho en el hilo, que es donde la persona lo ve luego.
-  if (Conf.entraSolo(Cfg.load(), { slackUser: t.from.slackUser, npub: t.nostr?.otro }, pick.cwd)) {
-    log("assign", t.id, "-> aceptado solo (confianza en", Conf.nombreRepo(pick.cwd) + ")");
-    if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, `:key: aceptado sin preguntar: tienes puesto que los spoochies de ${t.from.human ?? t.from.name} sobre *${Conf.nombreRepo(pick.cwd)}* entran solos. Quitalo con \`spoochie confiar ${t.from.human ?? t.from.name} --repo ${Conf.nombreRepo(pick.cwd)} --quitar\`.`);
-    Aud.apuntar("aceptado-solo", t.id, Cfg.load().human ?? "esta maquina", `de ${t.from.human ?? t.from.name} · repo ${Conf.nombreRepo(pick.cwd)}`);
+  if (Conf.autoAccepts(Cfg.load(), { slackUser: t.from.slackUser, npub: t.nostr?.otro }, pick.cwd)) {
+    log("assign", t.id, "-> aceptado solo (confianza en", Conf.repoName(pick.cwd) + ")");
+    if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, `:key: aceptado sin preguntar: tienes puesto que los spoochies de ${t.from.human ?? t.from.name} sobre *${Conf.repoName(pick.cwd)}* entran solos. Quitalo con \`spoochie confiar ${t.from.human ?? t.from.name} --repo ${Conf.repoName(pick.cwd)} --quitar\`.`);
+    Aud.record("aceptado-solo", t.id, Cfg.load().human ?? "esta maquina", `de ${t.from.human ?? t.from.name} · repo ${Conf.repoName(pick.cwd)}`);
     await onSlackAccept(t, "por consentimiento permanente");
     return pick.sessionId;
   }
-  if (Dlg.modoAviso() === "dialogo") {
+  if (Dlg.noticeMode() === "dialogo") {
     encolarAviso(t, pick);
     log("assign", t.id, "-> dialogo, repo de", pick.name);
     return pick.sessionId;
@@ -701,7 +701,7 @@ async function assign(t: T.Thread): Promise<string | null> {
  * sin leer se te dice (`avisarDeLoNoLeido`).
  */
 function avisarConDialogo(t: T.Thread, pick: SessionRecord) {
-  const aviso = Dlg.preguntar(t);
+  const aviso = Dlg.ask(t);
   dialogos.set(t.id, aviso);
   void aviso.respuesta.then(async r => {
     if (dialogos.get(t.id) === aviso) dialogos.delete(t.id);
@@ -711,9 +711,9 @@ function avisarConDialogo(t: T.Thread, pick: SessionRecord) {
     log("aviso", t.id, "dialogo:", r ?? "sin respuesta");
     // Mientras el dialogo estaba abierto pudo aceptarse en Slack o caducar: manda el estado.
     if (!fresco || fresco.state !== "pending") return;
-    if (r === "acepto") { Aud.apuntar("aceptado", fresco.id, Cfg.load().human ?? "esta maquina", "en el dialogo"); await onSlackAccept(fresco, "en el aviso"); }
-    else if (r === "rechazo") { Aud.apuntar("rechazado", fresco.id, Cfg.load().human ?? "esta maquina", "en el dialogo"); await closeThread(fresco, `rechazado por ${Cfg.load().human ?? "la persona"}`, pick.sessionId); }
-    else if (r === "slack" && fresco.slack) Dlg.abrirEnSlack(slack ? await slack.teamId() : null, fresco.slack.channel, fresco.slack.ts);
+    if (r === "acepto") { Aud.record("aceptado", fresco.id, Cfg.load().human ?? "esta maquina", "en el dialogo"); await onSlackAccept(fresco, "en el aviso"); }
+    else if (r === "rechazo") { Aud.record("rechazado", fresco.id, Cfg.load().human ?? "esta maquina", "en el dialogo"); await closeThread(fresco, `rechazado por ${Cfg.load().human ?? "la persona"}`, pick.sessionId); }
+    else if (r === "slack" && fresco.slack) Dlg.openInSlack(slack ? await slack.teamId() : null, fresco.slack.channel, fresco.slack.ts);
   });
 }
 
@@ -730,7 +730,7 @@ async function onSlackAccept(t: T.Thread, quien: string) {
   // tick publicaban dos veces "ha aceptado". Se mira el estado fresco.
   if ((T.load(t.id) ?? t).state !== "pending") return;
   // Puede que el spoochie todavia no tenga sesion local: primero se le busca una.
-  if (T.esRemoto(t.to.sessionId)) await assign(t);
+  if (T.isRemote(t.to.sessionId)) await assign(t);
   const fresco = T.load(t.id) ?? t;
   fresco.state = "open";
   fresco.acceptedAt = Date.now();
@@ -745,7 +745,7 @@ async function onSlackAccept(t: T.Thread, quien: string) {
       // Con el aviso en dialogo, la sesion nunca supo del spoochie y no hay nada que
       // decirle. Con la invitacion en la terminal si: una linea, y es la ultima que ve;
       // sin ella su Claude se queda con "¿lo aceptas?" en el aire y hace accept o take.
-      if (Dlg.modoAviso() !== "dialogo") await send(local, `[spoochie ${fresco.id} | ${fresco.subject}] tu humano lo acepto ${quien}. Lo atiende un Claude aparte en una ventana nueva; a esta sesion no le llega nada mas. No hagas accept ni take.`);
+      if (Dlg.noticeMode() !== "dialogo") await send(local, `[spoochie ${fresco.id} | ${fresco.subject}] tu humano lo acepto ${quien}. Lo atiende un Claude aparte en una ventana nueva; a esta sesion no le llega nada mas. No hagas accept ni take.`);
       void atender(fresco, local.cwd).then(s => avisarDondeSeAtiende(fresco, s, local.cwd));
     } else {
       await send(local, `[spoochie ${fresco.id} | ${fresco.subject}] tu humano lo ha aceptado ${quien}. El tunel esta abierto: puedes contestar con  spoochie say ${fresco.id} "<texto>"`);
@@ -783,7 +783,7 @@ async function onSlackMessage(t: T.Thread, m: T.Msg) {
   if (t.state === "pending" && m.author === "human") { t.state = "open"; t.acceptedAt = m.at; t.acceptedBy = "humano en Slack"; }
   T.save(t);
   // Un spoochie recien descubierto todavia no tiene lado local: se le busca uno.
-  if (t.state === "pending" && T.esRemoto(t.to.sessionId)) {
+  if (t.state === "pending" && T.isRemote(t.to.sessionId)) {
     const asignada = await assign(t);
     log("slack-in", t.id, m.author, asignada ? "asignado" : "sin sesion a la que asignar");
     return;
@@ -827,7 +827,7 @@ async function vigilar(t: T.Thread, m: T.Msg): Promise<boolean> {
     T.save(t);
     const receptor = T.mySide(t, sessById(t.to.sessionId) ? t.to.sessionId : t.from.sessionId);
     if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, `:no_entry: *retenido por el vigilante*: ${v.why}. <@${receptor.slackUser ?? ""}> escribe \`suelta\` en este hilo para entregarlo, o \`descarta\`.`);
-    Aud.apuntar("retenido", t.id, quien.human ?? quien.name, v.why);
+    Aud.record("retenido", t.id, quien.human ?? quien.name, v.why);
     const local = sessById(receptor.sessionId);
     if (local) await send(local, `[spoochie ${t.id} | ${t.subject}] un mensaje de ${quien.human ?? quien.name} esta RETENIDO por el vigilante: ${v.why}. No lo has recibido. Tu humano decide: "suelta" o "descarta" en el hilo de Slack, o  spoochie release ${t.id}  /  spoochie discard ${t.id}`);
     return false;
@@ -838,7 +838,7 @@ async function vigilar(t: T.Thread, m: T.Msg): Promise<boolean> {
     // ruido cuando ya sabes con quien hablas, y el ruido acaba en que nadie lee los
     // avisos que si importan. La retencion de lo que pide actuar (arriba) no depende
     // de la confianza y no va a depender: ver confianza.ts.
-    const callado = Conf.nivelDe(Cfg.load(), { slackUser: quien.slackUser, npub: t.nostr?.otro }) === "alto" && v.verdict !== "sin vigilar";
+    const callado = Conf.levelOf(Cfg.load(), { slackUser: quien.slackUser, npub: t.nostr?.otro }) === "alto" && v.verdict !== "sin vigilar";
     if (!callado && puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, v.verdict === "sin vigilar" ? `:grey_question: ${v.why}.` : `:warning: el vigilante lo ve *${v.verdict}* del asunto: ${v.why}`);
   }
   return true;
@@ -856,7 +856,7 @@ async function soltar(t: T.Thread, orden: "suelta" | "descarta", como: string): 
     if (orden === "suelta" && local) await send(local, conTranscript(t, mio, T.renderMessage(t, m, mio)));
   }
   if (n) {
-    Aud.apuntar(orden === "suelta" ? "soltado" : "descartado", t.id, Cfg.load().human ?? "esta maquina", `${n} mensaje(s) · ${como}`);
+    Aud.record(orden === "suelta" ? "soltado" : "descartado", t.id, Cfg.load().human ?? "esta maquina", `${n} mensaje(s) · ${como}`);
     t.lastActivityAt = Date.now();
     T.save(t);
     if (puente(t) && tieneHilo(t)) await puente(t)!.aviso(t, orden === "suelta" ? `:unlock: ${n} mensaje(s) retenido(s) entregado(s) ${como}.` : `:wastebasket: ${n} mensaje(s) retenido(s) descartado(s) ${como}.`);
@@ -873,7 +873,7 @@ async function repartirClaveNostr() {
   if (!slack || !nostr) return;
   const c = Cfg.load();
   for (const k of Object.values(c.contacts ?? {})) {
-    if (k.npub || !/^[UW][A-Z0-9]{6,}$/.test(k.id) || !tocaHola(k.id)) continue;
+    if (k.npub || !/^[UW][A-Z0-9]{6,}$/.test(k.id) || !helloDue(k.id)) continue;
     const ok = await slack.hola(k.id, nostr.pk, nostr.relays, c.human ?? "alguien");
     log("nostr", "clave mandada por Slack a", k.name, ok ? "ok" : "FALLO");
   }
@@ -886,11 +886,11 @@ async function repartirClaveNostr() {
  * sobre, y asi se ensena, como dicho.
  */
 function avisarDesconocido(de: string, x: { kind: string; fromName?: string; slack?: string; motivo?: string }) {
-  const primera = Desconocidos.apuntar({ pk: de, kind: x.kind, nombre: x.fromName, slack: x.slack, motivo: x.motivo });
+  const primera = Desconocidos.record({ pk: de, kind: x.kind, nombre: x.fromName, slack: x.slack, motivo: x.motivo });
   if (!primera) return;
-  const nombre = Desconocidos.recientes().find(d => d.pk === de)?.nombre;
+  const nombre = Desconocidos.recent().find(d => d.pk === de)?.nombre;
   const que = x.kind === "hola" ? "se ha dado de alta, pero su clave no ha entrado en tu agenda" : "ha intentado abrirte un spoochie, y no esta en tu agenda";
-  Dlg.notificar("spoochie", `${nombre ? `Alguien que dice ser ${nombre}` : "Alguien"} ${que}. Mira spoochie doctor.`);
+  Dlg.notify("spoochie", `${nombre ? `Alguien que dice ser ${nombre}` : "Alguien"} ${que}. Mira spoochie doctor.`);
 }
 
 function arrancarNostr() {
@@ -902,7 +902,7 @@ function arrancarNostr() {
       // Alguien a quien invite ya esta dentro. Solo con el nonce de mi invitacion, y se
       // vincula a lo que yo apunte al invitar, no a lo que diga el hola (claves.ts).
       const c = Cfg.load();
-      const d = holaPorNostr(c, { de, nombre, k: sobre.k, relays: sobre.relays });
+      const d = helloByNostr(c, { de, nombre, k: sobre.k, relays: sobre.relays });
       if (!d.ok) {
         log("nostr", "hola RECHAZADO de", nombre, de.slice(0, 12), d.motivo);
         avisarDesconocido(de, { kind: "hola", fromName: nombre, slack: sobre.slack, motivo: d.motivo });
@@ -911,17 +911,17 @@ function arrancarNostr() {
       Cfg.save(c);
       log("nostr", "hola de", d.name, de.slice(0, 12), d.vinculo);
     },
-  }, process.env.SPOOCHIE_NOSTR_DIR ? poolDeFichero(process.env.SPOOCHIE_NOSTR_DIR) : undefined);
+  }, process.env.SPOOCHIE_NOSTR_DIR ? filePool(process.env.SPOOCHIE_NOSTR_DIR) : undefined);
   nostr?.escuchar();
   if (slack) {
     slack.onHola = async (de, nombre, np, r, veredicto) => {
       const c = Cfg.load();
-      const d = holaPorSlack(c, { de, nombre, np, relays: r, veredicto });
+      const d = helloBySlack(c, { de, nombre, np, relays: r, veredicto });
       if (!d.ok) { log("nostr", "clave por Slack RECHAZADA:", d.motivo); return; }
       Cfg.save(c);
       log("nostr", "clave recibida por Slack de", d.name, d.vinculo);
       // Si el no tiene la mia, se la mando (como mucho una vez al dia): converge en una vuelta.
-      if (nostr && tocaHola(de)) await slack!.hola(de, nostr.pk, nostr.relays, c.human ?? "alguien");
+      if (nostr && helloDue(de)) await slack!.hola(de, nostr.pk, nostr.relays, c.human ?? "alguien");
     };
   }
   setTimeout(() => { void repartirClaveNostr(); }, 3000).unref();
@@ -931,7 +931,7 @@ function arrancarNostr() {
 /** El cierre del otro lado. El motivo es texto suyo y acaba dicho dentro de esta
  *  sesion, asi que entra acotado: ver `motivoDeFuera`. */
 async function onRemoteClose(t: T.Thread, motivo: string) {
-  motivo = T.motivoDeFuera(motivo);
+  motivo = T.outsideReason(motivo);
   const fresco = T.load(t.id) ?? t;
   if (fresco.state === "closed") return;
   await closeThread(fresco, motivo, undefined, true);
@@ -957,7 +957,7 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string, remo
   }
   await refreshTranscript(t);
   log("close", t.id, reason, notified.join(" "));
-  Aud.apuntar("cerrado", t.id, bySession ? (Cfg.load().human ?? "esta maquina") : "el reloj", reason);
+  Aud.record("cerrado", t.id, bySession ? (Cfg.load().human ?? "esta maquina") : "el reloj", reason);
 
   // Proactividad acotada: hechos del hilo, nunca iniciativa sobre el trabajo.
   //
@@ -968,7 +968,7 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string, remo
   await avisarDeLoNoLeido(t, bySession);
   if (Cfg.load().borrarAlCerrar !== false) {
     // En local, ya: la conversacion vive en el Claude que la tuvo, no aqui.
-    T.purgar(t, { spool: join(SPOOL, t.id), transcript: rutaTranscript(t.id) });
+    T.purge(t, { spool: join(SPOOL, t.id), transcript: transcriptPath(t.id) });
     log("borrado", t.id, "local");
     const p = puente(t);
     if (p && tieneHilo(t)) {
@@ -976,8 +976,8 @@ async function closeThread(t: T.Thread, reason: string, bySession?: string, remo
     }
   }
   const ap = apartes.get(t.id);
-  if (t.copiaDe) { const [origen, copia] = [t.copiaDe, t.to.cwd]; setTimeout(() => { Ap.quitarCopia(origen, copia); log("aparte", t.id, "copia retirada"); }, 60_000).unref(); }
-  if (ap?.modo === "fondo") setTimeout(() => Ap.matar(ap), 15_000).unref();
+  if (t.copiaDe) { const [origen, copia] = [t.copiaDe, t.to.cwd]; setTimeout(() => { Ap.removeCopy(origen, copia); log("aparte", t.id, "copia retirada"); }, 60_000).unref(); }
+  if (ap?.modo === "fondo") setTimeout(() => Ap.killAside(ap), 15_000).unref();
   if (ap?.modo === "ventana" && ap.listo) { const r = sessById(ap.sess.sessionId); if (r) await send(r, `Este spoochie ha terminado. Puedes cerrar esta ventana.`); }
   if (ap) apartes.delete(t.id);
 }
@@ -1017,12 +1017,12 @@ function engancharRota() {
   if (!slack) return;
   slack.onRota = async (de, pkNueva, veredicto) => {
     const c = Cfg.load();
-    const { rotacionEntrante } = await import("./claves.ts");
-    const r = rotacionEntrante(c, de, pkNueva, veredicto);
-    if (!r.ok) { log("rota", de, "rechazada:", r.por); Aud.apuntar("clave-rechazada", "-", de, `rotacion: ${r.por}`); return; }
+    const { incomingRotation } = await import("./keys.ts");
+    const r = incomingRotation(c, de, pkNueva, veredicto);
+    if (!r.ok) { log("rota", de, "rechazada:", r.por); Aud.record("clave-rechazada", "-", de, `rotacion: ${r.por}`); return; }
     Cfg.save(c);
     log("rota", de, r.nombre, "clave cambiada");
-    Aud.apuntar("clave-fijada", "-", r.nombre, `rotacion aceptada · antes ${r.antes.slice(0, 12)}...`);
+    Aud.record("clave-fijada", "-", r.nombre, `rotacion aceptada · antes ${r.antes.slice(0, 12)}...`);
   };
 }
 
@@ -1037,19 +1037,19 @@ async function tick() {
       continue;
     }
     // Avisar antes de matarlo, en vez de que desaparezca sin decir nada.
-    if (t.state === "open" && !t.avisado && due - now < T.AVISO_ANTES_MS) {
+    if (t.state === "open" && !t.avisado && due - now < T.WARN_BEFORE_MS) {
       t.avisado = true;
       T.save(t);
       for (const side of [t.from, t.to]) {
         const s = sessById(side.sessionId);
-        if (s) await send(s, T.renderAviso(t, (due - now) / 1000, side.sessionId));
+        if (s) await send(s, T.renderNotice(t, (due - now) / 1000, side.sessionId));
       }
       log("aviso-silencio", t.id);
     }
   }
   // Lo que un contacto dejo en el spool de un hilo que nunca existio: los trozos pueden
   // llegar antes que la invitacion, pero si la invitacion no llega, nadie los reclama.
-  for (const id of barrerHuerfanos(id => Boolean(T.load(id)), T.PENDING_TTL_MS)) {
+  for (const id of sweepOrphans(id => Boolean(T.load(id)), T.PENDING_TTL_MS)) {
     log("spool-huerfano", id, "borrado: 4 h sin hilo que lo reclame");
   }
   if (slack) { try { await slack.poll(); } catch (e) { log("slack-poll-error", String(e)); } }
@@ -1072,7 +1072,7 @@ function barrerCerradosConTexto() {
   let n = 0;
   for (const t of T.all()) {
     if (t.state !== "closed" || !t.messages.some(m => (m.text ?? "").length > 0)) continue;
-    T.purgar(t, { spool: join(SPOOL, t.id), transcript: rutaTranscript(t.id) });
+    T.purge(t, { spool: join(SPOOL, t.id), transcript: transcriptPath(t.id) });
     n++;
   }
   if (n) log("barrido", `${n} spoochie(s) cerrados guardaban texto de cuando se cerraban sin barrer; borrado`);
@@ -1085,13 +1085,13 @@ function main() {
   if (existsSync(DAEMON_SOCK)) unlinkSync(DAEMON_SOCK);
   writeFileSync(DAEMON_LOCK, String(process.pid));
   // El latido es lo unico que distingue un demonio vivo de uno colgado.
-  latir();
-  setInterval(latir, LATIDO_MS).unref();
+  beat();
+  setInterval(beat, HEARTBEAT_MS).unref();
   slack = SlackBridge.fromConfig(onSlackMessage, onSlackAccept, onRemoteAccept, (t, o) => soltar(t, o, "desde Slack").then(() => {}), onRemoteClose);
   engancharRota();
   arrancarNostr();
   // Lo que un demonio anterior dejo sin sacar, y las ventanas de aparte que siguen vivas.
-  const reanudados = reanudar(async (tt, mm) => {
+  const reanudados = resume(async (tt, mm) => {
     const yo = sessById(tt.from.sessionId) ? tt.from : tt.to;
     const otro = T.otherSide(tt, yo.sessionId);
     const ok = await sendToSide(tt, otro, T.renderMessage(tt, mm, otro.sessionId), mm);
@@ -1100,7 +1100,7 @@ function main() {
   });
   if (reanudados) log("cola", "reanudados", reanudados);
   for (const s of liveSessions()) {
-    if (!s.aparte || s.socket === Ap.SOCKET_PENDIENTE || s.socket === "(stdin)") continue;
+    if (!s.aparte || s.socket === Ap.PENDING_SOCKET || s.socket === "(stdin)") continue;
     const th = T.load(s.aparte);
     apartes.set(s.aparte, { id: s.aparte, cwd: s.cwd, modo: "ventana", sess: s, cola: [], listo: true, muerto: false, origen: th?.copiaDe });
     log("aparte", s.aparte, "reenganchado, ventana pid", s.pid);

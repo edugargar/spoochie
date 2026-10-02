@@ -76,7 +76,7 @@ first envelope from a Slack id nobody has heard from (its key is pinned on sight
 
 - The test suite on Linux and macOS, including two real daemons talking over a
   directory that stands in for the relays.
-- `scripts/fugas.ts`: no real Slack ids, tokens, private keys, 64-hex keys, or emails
+- `scripts/leaks.ts`: no real Slack ids, tokens, private keys, 64-hex keys, or emails
   outside a short domain list, in the tree, in commit messages, or as author/committer.
   Plus a private word list (a repository secret) that this file will not reproduce.
 - GitHub secret scanning with push protection is on for the repository.

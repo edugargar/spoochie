@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { SESSIONS_DIR, ensureDirs, escribirAtomico } from "./paths.ts";
+import { SESSIONS_DIR, ensureDirs, writeAtomic } from "./paths.ts";
 
 export type SessionRecord = {
   sessionId: string;
@@ -25,7 +25,7 @@ const file = (id: string) => join(SESSIONS_DIR, `${nombreSeguro(id)}.json`);
 
 export function register(rec: SessionRecord) {
   ensureDirs();
-  escribirAtomico(file(rec.sessionId), JSON.stringify(rec, null, 2));
+  writeAtomic(file(rec.sessionId), JSON.stringify(rec, null, 2));
 }
 
 export function unregister(sessionId: string) {
@@ -44,7 +44,7 @@ function alive(pid: number) {
  * lo afloja (un rsync, un backup, un umask raro) el token queda legible para otros
  * usuarios de la maquina. Mejor negarse y decirlo que seguir como si nada.
  */
-export function permisosFlojos(ruta: string): boolean {
+export function loosePermissions(ruta: string): boolean {
   try { return (statSync(ruta).mode & 0o077) !== 0; } catch { return false; }
 }
 
@@ -55,7 +55,7 @@ export function liveSessions(): SessionRecord[] {
   for (const f of readdirSync(SESSIONS_DIR)) {
     if (!f.endsWith(".json")) continue;
     const p = join(SESSIONS_DIR, f);
-    if (permisosFlojos(p)) { console.error(`spoochie: ignoro ${f}, tiene permisos abiertos (chmod 600)`); continue; }
+    if (loosePermissions(p)) { console.error(`spoochie: ignoro ${f}, tiene permisos abiertos (chmod 600)`); continue; }
     let rec: SessionRecord;
     try { rec = JSON.parse(readFileSync(p, "utf8")); } catch { continue; }
     // Un Claude aparte recibe por stdin del demonio: no tiene socket que comprobar.

@@ -22,5 +22,5 @@ process.env.SPOOCHIE_SIN_RED = "1";
  * que el mando de la maquina lenta seguia sin llegar a todo.
  */
 import { setDefaultTimeout } from "bun:test";
-import { plazo } from "./espera.ts";
+import { plazo } from "./wait.ts";
 setDefaultTimeout(plazo(20_000));

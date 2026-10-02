@@ -172,7 +172,7 @@ ${t.messages.map(m => msgHtml(t, m)).join("\n")}
 </main>`;
 }
 
-export const rutaTranscript = (id: string) => join(TRANSCRIPTS_DIR, `${id}.html`);
+export const transcriptPath = (id: string) => join(TRANSCRIPTS_DIR, `${id}.html`);
 
 /** Escribe el HTML y devuelve su ruta. La URL la pone la sesion de Claude al publicarlo. */
 export function writeTranscript(t: Thread): string {
