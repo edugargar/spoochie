@@ -1,51 +1,47 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
-  <!-- Spoochie: un perro con gafas de sol que lleva recados entre dos maquinas. Dibujo propio. -->
+  <!-- spoochie: a dog in sunglasses that carries messages between two machines. Our own drawing. -->
   <defs>
-    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#F2A65A"/>
-      <stop offset="1" stop-color="#D97B2B"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1E8576"/>
+      <stop offset="1" stop-color="#11564C"/>
     </linearGradient>
-    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#3B3F4A"/>
-      <stop offset="0.55" stop-color="#14161B"/>
-      <stop offset="1" stop-color="#2A2E38"/>
+    <linearGradient id="fur" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F5AC5E"/>
+      <stop offset="1" stop-color="#E08533"/>
+    </linearGradient>
+    <linearGradient id="lens" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3A4050"/>
+      <stop offset="0.5" stop-color="#12141A"/>
+      <stop offset="1" stop-color="#262B36"/>
     </linearGradient>
   </defs>
 
-  <!-- fondo: el tunel -->
-  <circle cx="256" cy="256" r="236" fill="#1F7A6D"/>
-  <circle cx="256" cy="256" r="236" fill="none" stroke="#155A50" stroke-width="14"/>
-  <circle cx="256" cy="256" r="196" fill="none" stroke="#2AA08F" stroke-width="10" stroke-dasharray="26 18"/>
+  <!-- tile -->
+  <rect x="16" y="16" width="480" height="480" rx="112" fill="url(#bg)"/>
 
-  <!-- orejas -->
-  <path d="M112 170 C 70 190, 62 300, 118 332 C 150 348, 172 300, 160 240 C 152 200, 140 170, 112 170 Z" fill="#B8601F" stroke="#5A2E0C" stroke-width="10" stroke-linejoin="round"/>
-  <path d="M400 170 C 442 190, 450 300, 394 332 C 362 348, 340 300, 352 240 C 360 200, 372 170, 400 170 Z" fill="#B8601F" stroke="#5A2E0C" stroke-width="10" stroke-linejoin="round"/>
+  <!-- ears: long and floppy, hanging below the jaw, so it reads as a dog at 16 px -->
+  <path d="M150 150 C 96 150, 70 230, 82 318 C 90 372, 134 384, 158 350 C 176 322, 178 250, 186 196 Z" fill="#8E4A1A"/>
+  <path d="M362 150 C 416 150, 442 230, 430 318 C 422 372, 378 384, 354 350 C 336 322, 334 250, 326 196 Z" fill="#8E4A1A"/>
 
-  <!-- cabeza -->
-  <ellipse cx="256" cy="262" rx="150" ry="140" fill="url(#fur)" stroke="#5A2E0C" stroke-width="10"/>
-  <!-- mancha clara del hocico -->
-  <ellipse cx="256" cy="322" rx="84" ry="58" fill="#FBE3C2"/>
+  <!-- head -->
+  <path d="M256 120 C 340 120, 372 176, 372 236 C 372 300, 346 352, 256 352 C 166 352, 140 300, 140 236 C 140 176, 172 120, 256 120 Z" fill="url(#fur)"/>
 
-  <!-- gafas de sol -->
-  <rect x="120" y="214" width="112" height="70" rx="26" fill="url(#glass)" stroke="#0B0C10" stroke-width="8"/>
-  <rect x="280" y="214" width="112" height="70" rx="26" fill="url(#glass)" stroke="#0B0C10" stroke-width="8"/>
-  <path d="M232 244 Q 256 230 280 244" fill="none" stroke="#0B0C10" stroke-width="10" stroke-linecap="round"/>
-  <path d="M120 240 L 100 232" stroke="#0B0C10" stroke-width="10" stroke-linecap="round"/>
-  <path d="M392 240 L 412 232" stroke="#0B0C10" stroke-width="10" stroke-linecap="round"/>
-  <!-- reflejo -->
-  <path d="M140 232 L 170 228" stroke="#A9B4C7" stroke-width="8" stroke-linecap="round" opacity="0.8"/>
-  <path d="M300 232 L 330 228" stroke="#A9B4C7" stroke-width="8" stroke-linecap="round" opacity="0.8"/>
+  <!-- muzzle -->
+  <path d="M256 268 C 312 268, 338 300, 334 336 C 330 378, 298 400, 256 400 C 214 400, 182 378, 178 336 C 174 300, 200 268, 256 268 Z" fill="#FCE6C8"/>
 
-  <!-- nariz y boca -->
-  <ellipse cx="256" cy="310" rx="26" ry="18" fill="#2B1608"/>
-  <path d="M256 328 L 256 348" stroke="#5A2E0C" stroke-width="8" stroke-linecap="round"/>
-  <path d="M216 350 Q 256 384 296 350" fill="none" stroke="#5A2E0C" stroke-width="8" stroke-linecap="round"/>
-  <!-- lengua -->
-  <path d="M244 364 Q 256 392 268 364 Z" fill="#E5657A" stroke="#5A2E0C" stroke-width="6" stroke-linejoin="round"/>
+  <!-- sunglasses -->
+  <path d="M146 214 H 366" stroke="#0E1015" stroke-width="12" stroke-linecap="round"/>
+  <rect x="158" y="200" width="88" height="62" rx="20" fill="url(#lens)" stroke="#0E1015" stroke-width="8"/>
+  <rect x="266" y="200" width="88" height="62" rx="20" fill="url(#lens)" stroke="#0E1015" stroke-width="8"/>
+  <path d="M176 216 L 204 216" stroke="#9AA3B8" stroke-width="7" stroke-linecap="round"/>
+  <path d="M284 216 L 312 216" stroke="#9AA3B8" stroke-width="7" stroke-linecap="round"/>
 
-  <!-- collar con chapa -->
-  <path d="M150 386 Q 256 432 362 386" fill="none" stroke="#2AA08F" stroke-width="22" stroke-linecap="round"/>
-  <path d="M150 386 Q 256 432 362 386" fill="none" stroke="#155A50" stroke-width="6" stroke-linecap="round"/>
-  <circle cx="256" cy="436" r="30" fill="#F6C453" stroke="#5A2E0C" stroke-width="8"/>
-  <text x="256" y="449" font-family="Helvetica, Arial, sans-serif" font-weight="700" font-size="36" text-anchor="middle" fill="#5A2E0C">s</text>
+  <!-- nose -->
+  <path d="M256 290 C 284 290, 298 300, 292 314 C 286 328, 268 334, 256 334 C 244 334, 226 328, 220 314 C 214 300, 228 290, 256 290 Z" fill="#1B1210"/>
+  <ellipse cx="246" cy="300" rx="10" ry="5" fill="#5A4640"/>
+
+  <!-- mouth and tongue -->
+  <path d="M256 334 V 352" stroke="#1B1210" stroke-width="7" stroke-linecap="round"/>
+  <path d="M222 356 Q 256 382 290 356" fill="none" stroke="#1B1210" stroke-width="7" stroke-linecap="round"/>
+  <path d="M260 366 C 262 384, 270 396, 282 394 C 294 392, 294 376, 288 362 Z" fill="#F07A8A" stroke="#1B1210" stroke-width="5" stroke-linejoin="round"/>
 </svg>
