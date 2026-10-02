@@ -216,7 +216,7 @@ async function main() {
   // Without Accessibility permission macOS silently drops the synthetic click. Then
   // a person clicks, which is as real as it gets, and the report says who clicked.
   const manualClick = spawnSync("swift", [SWIFT, "permission"], { encoding: "utf8" }).stdout.trim() !== "yes";
-  if (manualClick) console.log("No Accessibility permission: when the notice shows up, click "Let it in" yourself.\n");
+  if (manualClick) console.log("No Accessibility permission: when the notice shows up, click 'Let it in' yourself.\n");
   const sha = git("rev-parse", "HEAD");
   const dirty = git("status", "--porcelain", "--untracked-files=no");
   console.log(`real test on ${sha.slice(0, 7)}${dirty ? " (dirty tree: there will be no seal)" : ""}, lab in ${LAB}\n`);
@@ -287,7 +287,7 @@ async function main() {
     const [x, y, w, h] = rect;
     if (manualClick) {
       spawnSync("osascript", ["-e", `display notification "Click Let it in on the spoochie notice" with title "real test"`]);
-      process.stdout.write("\x07>>> Click "Let it in" on the spoochie notice (you have 3 minutes)\n");
+      process.stdout.write("\x07>>> Click 'Let it in' on the spoochie notice (you have 3 minutes)\n");
     } else {
       // Buttons: 28 tall, bottom edge at MARGIN-8 = 18 from the foot, the accept one flush with the right margin (26).
       spawnSync("swift", [SWIFT, "click", String(x + w - 26 - 40), String(y + h - 18 - 14)]);
