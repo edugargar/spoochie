@@ -18,7 +18,7 @@
 
 <p align="center">
   <a href="docs/media/spoochie.mp4"><img src="docs/media/demo.gif" width="860" alt="Alice's Claude asks Bob's Claude why a modal breaks; Bob lets it in; a read-only Claude on Bob's machine finds the cause and the answer lands in Alice's session"></a><br>
-  <sub><a href="docs/media/spoochie.mp4">Watch the 70-second video</a></sub>
+  <sub><a href="docs/media/spoochie.mp4">Watch the 60-second video</a></sub>
 </p>
 
 <p align="center">

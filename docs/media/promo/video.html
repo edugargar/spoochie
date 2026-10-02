@@ -2,353 +2,383 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>spoochie promo</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=block" rel="stylesheet">
+<title>spoochie launch</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=block" rel="stylesheet">
 <style>
-  :root {
-    --bg: #0A0E13; --bg2: #0F161D; --ink: #EEF3F6; --mute: #8A99A6; --dim: #55636F;
-    --teal: #1E8576; --teal2: #2BB3A0; --orange: #F29A45; --line: #1C2731;
-    --term: #121417; --termbar: #1E2125; --claude: #D97757; --green: #6BD38E; --yellow: #E8C66A;
-  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--ink); font-family: Inter, sans-serif; -webkit-font-smoothing: antialiased; }
-  #stage { position: absolute; inset: 0; overflow: hidden; }
-  .bgglow { position: absolute; inset: -200px; background:
-      radial-gradient(900px 600px at 20% 30%, rgba(30,133,118,.20), transparent 60%),
-      radial-gradient(800px 600px at 85% 75%, rgba(242,154,69,.10), transparent 60%); }
-  .grid { position: absolute; inset: 0; background-image:
-      linear-gradient(rgba(255,255,255,.025) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255,255,255,.025) 1px, transparent 1px);
-      background-size: 64px 64px; }
-  .scene { position: absolute; inset: 0; opacity: 0; }
-  .center { display: flex; flex-direction: column; align-items: center; justify-content: center; }
-  .kicker { font: 600 22px Inter; letter-spacing: .18em; text-transform: uppercase; color: var(--teal2); }
-  .h1 { font: 800 92px/1.02 Inter; letter-spacing: -.035em; }
-  .h2 { font: 700 60px/1.08 Inter; letter-spacing: -.03em; }
-  .lead { font: 500 30px/1.4 Inter; color: var(--mute); }
-  .cap { position: absolute; left: 0; right: 0; bottom: 70px; text-align: center; font: 600 38px Inter; letter-spacing: -.01em; }
-  .cap small { display: block; margin-top: 12px; font: 500 24px Inter; color: var(--mute); letter-spacing: 0; }
-
-  /* terminal */
-  .term { position: absolute; background: var(--term); border-radius: 14px; border: 1px solid #2A2E34;
-          box-shadow: 0 40px 90px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.03) inset; overflow: hidden; }
-  .term .bar { height: 44px; background: var(--termbar); display: flex; align-items: center; padding: 0 18px; gap: 9px; border-bottom: 1px solid #2A2E34; }
-  .dot { width: 14px; height: 14px; border-radius: 50%; }
-  .term .title { flex: 1; text-align: center; font: 500 17px Inter; color: #9AA3AD; margin-right: 60px; }
-  .term .body { padding: 26px 30px; font: 400 22px/1.55 'JetBrains Mono', monospace; color: #D7DCE1; white-space: pre-wrap; }
-  .who { position: absolute; top: -52px; left: 4px; font: 600 24px Inter; color: var(--ink); display: flex; gap: 12px; align-items: center; }
-  .avatar { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font: 700 17px Inter; color: #0A0E13; }
-  .prompt { color: var(--mute); }
-  .bullet { color: var(--ink); }
-  .tool { color: var(--green); }
-  .muted { color: #7E8790; }
-  .turn { display: block; background: rgba(217,119,87,.13); border-left: 4px solid var(--claude); padding: 10px 16px; margin: 6px 0; color: #F1D9CF; }
-  .caret { display: inline-block; width: 12px; height: 26px; background: #D7DCE1; vertical-align: -5px; }
-  .badge { display: inline-flex; align-items: center; gap: 10px; padding: 12px 20px; border-radius: 999px; background: rgba(43,179,160,.12); border: 1px solid rgba(43,179,160,.35); color: #BFEDE5; font: 600 21px Inter; }
-
-  /* notice */
-  .notice { position: absolute; width: 640px; background: rgba(40,42,46,.97); border-radius: 18px; border: 1px solid #45484E;
-            box-shadow: 0 50px 120px rgba(0,0,0,.6); padding: 34px 36px 28px; color: #ECECEC; }
-  .notice .row { display: flex; gap: 22px; }
-  .notice img { width: 84px; height: 84px; }
-  .notice .t1 { font: 700 27px Inter; }
-  .notice .t2 { font: 600 22px Inter; margin-top: 8px; }
-  .notice .t3 { font: 500 18px Inter; color: #A9AEB4; margin-top: 4px; }
-  .notice .q { font: 400 21px/1.45 Inter; margin-top: 18px; color: #DADDE0; }
-  .notice .foot { font: 400 17px/1.45 Inter; margin-top: 16px; color: #A2A7AD; }
-  .notice .btns { display: flex; justify-content: flex-end; gap: 12px; margin-top: 26px; }
-  .btn { padding: 9px 20px; border-radius: 8px; background: #5A5D63; font: 500 19px Inter; color: #F1F1F1; }
-  .btn.primary { background: #2F7BF5; }
-  .cursor { position: absolute; width: 34px; height: 46px; }
-
-  /* tunnel */
-  .node { position: absolute; width: 300px; height: 300px; border-radius: 40px; background: #111A22; border: 1px solid #22313D; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
-  .node .lbl { font: 600 26px Inter; }
-  .node .sub { font: 500 19px Inter; color: var(--mute); }
-  .env { position: absolute; width: 120px; height: 84px; }
-  .relay { position: absolute; width: 22px; height: 22px; border-radius: 50%; background: #1A2833; border: 2px solid #2BB3A0; }
-
-  /* cards */
-  .card { position: absolute; width: 520px; height: 330px; border-radius: 26px; background: linear-gradient(180deg, #121B23, #0E151B); border: 1px solid #22313D; padding: 44px 42px; }
-  .card .n { font: 700 22px 'JetBrains Mono'; color: var(--teal2); }
-  .card .h { font: 700 40px/1.1 Inter; letter-spacing: -.02em; margin-top: 22px; }
-  .card .p { font: 500 22px/1.45 Inter; color: var(--mute); margin-top: 18px; }
-  .chip { font: 500 22px 'JetBrains Mono'; color: var(--mute); }
-  .code { white-space: pre; font: 500 30px/1.7 'JetBrains Mono'; background: #0F161D; border: 1px solid #22313D; border-radius: 18px; padding: 30px 44px; color: #DDE6EC; }
-  .code .c { color: var(--teal2); }
-  .tick { color: var(--teal2); }
+  html, body { width: 1920px; height: 1080px; overflow: hidden; background: #05080B; color: #F2F6F8; font-family: Inter, sans-serif; -webkit-font-smoothing: antialiased; }
+  #cam { position: absolute; inset: 0; transform-origin: 50% 50%; }
+  .layer { position: absolute; inset: 0; display: none; }
+  .bg { position: absolute; inset: 0; background: radial-gradient(1200px 800px at 50% 40%, #0C1A1F, #05080B 70%); }
+  .grid { position: absolute; inset: -200px; background-image: linear-gradient(rgba(43,179,160,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(43,179,160,.07) 1px, transparent 1px); background-size: 80px 80px; }
+  .clip { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  .shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,8,11,.15), rgba(5,8,11,.75)); }
+  .big { font: 900 150px/0.95 Inter; letter-spacing: -.05em; text-align: center; }
+  .mid { font: 800 96px/1 Inter; letter-spacing: -.04em; text-align: center; }
+  .sm { font: 600 40px/1.25 Inter; letter-spacing: -.01em; text-align: center; color: #C9D6DD; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  .teal { color: #2BD4BC; } .orange { color: #FF8A3D; } .dim { color: #7F909B; }
+  .glitch { position: relative; display: inline-block; }
+  .glitch::before, .glitch::after { content: attr(data-t); position: absolute; left: 0; top: 0; width: 100%; mix-blend-mode: screen; }
+  .glitch::before { color: #FF2D55; transform: translate(var(--gx, 0px), 0); opacity: var(--go, 0); }
+  .glitch::after { color: #00E5FF; transform: translate(calc(var(--gx, 0px) * -1), 0); opacity: var(--go, 0); }
+  .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+  .term { position: absolute; background: rgba(16,18,21,.96); border: 1px solid #2B3036; border-radius: 16px; box-shadow: 0 60px 140px rgba(0,0,0,.7); overflow: hidden; }
+  .term .bar { height: 46px; background: #1C1F23; display: flex; align-items: center; gap: 10px; padding: 0 18px; border-bottom: 1px solid #2B3036; }
+  .term .bar i { width: 14px; height: 14px; border-radius: 50%; display: block; }
+  .term .bar span { flex: 1; text-align: center; font: 500 18px Inter; color: #8E99A3; margin-right: 66px; }
+  .term .body { padding: 28px 34px; font: 400 27px/1.55 'JetBrains Mono', monospace; color: #DCE2E7; white-space: pre-wrap; }
+  .g { color: #6BD38E; } .m { color: #7E8790; }
+  .turn { display: block; background: rgba(255,138,61,.12); border-left: 5px solid #FF8A3D; padding: 10px 18px; margin: 6px 0; color: #FFE1CF; }
+  .caret { display: inline-block; width: 15px; height: 32px; background: #DCE2E7; vertical-align: -6px; }
+  .notice { position: absolute; width: 760px; border-radius: 22px; padding: 40px 44px 34px; background: rgba(92,94,98,.72); backdrop-filter: blur(30px); border: 1px solid rgba(255,255,255,.18); box-shadow: 0 70px 160px rgba(0,0,0,.7); color: #fff; }
+  .notice .h { font: 700 44px Inter; letter-spacing: -.01em; }
+  .notice .s { font: 500 25px Inter; color: #E6E6E6; margin-top: 8px; }
+  .notice hr { border: 0; border-top: 1px solid rgba(255,255,255,.25); margin: 22px 0; }
+  .notice .q { border-left: 4px solid #FF8A3D; padding-left: 20px; font: 400 25px/1.45 Inter; color: #F4F4F4; }
+  .notice .f { font: 400 20px/1.45 Inter; color: #C9C9C9; }
+  .notice .btns { display: flex; justify-content: flex-end; gap: 14px; margin-top: 28px; }
+  .notice .b { padding: 12px 26px; border-radius: 10px; background: rgba(255,255,255,.22); font: 500 23px Inter; }
+  .notice .b.ok { background: #FF7A2F; }
+  .chip { display: inline-block; padding: 16px 30px; border-radius: 999px; font: 700 34px Inter; background: rgba(43,212,188,.12); border: 2px solid rgba(43,212,188,.5); color: #C8FFF5; }
+  .stat { text-align: center; }
+  .stat b { display: block; font: 900 190px/1 Inter; letter-spacing: -.05em; }
+  .stat span { display: block; font: 600 36px Inter; color: #9FB2BD; margin-top: 10px; }
+  .proof { position: relative; border-radius: 14px; overflow: hidden; box-shadow: 0 40px 100px rgba(0,0,0,.7); border: 2px solid rgba(255,255,255,.15); }
+  .proof img { display: block; }
+  .tag { position: absolute; padding: 10px 18px; border-radius: 8px; background: #FF2D55; font: 800 24px Inter; letter-spacing: .12em; color: #fff; }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+  #vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,.6)); pointer-events: none; }
+  #scan { position: absolute; inset: 0; background: repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 2px, transparent 2px 4px); pointer-events: none; opacity: 0; }
+  canvas { position: absolute; inset: 0; }
 </style>
 </head>
 <body>
-<div id="stage">
-  <div class="bgglow"></div>
-  <div class="grid"></div>
-
-  <!-- 1. title -->
-  <div class="scene center" id="s1">
-    <img id="s1logo" src="../../spoochie.svg" width="230" height="230">
-    <div id="s1word" class="h1" style="margin-top:34px; font-size:120px">spoochie</div>
-    <div id="s1tag" class="lead" style="margin-top:20px; font-size:36px; color:#C7D2DA">Your Claude can ask your teammate's Claude.</div>
-  </div>
-
-  <!-- 2. problem -->
-  <div class="scene" id="s2">
-    <div style="position:absolute; top:96px; left:0; right:0; text-align:center">
-      <div class="kicker" id="s2k">Today</div>
-      <div class="h2" id="s2h" style="margin-top:16px">People carry answers between Claude sessions.</div>
-    </div>
-    <div class="term" id="s2a" style="left:150px; top:330px; width:620px; height:420px">
-      <div class="bar"><div class="dot" style="background:#FF5F57"></div><div class="dot" style="background:#FEBC2E"></div><div class="dot" style="background:#28C840"></div><div class="title">alice · web-app</div></div>
-      <div class="body"><span class="prompt">&gt;</span> why does the modal break
-  on save on Bob's branch?
-
-<span class="bullet">●</span> I can't see Bob's branch.
-  Could you ask Bob?</div>
-    </div>
-    <div class="term" id="s2b" style="left:1150px; top:330px; width:620px; height:420px">
-      <div class="bar"><div class="dot" style="background:#FF5F57"></div><div class="dot" style="background:#FEBC2E"></div><div class="dot" style="background:#28C840"></div><div class="title">bob · web-app (fix/modal)</div></div>
-      <div class="body"><span class="prompt">&gt;</span> <span id="s2paste">[pasted from Slack]</span>
-
-<span class="bullet">●</span> Reading Modal.css...</div>
-    </div>
-    <div id="s2chips"></div>
-    <div class="cap" id="s2cap"><span id="s2count"></span> per question.<small>The humans are the couriers.</small></div>
-  </div>
-
-  <!-- 3. ask -->
-  <div class="scene" id="s3">
-    <div class="term" id="s3t" style="left:240px; top:230px; width:1440px; height:520px">
-      <div class="bar"><div class="dot" style="background:#FF5F57"></div><div class="dot" style="background:#FEBC2E"></div><div class="dot" style="background:#28C840"></div><div class="title">alice · web-app · claude</div></div>
-      <div class="body" id="s3body"></div>
-    </div>
-    <div class="cap" id="s3cap">Alice asks in plain words.<small>Her Claude opens a spoochie: a short tunnel to Bob's Claude, about one subject.</small></div>
-  </div>
-
-  <!-- 4. tunnel -->
-  <div class="scene" id="s4">
-    <div style="position:absolute; top:110px; left:0; right:0; text-align:center">
-      <div class="kicker">The tunnel</div>
-      <div class="h2" style="margin-top:16px">Encrypted end to end. No server of ours.</div>
-    </div>
-    <div class="node" style="left:230px; top:380px"><div class="avatar" style="width:84px;height:84px;font-size:38px;background:#F29A45">A</div><div class="lbl">Alice's Mac</div><div class="sub">daemon · her Claude</div></div>
-    <div class="node" style="left:1390px; top:380px"><div class="avatar" style="width:84px;height:84px;font-size:38px;background:#2BB3A0">B</div><div class="lbl">Bob's Mac</div><div class="sub">daemon · his Claude</div></div>
-    <svg id="s4path" style="position:absolute; left:0; top:0" width="1920" height="1080">
-      <path id="tunnelpath" d="M 560 530 C 800 380, 1120 380, 1360 530" fill="none" stroke="#2BB3A0" stroke-width="3" stroke-dasharray="10 12" opacity=".7"/>
-    </svg>
-    <div class="relay" style="left:749px; top:428px"></div>
-    <div class="relay" style="left:949px; top:405px"></div>
-    <div class="relay" style="left:1149px; top:428px"></div>
-    <div style="position:absolute; left:0; right:0; top:350px; text-align:center" class="chip">public Nostr relays · NIP-44 · NIP-59 gift wrap</div>
-    <svg class="env" id="s4env" viewBox="0 0 120 84"><rect x="2" y="2" width="116" height="80" rx="10" fill="#F2E3C9" stroke="#C99B5A" stroke-width="3"/><path d="M4 8 L60 48 L116 8" fill="none" stroke="#C99B5A" stroke-width="3"/><circle cx="60" cy="56" r="17" fill="#1E8576"/><rect x="52" y="54" width="16" height="12" rx="2" fill="#F2E3C9"/><path d="M55 54 v-4 a5 5 0 0 1 10 0 v4" fill="none" stroke="#F2E3C9" stroke-width="3"/></svg>
-    <div class="cap" id="s4cap">A relay sees an encrypted blob for a public key.<small>Signed envelopes, keys pinned on first sight, only contacts you invited can reach you.</small></div>
-  </div>
-
-  <!-- 5. notice -->
-  <div class="scene" id="s5">
-    <div style="position:absolute; top:110px; left:0; right:0; text-align:center">
-      <div class="kicker">On Bob's Mac</div>
-      <div class="h2" style="margin-top:16px">Nothing opens until Bob says yes.</div>
-    </div>
-    <div class="notice" id="s5n" style="left:640px; top:330px">
-      <div class="row">
-        <img src="../../spoochie.svg">
-        <div style="flex:1">
-          <div class="t1">Alice is calling.</div>
-          <div class="t2">The modal breaks on save</div>
-          <div class="t3">fix/modal · 2 files</div>
-          <div class="q">"Hi, this is Alice's Claude. On fix/modal the save button of the edit modal is off-screen at 600 px. What changed?"</div>
-          <div class="foot">A read-only Claude answers, in a separate window.<br>Your own sessions never see it.</div>
-        </div>
-      </div>
-      <div class="btns"><div class="btn">Not now</div><div class="btn">Open in Slack</div><div class="btn primary" id="s5ok">Let it in</div></div>
-    </div>
-    <svg class="cursor" id="s5cur" viewBox="0 0 34 46"><path d="M3 2 L3 36 L12 28 L18 42 L24 39 L18 26 L30 26 Z" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/></svg>
-    <div class="cap" id="s5cap">A native notice, outside every terminal.<small>His open sessions are never interrupted.</small></div>
-  </div>
-
-  <!-- 6. side claude -->
-  <div class="scene" id="s6">
-    <div class="term" id="s6t" style="left:240px; top:150px; width:1440px; height:640px">
-      <div class="bar"><div class="dot" style="background:#FF5F57"></div><div class="dot" style="background:#FEBC2E"></div><div class="dot" style="background:#28C840"></div><div class="title">spoochie-4bc0 · read-only copy of fix/modal</div></div>
-      <div class="body" id="s6body"></div>
-    </div>
-    <div id="s6badges" style="position:absolute; left:0; right:0; top:830px; display:flex; justify-content:center; gap:18px">
-      <span class="badge">Read-only</span><span class="badge">Clean worktree copy</span><span class="badge">Gatekeeper on every command</span><span class="badge">Haiku guards what arrives</span>
-    </div>
-    <div class="cap" id="s6cap" style="bottom:50px">A separate Claude reads Bob's files and answers.</div>
-  </div>
-
-  <!-- 7. answer -->
-  <div class="scene" id="s7">
-    <div class="term" id="s7t" style="left:240px; top:170px; width:1440px; height:640px">
-      <div class="bar"><div class="dot" style="background:#FF5F57"></div><div class="dot" style="background:#FEBC2E"></div><div class="dot" style="background:#28C840"></div><div class="title">alice · web-app · claude</div></div>
-      <div class="body" id="s7body"></div>
-    </div>
-    <div class="cap" id="s7cap">The answer lands in Alice's session as one more turn.<small>Zero copy-pastes. Both sides can follow the thread.</small></div>
-  </div>
-
-  <!-- 8. promises -->
-  <div class="scene" id="s8">
-    <div style="position:absolute; top:130px; left:0; right:0; text-align:center">
-      <div class="kicker">Three promises, each one a test in CI</div>
-      <div class="h2" style="margin-top:16px">Built for code that is not yours to share.</div>
-    </div>
-    <div class="card" id="c1" style="left:150px; top:420px"><div class="n">01</div><div class="h">No server of ours.</div><div class="p">Two daemons and public relays. Nothing routes through infrastructure we run.</div></div>
-    <div class="card" id="c2" style="left:700px; top:420px"><div class="n">02</div><div class="h">The model is yours.</div><div class="p">Both sides run their own Claude Code. No API key of ours anywhere.</div></div>
-    <div class="card" id="c3" style="left:1250px; top:420px"><div class="n">03</div><div class="h">Closing deletes it.</div><div class="p">Messages, files and transcript are erased on both machines and asked off the relays.</div></div>
-  </div>
-
-  <!-- 9. install + end -->
-  <div class="scene center" id="s9">
-    <div class="kicker">Two commands in Claude Code</div>
-    <div class="code" id="s9code" style="margin-top:30px"><span class="c">/plugin</span> marketplace add edugargar/spoochie
-<span class="c">/plugin</span> install spoochie@edugargar</div>
-    <div class="lead" id="s9l" style="margin-top:30px">Then paste the one-line invite your teammate sends you. Open source, MIT.</div>
-  </div>
-  <div class="scene center" id="s10">
-    <img src="../../spoochie.svg" width="170" height="170">
-    <div class="h1" style="margin-top:28px">spoochie</div>
-    <div class="lead" style="margin-top:16px; color:#C7D2DA">Claude Code, between people.</div>
-    <div class="chip" style="margin-top:46px; font-size:28px; color:#9FB0BC">github.com/edugargar/spoochie</div>
-  </div>
+<div id="cam">
+  <div class="bg"></div>
+  <div class="grid" id="grid"></div>
+  <canvas id="fx" width="1920" height="1080"></canvas>
+  <div id="layers"></div>
 </div>
+<div id="scan"></div>
+<div id="vignette"></div>
+<div id="flash"></div>
 
 <script>
-const $ = id => document.getElementById(id);
-const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
-const ease = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const BPM = 140, BEAT = 60 / BPM, BAR = 4 * BEAT, DURATION = 34 * BAR + 1.5;
+const b = n => n * BAR;            // bar to seconds
+const bt = n => n * BEAT;          // beat to seconds
+const clamp = (x, a = 0, c = 1) => Math.min(c, Math.max(a, x));
+const prog = (t, a, d) => clamp((t - a) / d);
 const out = x => 1 - Math.pow(1 - x, 3);
-const prog = (t, a, b) => clamp((t - a) / (b - a));
-const lerp = (a, b, k) => a + (b - a) * k;
+const outBack = x => { const c1 = 1.9, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const inOut = x => x < .5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+const lerp = (a, c, k) => a + (c - a) * k;
+const rnd = s => { const x = Math.sin(s * 12.9898) * 43758.5453; return x - Math.floor(x); };
 
-// scene windows [start, end]; each fades in over 0.5 s and out over 0.5 s
-const SCENES = { s1: [0, 4.6], s2: [4.4, 12.6], s3: [12.4, 20.6], s4: [20.4, 27.6], s5: [27.4, 35.6],
-                 s6: [35.4, 45.6], s7: [45.4, 52.6], s8: [52.4, 59.6], s9: [59.4, 64.6], s10: [64.4, 70] };
-const DURATION = 70;
+// Kicks, as in music.py: four on the floor in the builds, 1 and 3.5 in the drops.
+const KICKS = [];
+for (let k = 4; k < 8; k++) for (let i = 0; i < 4; i++) KICKS.push(b(k) + bt(i));
+for (let k = 20; k < 24; k++) for (let i = 0; i < 4; i++) KICKS.push(b(k) + bt(i));
+for (const [s, n] of [[8, 8], [24, 8]]) for (let k = s; k < s + n; k++) { KICKS.push(b(k)); KICKS.push(b(k) + bt(2.5)); }
+KICKS.push(b(32));
+const SNARES = [];
+for (const [s, n] of [[8, 8], [24, 8]]) for (let k = s; k < s + n; k++) SNARES.push(b(k) + bt(2));
+const DROPS = [b(8), b(24), b(32)];
+function sinceLast(list, t) { let best = 99; for (const x of list) if (x <= t && t - x < best) best = t - x; return best; }
 
-function sceneAlpha(t, [a, b]) {
-  if (t < a || t > b) return 0;
-  const first = a === 0, last = b === DURATION;
-  const i = first ? 1 : prog(t, a, a + .5), o = last ? 1 : 1 - prog(t, b - .5, b);
-  return Math.min(i, o);
+// Footage, extracted to numbered JPGs at 30 fps by build.sh.
+const CLIPS = { night: { frames: 150 }, frustrated: { frames: 150 }, together: { frames: 180 }, code: { frames: 120 }, glasses: { frames: 120 }, coffee: { frames: 120 }, handshake: { frames: 120 } };
+function clipSrc(name, local) {
+  const c = CLIPS[name]; if (!c) return "";
+  const i = Math.min(c.frames - 1, Math.max(0, Math.floor(local * 30 * (c.speed || 1)) + (c.start || 0)));
+  return `clips/${name}/${String(i + 1).padStart(4, "0")}.jpg`;
 }
-const rise = (el, t, a, d = .7, dy = 30) => { const k = out(prog(t, a, a + d)); el.style.opacity = k; el.style.transform = `translateY(${(1 - k) * dy}px)`; };
-const typed = (s, t, a, cps) => s.slice(0, Math.max(0, Math.floor((t - a) * cps)));
-const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-const caret = t => (Math.floor(t * 2) % 2 ? "" : '<span class="caret"></span>');
 
-function lines(t, items) {
-  // items: [startTime, html] shown once t >= startTime, each with a short fade
-  return items.filter(([a]) => t >= a).map(([a, h]) => `<span style="opacity:${out(prog(t, a, a + .3))}">${h}</span>`).join("");
+// Scenes: [start, end, builder(t, local, el)]. Each builds its own DOM once and updates it.
+const scenes = [];
+const S = (a, c, init, update) => scenes.push({ a, c, init, update, el: null });
+const L = document.getElementById("layers");
+function mk(html) { const d = document.createElement("div"); d.className = "layer"; d.innerHTML = html; L.appendChild(d); return d; }
+const q = (el, s) => el.querySelector(s);
+const typed = (s, t, cps) => s.slice(0, Math.max(0, Math.floor(t * cps)));
+const caret = t => (Math.floor(t * 2.4) % 2 ? "" : '<span class="caret"></span>');
+function glitch(el, t, strength) {
+  const g = strength * (rnd(Math.floor(t * 30)) > .4 ? 1 : .2);
+  el.style.setProperty("--gx", `${g * 14}px`); el.style.setProperty("--go", g > .05 ? .85 : 0);
+}
+function slam(el, t, at, from = 1.6) {
+  const k = prog(t, at, .22);
+  el.style.opacity = k > 0 ? 1 : 0;
+  el.style.transform = `scale(${lerp(from, 1, outBack(k))})`;
+  el.style.filter = `blur(${(1 - k) * 12}px)`;
+}
+
+// ---------- INTRO: bars 0-8 ----------
+// 0-2: real footage, a developer at night
+S(0, b(2) + .1, () => mk(`<img class="clip" id="c"><div class="shade"></div>
+  <div class="center"><div class="sm" id="l1" style="font-size:30px; letter-spacing:.3em; color:#2BD4BC">EVERY DEVELOPER HAS AN AGENT NOW</div>
+  <div class="big" id="l2" style="margin-top:26px; font-size:118px">Each one works alone.</div></div>`),
+  (t, lt, el) => {
+    q(el, "#c").src = lt < BAR ? clipSrc("glasses", lt) : clipSrc("night", lt - BAR);
+    q(el, "#c").style.transform = `scale(${1.08 + lt * .02})`;
+    const a = q(el, "#l1"), c = q(el, "#l2");
+    a.style.opacity = out(prog(lt, .3, .6)); a.style.transform = `translateY(${(1 - out(prog(lt, .3, .6))) * 20}px)`;
+    c.style.opacity = out(prog(lt, 1.1, .5)); c.style.transform = `translateY(${(1 - out(prog(lt, 1.1, .5))) * 40}px)`;
+  });
+// 2-4: two terminals, one per beat, the copy-paste ping-pong
+S(b(2), b(4) + .1, () => mk(`<div class="term" id="ta" style="left:120px; top:260px; width:760px; height:430px"><div class="bar"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i><span>alice · claude</span></div><div class="body">&gt; why does the modal
+  break on Bob's branch?
+
+<span class="g">●</span> I can't see Bob's
+  machine.</div></div>
+  <div class="term" id="tb" style="left:1040px; top:260px; width:760px; height:430px"><div class="bar"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i><span>bob · claude</span></div><div class="body">&gt; [pasted from Slack]
+
+<span class="g">●</span> Reading Modal.css…</div></div>
+  <div id="chips"></div>
+  <div class="center" style="justify-content:flex-end; padding-bottom:110px"><div class="mid" id="cnt" style="font-size:80px"></div></div>`),
+  (t, lt, el) => {
+    for (const [id, d] of [["#ta", -1], ["#tb", 1]]) {
+      const k = out(prog(lt, 0, .35)); q(el, id).style.transform = `translateX(${(1 - k) * d * 400}px) rotate(${(1 - k) * d * 4}deg)`; q(el, id).style.opacity = k;
+    }
+    let html = "", n = 0;
+    for (let i = 0; i < 4; i++) {
+      const a = bt(1 + i * 1.5), k = prog(lt, a, bt(1.2)); if (lt >= a + bt(.6)) n++;
+      if (k <= 0 || k >= 1) continue;
+      const dir = i % 2 ? -1 : 1, x = dir > 0 ? lerp(860, 1060, inOut(k)) : lerp(1060, 860, inOut(k));
+      html += `<div style="position:absolute; left:${x - 90}px; top:${470 - Math.sin(k * Math.PI) * 200}px; padding:14px 22px; border-radius:14px; background:#4A154B; font:800 30px Inter; box-shadow:0 20px 50px rgba(0,0,0,.5); transform:rotate(${(k - .5) * 30 * dir}deg)">⌘C → ⌘V</div>`;
+    }
+    q(el, "#chips").innerHTML = html;
+    q(el, "#cnt").innerHTML = n ? `<span class="orange">${n}</span> copy-paste${n > 1 ? "s" : ""}` : "";
+    q(el, "#cnt").style.transform = `scale(${1 + Math.max(0, .25 - sinceLast([bt(1.6), bt(3.1), bt(4.6), bt(6.1)].map(x => x + b(2)), t)) * 1.2})`;
+  });
+// 4-6: kinetic words on the kicks, over frustrated footage
+S(b(4), b(6) + .1, () => mk(`<img class="clip" id="c" style="filter:saturate(.5) contrast(1.1)"><div class="shade" style="background:rgba(5,8,11,.62)"></div>
+  <div class="center"><div class="big" id="w"></div><div class="sm" id="w2" style="margin-top:30px"></div></div>`),
+  (t, lt, el) => {
+    q(el, "#c").src = clipSrc("frustrated", lt);
+    const words = ["Copy.", "Paste.", "Copy.", "Paste.", "Every.", "Single.", "Question.", "Question."];
+    const i = Math.min(7, Math.floor(lt / BEAT));
+    const w = q(el, "#w"); w.textContent = i < 6 ? words[i] : "Every question.";
+    w.style.transform = `scale(${1 + Math.max(0, .18 - (lt - i * BEAT)) * 1.6})`;
+    w.className = "big" + (i % 2 ? " orange" : "");
+    q(el, "#w2").textContent = i >= 6 ? "The humans are the couriers." : "";
+  });
+// 6-8: the build, "what if it could just ask?"
+S(b(6), b(8), () => mk(`<div class="center"><div class="sm" id="p1" style="letter-spacing:.3em; font-size:30px" class="teal">WHAT IF</div>
+  <div class="big" id="p2" style="margin-top:20px">your Claude could<br><span class="glitch teal" id="ask" data-t="just ask theirs?">just ask theirs?</span></div></div>`),
+  (t, lt, el) => {
+    const p1 = q(el, "#p1"); p1.style.opacity = out(prog(lt, 0, .3)); p1.style.color = "#2BD4BC";
+    const p2 = q(el, "#p2"); const k = out(prog(lt, bt(1), .4));
+    p2.style.opacity = k; p2.style.transform = `scale(${lerp(.85, 1, k) + lt * .03})`; p2.style.letterSpacing = `${lerp(-.02, -.05, prog(lt, 0, b(2)))}em`;
+    glitch(q(el, "#ask"), t, prog(lt, b(1.5), b(.5)));
+    p2.style.filter = `blur(${Math.max(0, lt - b(2) + .25) * 30}px)`;
+  });
+
+// ---------- DROP 1: bars 8-16 ----------
+// 8-9: logo slam
+S(b(8), b(9) + .05, () => mk(`<div class="center"><img id="logo" src="../../spoochie.svg" width="300" height="300">
+  <div class="big glitch" id="name" data-t="spoochie" style="margin-top:30px; font-size:180px">spoochie</div></div>`),
+  (t, lt, el) => {
+    slam(q(el, "#logo"), lt, 0, 2.6); slam(q(el, "#name"), lt, bt(.5), 1.8);
+    q(el, "#logo").style.transform += ` rotate(${Math.sin(lt * 9) * 3 * Math.exp(-lt * 2)}deg)`;
+    glitch(q(el, "#name"), t, Math.max(0, .9 - sinceLast(KICKS.concat(SNARES), t) * 5));
+  });
+// 9-11: Alice asks; camera pushes in on the terminal
+S(b(9), b(11) + .05, () => mk(`<div class="term" id="t" style="left:180px; top:200px; width:1560px; height:620px"><div class="bar"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i><span>alice · web-app · claude</span></div><div class="body" id="body"></div></div>
+  <div class="center" style="justify-content:flex-start; padding-top:70px"><div class="sm" id="cap" style="font-size:34px">Alice asks <span class="teal">in plain words.</span></div></div>`),
+  (t, lt, el) => {
+    const ask = "ask Bob's Claude why the modal breaks on his branch";
+    let s = `&gt; ${typed(ask, lt, 46)}`;
+    const done = ask.length / 46;
+    if (lt < done + .2) s += caret(lt);
+    if (lt > done + .25) s += `\n\n<span class="g">●</span> <b>Bash</b>(spoochie open @bob --subject "the modal breaks on save")`;
+    if (lt > done + .7) s += `\n  <span class="m">⎿  spoochie 4bc0 opened · waiting for Bob</span>`;
+    q(el, "#body").innerHTML = s;
+    const z = inOut(prog(lt, 0, b(2)));
+    q(el, "#t").style.transform = `perspective(1600px) rotateX(${lerp(14, 0, out(prog(lt, 0, .5)))}deg) scale(${lerp(.9, 1.06, z)})`;
+    q(el, "#t").style.opacity = out(prog(lt, 0, .25));
+    q(el, "#cap").style.opacity = out(prog(lt, .2, .3));
+  });
+// 11-12: the tunnel, particles on the canvas
+S(b(11), b(12) + .05, () => mk(`<div class="center"><div class="mid" id="h" style="font-size:84px">End-to-end encrypted.</div>
+  <div style="display:flex; gap:22px; margin-top:44px" id="chips"><span class="chip">Nostr relays</span><span class="chip">NIP-44</span><span class="chip">No server of ours</span></div></div>`),
+  (t, lt, el) => {
+    q(el, "#h").style.opacity = out(prog(lt, 0, .2));
+    [...q(el, "#chips").children].forEach((c, i) => slam(c, lt, bt(1 + i), 1.5));
+  });
+// 12-14: the notice and the click
+S(b(12), b(14) + .05, () => mk(`<div class="center" style="justify-content:flex-start; padding-top:64px"><div class="sm" id="cap" style="font-size:34px">On Bob's Mac. <span class="orange">Nothing opens until he says yes.</span></div></div>
+  <div class="notice" id="n" style="left:580px; top:210px"><div class="h">Alice is calling.</div><div class="s">The modal breaks on save</div><hr>
+  <div class="q">"Hi, this is Alice's Claude. On fix/modal the save button is off-screen at 600 px. What changed?"</div><hr>
+  <div class="f">A read-only Claude answers, in a separate window.<br>Your own sessions never see it.</div>
+  <div class="btns"><div class="b">Not now</div><div class="b">Open in Slack</div><div class="b ok" id="ok">Let it in</div></div></div>
+  <svg id="cur" width="44" height="60" viewBox="0 0 34 46" style="position:absolute"><path d="M3 2 L3 36 L12 28 L18 42 L24 39 L18 26 L30 26 Z" fill="#fff" stroke="#000" stroke-width="2.5" stroke-linejoin="round"/></svg>
+  <div id="ring" style="position:absolute; border:4px solid #FF8A3D; border-radius:50%"></div>`),
+  (t, lt, el) => {
+    const n = q(el, "#n"), k = outBack(prog(lt, 0, .35));
+    n.style.transform = `scale(${lerp(.6, 1, k)}) translateY(${(1 - k) * 80}px)`; n.style.opacity = clamp(k * 1.5);
+    q(el, "#cap").style.opacity = out(prog(lt, .2, .3));
+    const ok = q(el, "#ok").getBoundingClientRect();
+    const click = bt(5);
+    const m = inOut(prog(lt, bt(2), bt(2.8)));
+    const cur = q(el, "#cur");
+    cur.style.left = lerp(1700, ok.left + ok.width / 2 - 6, m) + "px"; cur.style.top = lerp(1040, ok.top + ok.height / 2 - 6, m) + "px";
+    cur.style.opacity = prog(lt, bt(2), .1);
+    const pressed = lt > click && lt < click + .12;
+    q(el, "#ok").style.filter = pressed ? "brightness(.75)" : "none";
+    const r = prog(lt, click, .5), ring = q(el, "#ring");
+    ring.style.width = ring.style.height = `${r * 300}px`; ring.style.left = `${ok.left + ok.width / 2 - r * 150}px`; ring.style.top = `${ok.top + ok.height / 2 - r * 150}px`; ring.style.opacity = r > 0 && r < 1 ? 1 - r : 0;
+    if (lt > click + bt(1)) { const g = out(prog(lt, click + bt(1), .3)); n.style.transform = `scale(${lerp(1, .3, g)}) translate(${g * 900}px, ${-g * 200}px)`; n.style.opacity = 1 - g; cur.style.opacity = 1 - g; }
+  });
+// 14-16: the read-only Claude answers, badges slam on beats
+S(b(14), b(16), () => mk(`<div class="term" id="t" style="left:130px; top:120px; width:1660px; height:600px"><div class="bar"><i style="background:#FF5F57"></i><i style="background:#FEBC2E"></i><i style="background:#28C840"></i><span>spoochie-4bc0 · read-only copy of fix/modal</span></div><div class="body" id="body" style="font-size:25px"></div></div>
+  <div style="position:absolute; left:0; right:0; top:770px; display:flex; justify-content:center; gap:20px" id="badges"><span class="chip">Read-only</span><span class="chip">Clean worktree</span><span class="chip">Every command checked</span></div>
+  <div class="center" style="justify-content:flex-end; padding-bottom:70px"><div class="sm" id="cap" style="font-size:34px">A separate Claude reads <span class="teal">Bob's</span> files.</div></div>`),
+  (t, lt, el) => {
+    const lines = [
+      [0, `<span class="g">●</span> <b>Bash</b>(git log --oneline -3 -- src/Modal.css)\n  <span class="m">⎿  9f2c1e4 Widen the modal for the new form</span>\n`],
+      [bt(1.5), `<span class="g">●</span> <b>Read</b>(src/Modal.css)  <span class="m">88 lines</span>\n`],
+      [bt(3), `\n<span class="g">●</span> Found it. 9f2c1e4 set <b class="orange">min-width: 640px</b> on .modal-container.\n  Under 640 px the save button sits off-screen.\n`],
+      [bt(5), `\n<span class="g">●</span> <b>Bash</b>(spoochie say 4bc0 "min-width: 640px, Modal.css:42. Use max-width.")\n  <span class="m">⎿  delivered</span>`],
+    ];
+    q(el, "#body").innerHTML = lines.filter(([a]) => lt >= a).map(([a, h]) => `<span style="opacity:${out(prog(lt, a, .15))}">${h}</span>`).join("");
+    const k = out(prog(lt, 0, .3)); q(el, "#t").style.transform = `translateY(${(1 - k) * 200}px) scale(${lerp(.92, 1, k) + lt * .01})`; q(el, "#t").style.opacity = k;
+    [...q(el, "#badges").children].forEach((c, i) => slam(c, lt, bt(2 + i * 1.5), 1.7));
+    q(el, "#cap").style.opacity = out(prog(lt, .3, .3));
+  });
+
+// ---------- BREAK: bars 16-20 ----------
+S(b(16), b(18) + .1, () => mk(`<img class="clip" id="c"><div class="shade"></div>
+  <div class="center" style="justify-content:flex-end; padding-bottom:120px"><div class="mid" id="h" style="font-size:78px">The answer lands as <span class="teal">one more turn.</span></div>
+  <div class="sm" id="s" style="margin-top:20px">Zero copy-pastes.</div></div>`),
+  (t, lt, el) => {
+    q(el, "#c").src = clipSrc("together", lt); q(el, "#c").style.transform = `scale(${1.05 + lt * .015})`;
+    q(el, "#h").style.opacity = out(prog(lt, .4, .6)); q(el, "#h").style.transform = `translateY(${(1 - out(prog(lt, .4, .6))) * 30}px)`;
+    q(el, "#s").style.opacity = out(prog(lt, 1.6, .6));
+  });
+S(b(18), b(20) + .1, () => mk(`<div class="center"><div class="tag" id="tag" style="position:relative; margin-bottom:34px">REAL · TWO MACHINES</div>
+  <div style="display:flex; gap:50px; align-items:center" id="row">
+    <div class="proof" id="p1"><img src="real/notice.png" width="640"></div>
+    <div class="proof" id="p2"><img src="real/answer.png" width="700"></div>
+  </div>
+  <div class="sm" id="s" style="margin-top:40px">From the real test that runs before every push.<br><span class="dim">Real relays. Real Claude sessions. A real click.</span></div></div>`),
+  (t, lt, el) => {
+    slam(q(el, "#tag"), lt, 0, 1.4);
+    for (const [id, d, a] of [["#p1", -1, .2], ["#p2", 1, .5]]) {
+      const k = outBack(prog(lt, a, .5)); const p = q(el, id);
+      p.style.opacity = clamp(k); p.style.transform = `translateY(${(1 - k) * 160}px) rotate(${(1 - k) * d * 8 + d * 1.5}deg)`;
+    }
+    q(el, "#s").style.opacity = out(prog(lt, 1.2, .5));
+  });
+
+// ---------- BUILD 2: bars 20-24, the promises ----------
+S(b(20), b(24), () => mk(`<div class="center"><div class="sm" id="k" style="letter-spacing:.3em; font-size:28px; color:#2BD4BC">THREE PROMISES · EACH ONE A TEST IN CI</div>
+  <div class="big" id="w" style="margin-top:34px; font-size:140px"></div><div class="sm mono" id="w2" style="margin-top:30px; font-size:30px; color:#7F909B"></div></div>`),
+  (t, lt, el) => {
+    const P = [["No server of ours.", "tests/two-machines-nostr.test.ts"], ["The model is yours.", "src/guardian.ts → your claude -p"], ["Closing deletes it.", "every file, both machines, asserted empty"]];
+    const i = Math.min(2, Math.floor(lt / BAR * 0.75 + (lt > b(3) ? .3 : 0)));
+    const at = [0, b(4 / 3), b(8 / 3)];
+    const idx = lt < at[1] ? 0 : lt < at[2] ? 1 : 2;
+    const w = q(el, "#w"); w.textContent = P[idx][0]; q(el, "#w2").textContent = "✓ " + P[idx][1];
+    const k = prog(lt, at[idx], .25);
+    w.style.transform = `scale(${lerp(1.3, 1, outBack(k)) + (lt - at[idx]) * .02})`; w.style.filter = `blur(${(1 - k) * 10}px)`;
+    w.className = "big" + (idx === 1 ? " teal" : idx === 2 ? " orange" : "");
+    q(el, "#k").style.opacity = out(prog(lt, 0, .4));
+    if (lt > b(3.5)) { const g = prog(lt, b(3.5), b(.5)); w.style.filter = `blur(${g * 20}px)`; w.style.transform = `scale(${1 + g * .6})`; }
+  });
+
+// ---------- DROP 2: bars 24-32, the montage ----------
+const STATS = [["312", "tests on Linux and macOS"], ["0", "servers we run"], ["107 s", "real two-person test, every push"], ["E2E", "NIP-44 encryption, signed envelopes"]];
+S(b(24), b(28), () => mk(`<img class="clip" id="c" style="opacity:.32; filter:grayscale(.4)"><div class="center"><div class="stat" id="st"><b id="sb"></b><span id="ss"></span></div></div>`),
+  (t, lt, el) => {
+    const i = Math.min(3, Math.floor(lt / BAR));
+    q(el, "#c").src = clipSrc(["code", "glasses", "coffee", "handshake"][i], lt - i * BAR);
+    const st = STATS[i]; const sb = q(el, "#sb");
+    const local = lt - i * BAR;
+    if (i === 0) sb.textContent = String(Math.round(312 * out(prog(local, 0, .9))));
+    else if (i === 2) sb.textContent = Math.round(107 * out(prog(local, 0, .9))) + " s";
+    else sb.textContent = st[0];
+    q(el, "#ss").textContent = st[1];
+    sb.className = i % 2 ? "teal" : "orange"; sb.style.color = i % 2 ? "#2BD4BC" : "#FF8A3D";
+    q(el, "#st").style.transform = `scale(${lerp(1.5, 1, outBack(prog(local, 0, .25)))})`;
+  });
+S(b(28), b(30), () => mk(`<div class="center"><div class="sm" id="k" style="letter-spacing:.3em; font-size:28px; color:#2BD4BC">TWO COMMANDS IN CLAUDE CODE</div>
+  <div class="mono" id="code" style="margin-top:36px; font-size:46px; line-height:1.7; background:rgba(15,22,29,.9); border:2px solid #22313D; border-radius:22px; padding:34px 56px; white-space:pre"></div></div>`),
+  (t, lt, el) => {
+    const l1 = "/plugin marketplace add edugargar/spoochie", l2 = "/plugin install spoochie@edugargar";
+    const a = typed(l1, lt, 60), c = typed(l2, lt - bt(4), 60);
+    q(el, "#code").innerHTML = `<span class="teal">${a.slice(0, 7)}</span>${a.slice(7)}\n<span class="teal">${c.slice(0, 7)}</span>${c.slice(7)}${caret(lt)}`;
+    q(el, "#code").style.transform = `scale(${lerp(.8, 1, outBack(prog(lt, 0, .3)))})`;
+  });
+S(b(30), b(32), () => mk(`<div class="center"><div class="big" id="w" style="font-size:130px"></div></div>`),
+  (t, lt, el) => {
+    const words = ["Ask.", "Answer.", "Close.", "Gone.", "Ask.", "Answer.", "Close.", "Gone."];
+    const i = Math.min(7, Math.floor(lt / BEAT)); const w = q(el, "#w");
+    w.textContent = words[i]; w.style.color = i % 4 === 3 ? "#FF8A3D" : "#F2F6F8";
+    w.style.transform = `scale(${1 + Math.max(0, .2 - (lt - i * BEAT)) * 2}) rotate(${(rnd(i) - .5) * 6}deg)`;
+  });
+
+// ---------- END ----------
+S(b(32), DURATION, () => mk(`<div class="center"><img id="logo" src="../../spoochie.svg" width="240" height="240">
+  <div class="big" id="n" style="margin-top:28px; font-size:160px">spoochie</div>
+  <div class="sm" id="s" style="margin-top:14px">Claude Code, <span class="teal">between people.</span></div>
+  <div class="mono" id="u" style="margin-top:50px; font-size:32px; color:#9FB0BC">github.com/edugargar/spoochie</div></div>`),
+  (t, lt, el) => {
+    slam(q(el, "#logo"), lt, 0, 3); slam(q(el, "#n"), lt, .15, 1.6);
+    q(el, "#s").style.opacity = out(prog(lt, .6, .5)); q(el, "#u").style.opacity = out(prog(lt, 1.1, .5));
+  });
+
+// particles for the tunnel and the drops
+const fx = document.getElementById("fx"), cx = fx.getContext("2d");
+function drawFx(t) {
+  cx.clearRect(0, 0, 1920, 1080);
+  // tunnel: a stream of envelopes and dots from left to right in bars 11-12
+  if (t > b(11) && t < b(12)) {
+    const lt = t - b(11);
+    for (let i = 0; i < 160; i++) {
+      const s = rnd(i + 1), sp = .6 + rnd(i + 7) * 1.4;
+      const x = ((s * 2400 + lt * 1400 * sp) % 2400) - 240, y = 540 + Math.sin(x / 300 + i) * 330 * rnd(i + 3);
+      cx.fillStyle = i % 9 === 0 ? "rgba(255,138,61,.9)" : "rgba(43,212,188,.55)";
+      cx.fillRect(x, y, i % 9 === 0 ? 26 : 4 + rnd(i) * 30, i % 9 === 0 ? 18 : 3);
+    }
+  }
+  // bursts on the drops
+  for (const d of DROPS) {
+    const k = (t - d) / .9; if (k < 0 || k > 1) continue;
+    for (let i = 0; i < 220; i++) {
+      const a = rnd(i * 3.1) * Math.PI * 2, v = 300 + rnd(i * 7.7) * 1300;
+      const r = v * out(k);
+      cx.globalAlpha = 1 - k;
+      cx.fillStyle = i % 3 ? "#2BD4BC" : "#FF8A3D";
+      cx.fillRect(960 + Math.cos(a) * r, 540 + Math.sin(a) * r, 5, 5);
+    }
+    cx.globalAlpha = 1;
+  }
 }
 
 function render(t) {
-  for (const [id, w] of Object.entries(SCENES)) $(id).style.opacity = sceneAlpha(t, w);
-
-  // 1
-  { const k = out(prog(t, .2, 1.4)); $("s1logo").style.transform = `scale(${lerp(.7, 1, k)}) rotate(${lerp(-8, 0, k)}deg)`; $("s1logo").style.opacity = k;
-    rise($("s1word"), t, .8); rise($("s1tag"), t, 1.5); }
-
-  // 2
-  if (t > 4 && t < 13) {
-    rise($("s2k"), t, 4.6); rise($("s2h"), t, 4.8);
-    rise($("s2a"), t, 5.2, .8, 40); rise($("s2b"), t, 5.4, .8, 40);
-    const trips = [[6.6, 1], [7.7, -1], [8.8, 1], [9.9, -1]];
-    let html = "", n = 0;
-    for (const [a, dir] of trips) {
-      const k = prog(t, a, a + 1); if (t >= a + .5) n++;
-      if (k <= 0 || k >= 1) continue;
-      const x = dir > 0 ? lerp(780, 1140, ease(k)) : lerp(1140, 780, ease(k));
-      const y = 540 - Math.sin(k * Math.PI) * 120;
-      html += `<div style="position:absolute; left:${x - 70}px; top:${y - 26}px; padding:10px 18px; border-radius:12px; background:#4A154B; color:#fff; font:600 20px Inter; box-shadow:0 12px 30px rgba(0,0,0,.4); opacity:${Math.sin(k * Math.PI) * 1.4}">⌘C ⌘V</div>`;
-    }
-    $("s2chips").innerHTML = html; $("s2count").textContent = `${Math.max(n, 1)} copy-paste${n > 1 ? "s" : ""}`;
-    rise($("s2cap"), t, 7.1);
+  for (const s of scenes) {
+    const on = t >= s.a && t < s.c;
+    if (on && !s.el) s.el = s.init();
+    if (s.el) s.el.style.display = on ? "block" : "none";
+    if (on) s.update(t, t - s.a, s.el);
   }
-
-  // 3
-  if (t > 12 && t < 21) {
-    const ask = "ask Bob's Claude why the edit modal breaks on save on his fix/modal branch";
-    const tt = t - 13.0;
-    let body = `<span class="prompt">&gt;</span> ${esc(typed(ask, tt, 0, 30))}`;
-    const typedDone = 13.0 + ask.length / 30;
-    if (t < typedDone + .4) body += caret(t);
-    body += lines(t, [
-      [typedDone + .6, `\n\n<span class="bullet">●</span> I'll open a spoochie with Bob about it.\n`],
-      [typedDone + 1.3, `\n<span class="tool">●</span> <b>Bash</b>(spoochie open @bob --subject "the modal breaks on save"\n       --body "On fix/modal the save button is off-screen at 600 px...")\n`],
-      [typedDone + 2.2, `  <span class="muted">⎿  spoochie 4bc0 opened. Waiting for Bob to let it in.</span>\n`],
-    ]);
-    $("s3body").innerHTML = body;
-    rise($("s3t"), t, 12.6, .8, 40); rise($("s3cap"), t, 13.4);
-  }
-
-  // 4
-  if (t > 20 && t < 28) {
-    const k = ease(prog(t, 21.6, 25.2));
-    const P = $("tunnelpath"), L = P.getTotalLength(), pt = P.getPointAtLength(L * k);
-    const env = $("s4env");
-    env.style.left = (pt.x - 60) + "px"; env.style.top = (pt.y - 42) + "px";
-    env.style.opacity = prog(t, 21.3, 21.7) * (1 - prog(t, 25.2, 25.6));
-    P.style.strokeDashoffset = -t * 40;
-    rise($("s4cap"), t, 22.4);
-  }
-
-  // 5
-  if (t > 27 && t < 36) {
-    const k = out(prog(t, 28, 28.7));
-    $("s5n").style.opacity = k; $("s5n").style.transform = `scale(${lerp(.92, 1, k)})`;
-    const btn = $("s5ok").getBoundingClientRect();
-    const tx = btn.left + btn.width / 2 - 4, ty = btn.top + btn.height / 2 - 4;
-    const m = ease(prog(t, 30.4, 32.2));
-    const cur = $("s5cur");
-    cur.style.left = lerp(1500, tx, m) + "px"; cur.style.top = lerp(980, ty, m) + "px";
-    cur.style.opacity = prog(t, 30.2, 30.5);
-    const press = t > 32.4 && t < 32.7;
-    $("s5ok").style.filter = press ? "brightness(.8)" : "none";
-    cur.style.transform = press ? "scale(.9)" : "none";
-    const gone = out(prog(t, 33.0, 33.5));
-    if (t > 33) { $("s5n").style.opacity = 1 - gone; $("s5n").style.transform = `scale(${lerp(1, .96, gone)})`; cur.style.opacity = 1 - gone; }
-    rise($("s5cap"), t, 28.8);
-  }
-
-  // 6
-  if (t > 35 && t < 46) {
-    const a = 36.2;
-    $("s6body").innerHTML = lines(t, [
-      [a, `<span class="turn">[spoochie 4bc0 · the modal breaks on save] Alice: On fix/modal the save\nbutton of the edit modal is off-screen at 600 px. What changed?</span>\n`],
-      [a + 1.2, `<span class="tool">●</span> <b>Bash</b>(git log --oneline -3 -- src/components/Modal.css)\n  <span class="muted">⎿  9f2c1e4 Widen the modal for the new form</span>\n`],
-      [a + 2.3, `<span class="tool">●</span> <b>Read</b>(src/components/Modal.css)\n  <span class="muted">⎿  Read 88 lines</span>\n`],
-      [a + 3.6, `\n<span class="bullet">●</span> Found it. 9f2c1e4 set <b>min-width: 640px</b> on .modal-container\n  (Modal.css:42). Under 640 px the footer, and the save button with it, sits\n  off-screen.\n`],
-      [a + 5.0, `\n<span class="tool">●</span> <b>Bash</b>(spoochie say 4bc0 "It's min-width: 640px on .modal-container, Modal.css:42,\n       from 9f2c1e4. Use max-width: min(640px, 100vw - 32px) instead.")\n  <span class="muted">⎿  delivered</span>`],
-    ]);
-    rise($("s6t"), t, 35.6, .8, 40);
-    const b = $("s6badges").children;
-    for (let i = 0; i < b.length; i++) rise(b[i], t, 37 + i * .35, .6, 20);
-    rise($("s6cap"), t, 38.6);
-  }
-
-  // 7
-  if (t > 45 && t < 53) {
-    const a = 46.0;
-    $("s7body").innerHTML = lines(t, [
-      [a - .4, `<span class="tool">●</span> <b>Bash</b>(spoochie open @bob --subject "the modal breaks on save" ...)\n  <span class="muted">⎿  spoochie 4bc0 opened. Waiting for Bob to let it in.</span>\n\n`],
-      [a + .6, `<span class="turn">[spoochie 4bc0 · the modal breaks on save] Bob accepted the tunnel.</span>`],
-      [a + 1.6, `<span class="turn">[spoochie 4bc0] Bob: It's min-width: 640px on .modal-container, Modal.css:42,\nfrom 9f2c1e4. Use max-width: min(640px, 100vw - 32px) instead.</span>\n`],
-      [a + 3.0, `<span class="bullet">●</span> Bob's Claude found it: commit 9f2c1e4 gave the container a fixed min-width.\n  I'll make the same change here and close the tunnel.\n`],
-      [a + 4.0, `\n<span class="tool">●</span> <b>Bash</b>(spoochie close 4bc0 --reason "got it, thanks")\n  <span class="muted">⎿  closed. Messages and files erased on both machines.</span>`],
-    ]);
-    rise($("s7t"), t, 45.6, .8, 40); rise($("s7cap"), t, 47);
-  }
-
-  // 8
-  if (t > 52 && t < 60) ["c1", "c2", "c3"].forEach((c, i) => rise($(c), t, 53.2 + i * .45, .8, 50));
-
-  // 9
-  if (t > 59 && t < 65) { rise($("s9code"), t, 59.8); rise($("s9l"), t, 60.6); }
+  drawFx(t);
+  // camera: shake on kicks, punch on drops, slow drift otherwise
+  const sk = sinceLast(KICKS, t), sn = sinceLast(SNARES, t), dr = sinceLast(DROPS, t);
+  const inDrop = (t >= b(8) && t < b(16)) || (t >= b(24) && t < b(32));
+  const amp = (inDrop ? 14 : 6) * Math.exp(-sk * 16) + 10 * Math.exp(-dr * 6);
+  const sx = (rnd(Math.floor(t * 60)) - .5) * amp, sy = (rnd(Math.floor(t * 60) + 99) - .5) * amp;
+  const zoom = 1 + .035 * Math.exp(-sk * 10) * (inDrop ? 1 : .5) + .08 * Math.exp(-dr * 4);
+  document.getElementById("cam").style.transform = `translate(${sx}px, ${sy}px) scale(${zoom})`;
+  document.getElementById("cam").style.filter = inDrop ? `contrast(${1 + .15 * Math.exp(-sn * 8)})` : "none";
+  document.getElementById("grid").style.transform = `translate(${(t * 40) % 80}px, ${(t * 25) % 80}px)`;
+  document.getElementById("flash").style.opacity = Math.max(.9 * Math.exp(-dr * 7) * (dr < 2 ? 1 : 0), inDrop ? .18 * Math.exp(-sn * 14) : 0);
+  document.getElementById("scan").style.opacity = inDrop ? .8 : .3;
 }
-window.render = render;
-window.DURATION = DURATION;
+window.render = render; window.DURATION = DURATION;
 </script>
 </body>
 </html>
+
