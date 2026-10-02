@@ -30,7 +30,7 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync, appendFileSync, chmodSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const ROOT = join(import.meta.dir, "..");
 const LAB = mkdtempSync("/tmp/sp-real-");
@@ -329,7 +329,9 @@ async function main() {
   console.log(`\n${fails ? `${fails} failures` : "Real conversation complete"}. Screenshots:\n${shots.map(c => "  " + c).join("\n")}`);
   if (fails) return 1;
   if (dirty) { console.log("\nDirty tree: no seal left. Commit and run again."); return 1; }
-  const dir = join(ROOT, git("rev-parse", "--git-common-dir"), "spoochie-real-test");
+  // resolve, not join: in a worktree --git-common-dir is absolute, and join glued it
+  // under ROOT, so the seal landed where the pre-push never looks.
+  const dir = resolve(ROOT, git("rev-parse", "--git-common-dir"), "spoochie-real-test");
   mkdirSync(dir, { recursive: true });
   // The seal is per tree, not per commit: GitHub rewrites commits when merging with
   // rebase, and the release tag lands on a commit with another SHA and the same files.
