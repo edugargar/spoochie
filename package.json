@@ -17,6 +17,6 @@
     "@types/node": "^26"
   },
   "dependencies": {
-    "nostr-tools": "^2.25.2"
+    "nostr-tools": "^2.25.5"
   }
 }
